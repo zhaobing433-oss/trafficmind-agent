@@ -1,0 +1,1 @@
+{"totalEvents":2,"highRiskCount":1,"avgRiskScore":65.0,"pendingDispatch":2,"riskDistribution":[{"level":"重大风险","count":1},{"level":"低风险","count":1}],"eventTypeDistribution":[{"type":"拥堵","count":1},{"type":"string","count":1}],"statusDistribution":[{"status":"待派单","count":2}],"dailyTrend":[{"date":"2026-06-29","count":2}]}
