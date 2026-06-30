@@ -18,7 +18,8 @@
 | LLM（可选） | DeepSeek API | OpenAI-compatible，可选接入 |
 | 数据库 | SQLite | 轻量级，零配置 |
 | 规则库 | 本地 Markdown | 无需向量数据库 |
-| 前端 | React 18 + Ant Design 5 + ECharts 5 + Vite | 深色主题大屏 Dashboard |
+| 前端 | React 18 + Ant Design 5 + ECharts 5 + Vite | 深色主题大屏 Dashboard（含 Phase 2 面板） |
+| 相似检索 | 规则相似度（9 维特征） | 预留 Chroma/FAISS 向量扩展接口 |
 | 消息推送 | 企业微信/钉钉 Webhook + SMTP 邮件 | 高风险事件自动告警 |
 | 测试 | pytest + httpx | 端到端测试 |
 
@@ -47,7 +48,7 @@ trafficmind-agent/
 ├── CLAUDE.md                       # 本文件 — 项目文档
 ├── README.md                       # 面向用户的项目说明
 ├── backend/
-│   ├── app.py                      # FastAPI 主应用（7 个接口）
+│   ├── app.py                      # FastAPI 主应用（12 个接口）
 │   ├── config.py                   # 集中配置（API、路径、评分、推送）
 │   ├── requirements.txt            # Python 依赖
 │   ├── .env.example                # 环境变量模板（含注释）
@@ -64,7 +65,11 @@ trafficmind-agent/
 │   │   ├── dispatch_tools.py       # 调度话术 + 公众提示生成
 │   │   ├── report_tools.py         # 八段式结构化报告生成
 │   │   ├── db_tools.py             # SQLite CRUD + 统计聚合
-│   │   └── notify_tools.py         # 消息推送（企微/钉钉/邮件）
+│   │   ├── notify_tools.py         # 消息推送（企微/钉钉/邮件）
+│   │   ├── similarity_tools.py     # [Phase 2] 相似案例检索
+│   │   ├── report_summary_tools.py # [Phase 2] 日报/周报生成
+│   │   ├── alert_tools.py          # [Phase 2] 未闭环提醒
+│   │   └── stat_tools.py           # [Phase 2] 高风险路口 TopN
 │   ├── data/
 │   │   ├── rules/
 │   │   │   └── traffic_rules.md    # 8 类事件的本地处置预案
@@ -93,7 +98,11 @@ trafficmind-agent/
 │           ├── EventFeed.tsx       # 高风险推送面板
 │           ├── EventDetailModal.tsx # 事件详情弹窗
 │           ├── EventFormModal.tsx  # 新建事件弹窗
-│           └── StatusBadge.tsx     # 状态标签组件
+│           ├── StatusBadge.tsx     # 状态标签组件
+│           ├── SimilarCasesPanel.tsx  # [Phase 2] 相似案例面板
+│           ├── UnclosedAlertsPanel.tsx # [Phase 2] 未闭环提醒面板
+│           ├── HighRiskRoadsPanel.tsx  # [Phase 2] 高风险路口面板
+│           └── ReportPanel.tsx        # [Phase 2] 报告生成面板
 └── docs/
     └── api_examples.md             # API 调用示例（含完整生命周期测试流程）
 ```
@@ -129,7 +138,7 @@ trafficmind-agent/
 3. 每个接口至少覆盖正常场景和异常场景。
 4. 启动测试命令：`pytest backend/tests/test_sample_request.py -v`（需在项目根目录执行）。
 
-### 前端规范（第二阶段前暂不强制）
+### 前端规范
 
 1. 使用 React 18 + TypeScript，严格模式。
 2. 组件按功能拆分，保持单一职责。
@@ -167,6 +176,8 @@ pytest backend/tests/test_sample_request.py -v
 
 ## API 接口速览
 
+### 第一阶段（6 个）
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/analyze_event` | 分析交通事件，返回完整研判结果 |
@@ -175,6 +186,16 @@ pytest backend/tests/test_sample_request.py -v
 | POST | `/event/{event_id}/status` | 更新事件状态 |
 | GET | `/health` | 健康检查 |
 | GET | `/stats` | 仪表盘聚合统计 |
+
+### 第二阶段新增（5 个）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/similar_cases/{event_id}` | 历史相似案例检索（规则相似度） |
+| GET | `/reports/daily` | 交通事件日报 |
+| GET | `/reports/weekly` | 交通事件周报 |
+| GET | `/alerts/unclosed` | 未闭环事件提醒 |
+| GET | `/stats/high_risk_roads` | 高风险路口 TopN 统计 |
 
 ## 事件类型与状态
 
@@ -202,17 +223,64 @@ pytest backend/tests/test_sample_request.py -v
 
 风险等级：0-30 低风险 / 31-60 中风险 / 61-80 高风险 / 81-100 重大风险
 
+## 第二阶段（已完成）
+
+### 新增功能
+- [x] 历史相似案例检索（规则相似度，预留向量检索扩展接口）
+- [x] 交通事件日报/周报生成（本地模板 + LLM 可选润色）
+- [x] 未闭环事件提醒（含提醒原因和处置建议）
+- [x] 高风险路口 TopN 统计（含管理建议）
+- [x] 前端大屏 Dashboard 增强（4 个新功能面板）
+
+### 新增文件
+- [backend/tools/similarity_tools.py](backend/tools/similarity_tools.py) — 相似度计算 + 案例检索 + 向量检索预留接口
+- [backend/tools/report_summary_tools.py](backend/tools/report_summary_tools.py) — 日报/周报生成
+- [backend/tools/alert_tools.py](backend/tools/alert_tools.py) — 未闭环事件检测与提醒
+- [backend/tools/stat_tools.py](backend/tools/stat_tools.py) — 高风险路口 TopN 统计
+- 前端新增组件：SimilarCasesPanel / UnclosedAlertsPanel / HighRiskRoadsPanel / ReportPanel
+
+### 新增 API 接口
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/similar_cases/{event_id}` | 历史相似案例检索 |
+| GET | `/reports/daily` | 交通事件日报 |
+| GET | `/reports/weekly` | 交通事件周报 |
+| GET | `/alerts/unclosed` | 未闭环事件提醒 |
+| GET | `/stats/high_risk_roads` | 高风险路口 TopN |
+
+### 数据库变更
+- event_records 表新增 8 个字段用于相似检索（avgSpeed / queueLength / duration / weather / timePeriod / isMainRoad / nearbySchool / nearbyHospital）
+- 通过 ALTER TABLE 兼容迁移，旧数据库不崩溃
+
+### 测试覆盖
+- 27 个测试用例全部通过（第一阶段 12 + 第二阶段 15）
+
 ## 后续计划
 
-### 第二阶段：数据增强与可视化
-- 接入真实摄像头视频流，对接目标检测/轨迹追踪算法
-- 前端增强：实时事件地图（Leaflet/Cesium）、风险热力图、处置进度甘特图
-- 对接信号灯控制接口，实现信号配时自动调整
+### 第三阶段：智能检索与协同
 
-### 第三阶段：智能调度与协同
-- 多 Agent 协同：拥堵 Agent + 事故 Agent + 信号 Agent 协同决策
-- 引入强化学习优化信号灯配时和分流策略
-- 接入公安交管平台、122 接处警系统
+1. **向量数据库 + RAG**
+   - 引入 Chroma 或 FAISS 向量数据库
+   - 实现 `vector_based_similarity()` — 对历史事件文本做 embedding 后向量化存储
+   - 语义级相似案例检索（比规则相似度更准确，能发现不同路段但特征相似的案例）
+   - RAG（检索增强生成）：检索出的相似案例上下文注入 LLM prompt，让 Agent 基于历史处置经验生成上下文化的建议
+   - 参考技术栈：Chroma / FAISS + text2vec 或 DeepSeek Embedding
+
+2. **多 Agent 协同**
+   - 基于 LangGraph SubGraph 机制
+   - 拥堵 Agent + 事故 Agent + 信号 Agent 并行分析
+   - 协调 Agent 汇总决策，处理跨类型复合事件
+   - 每个子 Agent 有独立的工具集（拥堵 Agent 侧重信号配时，事故 Agent 侧重救援调度）
+
+3. **信号灯策略模拟**
+   - 对接 SUMO 交通仿真
+   - Agent 生成的信号配时调整方案先在仿真中验证
+   - 评估指标：排队长度变化、平均延误时间、通行量
+   - 仿真通过后推送给人工作为参考方案
+
+4. **外部系统对接**
+   - 接入公安交管平台、122 接处警系统
+   - 对接信号灯控制接口，实现配时自动调整
 
 ### 第四阶段：预测与预防
 - 基于历史数据训练事件预测模型（时空预测）

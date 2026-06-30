@@ -1,4 +1,4 @@
-/** 前端类型定义 */
+/** 前端类型定义 — 第二阶段扩展 */
 
 /** 统计分析请求体 */
 export interface AnalyzeEventRequest {
@@ -83,12 +83,107 @@ export interface StatsResponse {
   dailyTrend: { date: string; count: number }[];
 }
 
-/** 事件动态推送条目 */
-export interface NotifItem {
+/** 相似案例 */
+export interface SimilarCase {
   eventId: string;
-  eventTypeCn: string;
+  eventType: string;
   roadName: string;
+  direction: string;
+  riskScore: number;
+  riskLevel: string;
+  status: string;
+  similarityScore: number;
+  similarityReasons: string[];
+  report: string;
+  createdAt: string;
+}
+
+/** /similar_cases 返回体 */
+export interface SimilarCasesResponse {
+  currentEvent: {
+    eventId: string;
+    eventType: string;
+    roadName: string;
+    direction: string;
+    riskScore: number;
+    riskLevel: string;
+    status: string;
+    createdAt: string;
+  } | null;
+  similarCases: SimilarCase[];
+  error?: string;
+}
+
+/** 日报 */
+export interface DailyReportResponse {
+  date: string;
+  totalEvents: number;
+  highRiskEvents: number;
+  majorRiskEvents: number;
+  unclosedEvents: number;
+  topRoads: { roadName: string; count: number }[];
+  eventTypeDistribution: { type: string; count: number }[];
+  riskLevelDistribution: { level: string; count: number }[];
+  statusDistribution: { status: string; count: number }[];
+  keyFindings: string[];
+  suggestions: string[];
+  reportText: string;
+  trendSummary: string;
+}
+
+/** 周报 */
+export interface WeeklyReportResponse {
+  startDate: string;
+  endDate: string;
+  totalEvents: number;
+  highRiskEvents: number;
+  majorRiskEvents: number;
+  unclosedEvents: number;
+  topRoads: { roadName: string; count: number }[];
+  eventTypeDistribution: { type: string; count: number }[];
+  riskLevelDistribution: { level: string; count: number }[];
+  statusDistribution: { status: string; count: number }[];
+  keyFindings: string[];
+  suggestions: string[];
+  reportText: string;
+  trendSummary: { date: string; count: number }[];
+}
+
+/** 未闭环告警 */
+export interface AlertItem {
+  eventId: string;
+  eventType: string;
+  roadName: string;
+  direction: string;
   riskLevel: string;
   riskScore: number;
-  analyzedAt: string;
+  status: string;
+  createdAt: string;
+  durationSinceCreated: string;
+  alertReason: string;
+  recommendedAction: string;
+}
+
+/** /alerts/unclosed 返回体 */
+export interface UnclosedAlertsResponse {
+  count: number;
+  alerts: AlertItem[];
+}
+
+/** 高风险路口 */
+export interface HighRiskRoad {
+  roadName: string;
+  totalEvents: number;
+  highRiskCount: number;
+  majorRiskCount: number;
+  avgRiskScore: number;
+  mostCommonEventType: string;
+  unclosedCount: number;
+  suggestedAction: string;
+}
+
+/** /stats/high_risk_roads 返回体 */
+export interface HighRiskRoadsResponse {
+  range: string;
+  topRoads: HighRiskRoad[];
 }

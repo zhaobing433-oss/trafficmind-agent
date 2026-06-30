@@ -246,3 +246,230 @@ curl -X POST http://localhost:8000/event/E202606290002/status \
 # 5. 再次查看——状态已变
 curl http://localhost:8000/event/E202606290002
 ```
+
+---
+
+## 第二阶段新增接口
+
+### 5. GET /similar_cases/{event_id} — 历史相似案例检索
+
+基于规则相似度（9 维特征匹配）检索历史相似案例。第一阶段使用规则相似度；第三阶段计划引入 Chroma/FAISS 做语义检索和 RAG。
+
+```bash
+# 查找与 E202606290002 相似的历史案例
+curl "http://localhost:8000/similar_cases/E202606290002?limit=5&min_score=0.3"
+```
+
+**响应示例：**
+
+```json
+{
+  "currentEvent": {
+    "eventId": "E202606290002",
+    "eventType": "事故",
+    "roadName": "中山路-南京路路口",
+    "direction": "南向北",
+    "riskScore": 100,
+    "riskLevel": "重大风险",
+    "status": "待派单",
+    "createdAt": "2026-06-30 14:30:00"
+  },
+  "similarCases": [
+    {
+      "eventId": "E202606300005",
+      "eventType": "事故",
+      "roadName": "人民路-解放路路口",
+      "direction": "东向西",
+      "riskScore": 95,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "similarityScore": 0.65,
+      "similarityReasons": [
+        "事件类型相同：事故",
+        "天气状况相同：雨",
+        "均发生在早高峰"
+      ],
+      "report": "前半部分报告内容...",
+      "createdAt": "2026-06-30 15:00:00"
+    }
+  ]
+}
+```
+
+### 6. GET /reports/daily — 交通事件日报
+
+生成某一天的交通事件日报，包含总体概况、高风险事件、高发路口、类型分布、状态分析、未闭环提醒、管理建议。
+
+```bash
+# 生成今天的日报
+curl http://localhost:8000/reports/daily
+
+# 指定日期
+curl "http://localhost:8000/reports/daily?date=2026-06-30"
+```
+
+**响应示例：**
+
+```json
+{
+  "date": "2026-06-30",
+  "totalEvents": 9,
+  "highRiskEvents": 6,
+  "majorRiskEvents": 3,
+  "unclosedEvents": 9,
+  "topRoads": [
+    { "roadName": "人民路-解放路路口", "count": 5 },
+    { "roadName": "中山路-南京路路口", "count": 3 }
+  ],
+  "eventTypeDistribution": [
+    { "type": "拥堵", "count": 4 },
+    { "type": "事故", "count": 3 }
+  ],
+  "riskLevelDistribution": [
+    { "level": "重大风险", "count": 3 },
+    { "level": "高风险", "count": 3 }
+  ],
+  "statusDistribution": [
+    { "status": "待派单", "count": 9 }
+  ],
+  "keyFindings": [
+    "报告期内共发生 6 起高风险及以上事件，需重点关注。",
+    "其中 3 起为重大风险事件，建议立即核查处置进度。"
+  ],
+  "suggestions": [
+    "对高风险事件涉及的信号配时、道路设施进行专项排查。",
+    "督促未闭环事件责任单位加快处置进度，确保按时归档。"
+  ],
+  "reportText": "==================================================\n   TrafficMind Agent 交通事件日报\n   ... (完整报告全文)",
+  "trendSummary": "2026-06-30 共发生 9 起交通事件"
+}
+```
+
+### 7. GET /reports/weekly — 交通事件周报
+
+生成最近 7 天的交通事件周报，包含日趋势、汇总统计和管理建议。
+
+```bash
+# 生成最近 7 天周报
+curl http://localhost:8000/reports/weekly
+
+# 指定日期范围
+curl "http://localhost:8000/reports/weekly?start_date=2026-06-01&end_date=2026-06-30"
+```
+
+**响应示例：**
+
+```json
+{
+  "startDate": "2026-06-23",
+  "endDate": "2026-06-30",
+  "totalEvents": 9,
+  "highRiskEvents": 6,
+  "majorRiskEvents": 3,
+  "unclosedEvents": 9,
+  "topRoads": [
+    { "roadName": "人民路-解放路路口", "count": 5 }
+  ],
+  "eventTypeDistribution": [{ "type": "拥堵", "count": 4 }],
+  "riskLevelDistribution": [{ "level": "重大风险", "count": 3 }],
+  "statusDistribution": [{ "status": "待派单", "count": 9 }],
+  "keyFindings": [
+    "报告期内共发生 6 起高风险及以上事件，需重点关注。"
+  ],
+  "suggestions": [
+    "对高风险事件涉及的信号配时、道路设施进行专项排查。"
+  ],
+  "reportText": "==================================================\n   TrafficMind Agent 交通事件周报\n   ... (完整报告全文)",
+  "trendSummary": [
+    { "date": "2026-06-30", "count": 9 }
+  ]
+}
+```
+
+### 8. GET /alerts/unclosed — 未闭环事件提醒
+
+查询未完成闭环处置的事件，自动生成提醒原因和处置建议。
+
+提醒规则：
+- 高风险/重大风险且状态为待派单或处置中：优先提醒
+- 事件超过 30 分钟仍未闭环：提醒
+- 重大风险事件超过 10 分钟未闭环：强提醒
+- 待复盘事件超过 24 小时未归档：提醒
+
+```bash
+# 查询最近 24 小时未闭环事件
+curl "http://localhost:8000/alerts/unclosed?hours=24&min_risk=%E4%B8%AD%E9%A3%8E%E9%99%A9"
+
+# 查询所有未闭环（放宽时间到 720 小时）
+curl "http://localhost:8000/alerts/unclosed?hours=720&min_risk=%E4%BD%8E%E9%A3%8E%E9%99%A9"
+```
+
+**响应示例：**
+
+```json
+{
+  "count": 3,
+  "alerts": [
+    {
+      "eventId": "E202606300004",
+      "eventType": "事故",
+      "roadName": "中山路-南京路路口",
+      "direction": "南向北",
+      "riskLevel": "重大风险",
+      "riskScore": 100,
+      "status": "待派单",
+      "createdAt": "2026-06-30 14:30:00",
+      "durationSinceCreated": "3 小时 37 分钟",
+      "alertReason": "重大风险事件已持续 217 分钟未闭环，需要紧急介入！；重大风险事件尚未派单（100分），请优先关注。",
+      "recommendedAction": "立即启动应急预案，通知相关单位负责人，优先调配资源处置。"
+    }
+  ]
+}
+```
+
+### 9. GET /stats/high_risk_roads — 高风险路口 TopN 统计
+
+按路口聚合统计高风险事件，自动生成管理建议。
+
+统计逻辑：
+- 按 roadName 聚合最近 N 天的事件
+- 高风险和重大风险事件计入重点统计
+- suggestedAction 根据风险情况自动生成
+
+```bash
+# 最近 7 天高风险路口 Top10
+curl "http://localhost:8000/stats/high_risk_roads?limit=10&days=7&min_risk=%E9%AB%98%E9%A3%8E%E9%99%A9"
+
+# 最近 30 天所有风险等级路口统计
+curl "http://localhost:8000/stats/high_risk_roads?limit=5&days=30&min_risk=%E4%BD%8E%E9%A3%8E%E9%99%A9"
+```
+
+**响应示例：**
+
+```json
+{
+  "range": "最近 30 天",
+  "topRoads": [
+    {
+      "roadName": "人民路-解放路路口",
+      "totalEvents": 5,
+      "highRiskCount": 2,
+      "majorRiskCount": 3,
+      "avgRiskScore": 88.0,
+      "mostCommonEventType": "拥堵",
+      "unclosedCount": 5,
+      "suggestedAction": "建议纳入重点巡查路口，优先安排交警值守。；建议复核信号配时方案，排查交通组织隐患。；仍有 5 起事件未闭环，请跟踪处置。"
+    },
+    {
+      "roadName": "中山路-南京路路口",
+      "totalEvents": 3,
+      "highRiskCount": 1,
+      "majorRiskCount": 1,
+      "avgRiskScore": 73.3,
+      "mostCommonEventType": "拥堵",
+      "unclosedCount": 3,
+      "suggestedAction": "建议纳入重点巡查路口，优先安排交警值守。；仍有 3 起事件未闭环，请跟踪处置。"
+    }
+  ]
+}
+```

@@ -6,7 +6,7 @@ import type { AnalyzeResult } from '../types';
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (eventId?: string) => void;
 }
 
 const EVENT_TYPE_OPTIONS = [
@@ -45,7 +45,7 @@ export default function EventFormModal({ open, onClose, onSuccess }: Props) {
       const res = await analyzeEvent(values);
       setResult(res);
       message.success('事件分析完成！');
-      onSuccess();
+      onSuccess(res.eventId);
     } catch (e) {
       if (e instanceof Error && e.message !== 'VALIDATE_ERROR') {
         message.error(e.message);

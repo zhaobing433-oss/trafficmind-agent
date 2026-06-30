@@ -3,6 +3,11 @@
 ------------
 使用 SQLite 持久化存储事件分析结果。
 表结构：event_records
+
+第二阶段扩展字段：
+  avgSpeed, queueLength, duration, weather, timePeriod,
+  isMainRoad, nearbySchool, nearbyHospital
+  通过 ALTER TABLE 自动迁移，兼容旧数据库。
 """
 
 import sqlite3
@@ -21,8 +26,30 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+# 第二阶段新增字段迁移列表
+_MIGRATION_COLUMNS = [
+    ("avgSpeed", "REAL DEFAULT 0"),
+    ("queueLength", "REAL DEFAULT 0"),
+    ("duration", "REAL DEFAULT 0"),
+    ("weather", "TEXT DEFAULT 'clear'"),
+    ("timePeriod", "TEXT DEFAULT 'off_peak'"),
+    ("isMainRoad", "INTEGER DEFAULT 0"),
+    ("nearbySchool", "INTEGER DEFAULT 0"),
+    ("nearbyHospital", "INTEGER DEFAULT 0"),
+]
+
+
+def _migrate_schema(cursor):
+    """兼容迁移：逐个尝试添加新字段，已存在的跳过。"""
+    for col_name, col_def in _MIGRATION_COLUMNS:
+        try:
+            cursor.execute(f"ALTER TABLE event_records ADD COLUMN {col_name} {col_def}")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在，跳过
+
+
 def init_db() -> None:
-    """初始化数据库表结构。"""
+    """初始化数据库表结构，并执行兼容迁移。"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -43,6 +70,7 @@ def init_db() -> None:
             updatedAt TEXT NOT NULL
         )
     """)
+    _migrate_schema(cursor)
     conn.commit()
     conn.close()
 
@@ -58,7 +86,7 @@ def save_event_analysis(result: Dict[str, Any]) -> bool:
         是否保存成功
     """
     try:
-        init_db()  # 确保表存在
+        init_db()  # 确保表存在 + 迁移
         conn = get_connection()
         cursor = conn.cursor()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -69,15 +97,25 @@ def save_event_analysis(result: Dict[str, Any]) -> bool:
         cursor.execute("""
             INSERT OR REPLACE INTO event_records
                 (eventId, eventType, eventTypeCn, roadName, direction,
+                 avgSpeed, queueLength, duration,
+                 weather, timePeriod, isMainRoad, nearbySchool, nearbyHospital,
                  riskScore, riskLevel, status, report,
                  rawEvent, fullResult, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             event_id,
             standard_event.get("eventType", ""),
             standard_event.get("eventTypeCn", ""),
             standard_event.get("roadName", ""),
             standard_event.get("direction", ""),
+            float(standard_event.get("avgSpeed", 0)),
+            float(standard_event.get("queueLength", 0)),
+            float(standard_event.get("duration", 0)),
+            standard_event.get("weather", "clear"),
+            standard_event.get("timePeriod", "off_peak"),
+            1 if standard_event.get("isMainRoad") else 0,
+            1 if standard_event.get("nearbySchool") else 0,
+            1 if standard_event.get("nearbyHospital") else 0,
             result.get("riskScore", 0),
             result.get("riskLevel", ""),
             result.get("status", "待派单"),
@@ -262,3 +300,31 @@ def get_stats() -> Dict[str, Any]:
         "statusDistribution": status_distribution,
         "dailyTrend": daily_trend,
     }
+
+
+def get_all_events_for_similarity() -> List[Dict[str, Any]]:
+    """
+    获取所有事件的完整信息，用于相似度检索。
+
+    Returns:
+        包含所有字段的事件列表（rawEvent 和 fullResult 也解析为对象）
+    """
+    init_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM event_records ORDER BY createdAt DESC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    events = []
+    for row in rows:
+        event = dict(row)
+        # 将 JSON 字符串还原为对象
+        for field in ("rawEvent", "fullResult"):
+            if field in event and isinstance(event[field], str):
+                try:
+                    event[field] = json.loads(event[field])
+                except json.JSONDecodeError:
+                    pass
+        events.append(event)
+    return events

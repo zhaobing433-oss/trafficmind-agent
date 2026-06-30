@@ -2,19 +2,22 @@
 
 **面向智慧交通的事件研判与闭环处置 Agent**
 
-TrafficMind Agent 是一个智能交通事件分析系统。当摄像头和算法上报交通事件 JSON 后，Agent 自动完成事件解析、风险分级、预案匹配、调度建议生成、调度话术和事件报告生成，并通过深色主题大屏 Dashboard 实时展示指挥中心态势，支持企业微信/钉钉/邮件自动推送高风险事件告警，形成完整的闭环处置链路。
+TrafficMind Agent 是一个智能交通事件分析系统。当摄像头和算法上报交通事件 JSON 后，Agent 自动完成事件解析、风险分级、预案匹配、调度话术生成、公众提示生成、事件报告生成，并通过深色主题大屏 Dashboard 实时展示指挥中心态势，支持企业微信/钉钉/邮件自动推送高风险事件告警，形成"感知→研判→派单→处置→复盘→归档"的完整闭环处置链路。
 
 ---
 
 ## 项目亮点
 
-- **确定性 + 智能双引擎**：风险评分、规则匹配、状态流转由确定性规则保证可解释性；处置建议和报告生成可选接入 DeepSeek 大模型提升质量，LLM 不可用时自动降级
+- **确定性 + AI 双引擎**：风险评分、规则匹配、状态流转由确定性规则保证可解释性；DeepSeek 大模型仅用于润色建议和报告，LLM 不可用时自动降级
 - **LangGraph 流水线**：8 节点线性工作流（含消息推送），职责清晰，易扩展
-- **深色大屏 Dashboard**：React + Ant Design + ECharts 实时指挥中心看板，统计卡片 + 风险饼图 + 类型柱状图 + 趋势折线图 + 事件列表 + 高风险推送
-- **多渠道消息推送**：高风险事件自动通过企业微信机器人 / 钉钉机器人 / 邮件告警，非阻塞 daemon 线程发送
-- **本地规则库**：Markdown 格式维护，无需向量数据库，第一阶段即可落地
-- **完整的闭环处置**：从事件接报 → 研判 → 派单 → 处置 → 复盘 → 归档，覆盖交通事件全生命周期
-- **零依赖降级运行**：不配 API Key 照样能跑，所有功能通过模板兜底
+- **深色大屏 Dashboard**：React + Ant Design + ECharts 实时指挥中心看板，含统计卡片、风险饼图、类型柱状图、趋势折线图、事件列表、相似案例检索、未闭环提醒、高风险路口 TopN、日报/周报生成
+- **多渠道消息推送**：高风险事件自动通过企业微信机器人 / 钉钉机器人 / 邮件告警
+- **历史相似案例检索**：基于 9 项规则相似度匹配历史案例，预留向量检索扩展接口（计划引入 Chroma/FAISS + RAG）
+- **日报/周报自动生成**：7 段式结构化管理报告，支持 LLM 润色
+- **未闭环事件自动提醒**：含提醒原因生成和处置建议
+- **高风险路口 TopN**：按路口聚合统计高风险事件，自动生成管理建议
+- **本地规则库**：Markdown 格式维护，无需向量数据库
+- **零依赖降级运行**：不配任何外部 API Key 也能完整运行所有核心功能
 
 ---
 
@@ -23,13 +26,14 @@ TrafficMind Agent 是一个智能交通事件分析系统。当摄像头和算�
 | 层级 | 技术 |
 |------|------|
 | Web 框架 | FastAPI + Uvicorn |
-| 工作流引擎 | LangGraph |
+| 工作流引擎 | LangGraph 0.2.x |
 | LLM（可选） | DeepSeek API（OpenAI-compatible） |
-| 数据库 | SQLite |
+| 数据库 | SQLite（含自动兼容迁移） |
 | 规则库 | 本地 Markdown |
+| 相似检索 | 规则相似度（9 项加权），预留 Chroma/FAISS 扩展 |
 | 前端 | React 18 + Ant Design 5 + ECharts 5 + Vite |
 | 消息推送 | 企业微信 / 钉钉 Webhook + SMTP 邮件 |
-| 测试 | pytest + httpx |
+| 测试 | pytest + FastAPI TestClient（27 个用例） |
 
 ---
 
@@ -37,101 +41,95 @@ TrafficMind Agent 是一个智能交通事件分析系统。当摄像头和算�
 
 ```
 trafficmind-agent
-├── backend
-│   ├── app.py                  # FastAPI 主应用（6 个接口）
-│   ├── config.py               # 集中配置（含推送渠道）
-│   ├── requirements.txt        # Python 依赖
-│   ├── .env.example            # 环境变量模板
-│   ├── agent
-│   │   ├── __init__.py
-│   │   ├── graph.py            # LangGraph 8 节点工作流
-│   │   ├── nodes.py            # 工作流节点实现
-│   │   └── prompts.py          # LLM 提示词
-│   ├── tools
-│   │   ├── __init__.py
-│   │   ├── event_tools.py      # 事件解析与标准化
-│   │   ├── risk_tools.py       # 风险评分
-│   │   ├── rule_tools.py       # 规则检索
-│   │   ├── dispatch_tools.py   # 调度话术
-│   │   ├── report_tools.py     # 报告生成
-│   │   ├── db_tools.py         # 数据库 + 统计聚合
-│   │   └── notify_tools.py     # 消息推送（企微/钉钉/邮件）
-│   ├── data
-│   │   ├── rules
-│   │   │   └── traffic_rules.md  # 本地规则库
-│   │   └── trafficmind.db        # SQLite 数据库（自动生成）
-│   └── tests
-│       └── test_sample_request.py # 测试用例
-├── frontend                    # NEW - React 大屏 Dashboard
+├── CLAUDE.md                         # 项目文档（AI 新会话上下文）
+├── README.md                         # 本文件
+├── .gitignore
+├── backend/
+│   ├── app.py                        # FastAPI 主应用（12 个接口）
+│   ├── config.py                     # 集中配置
+│   ├── requirements.txt              # Python 依赖
+│   ├── .env.example                  # 环境变量模板
+│   ├── agent/
+│   │   ├── graph.py                  # LangGraph 8 节点工作流
+│   │   ├── nodes.py                  # 节点实现 + LLM 调用封装
+│   │   └── prompts.py                # LLM 提示词
+│   ├── tools/
+│   │   ├── event_tools.py            # 事件校验与标准化
+│   │   ├── risk_tools.py             # 风险评分
+│   │   ├── rule_tools.py             # Markdown 规则库检索
+│   │   ├── dispatch_tools.py         # 调度话术
+│   │   ├── report_tools.py           # 八段式报告
+│   │   ├── db_tools.py               # SQLite CRUD + 统计聚合
+│   │   ├── notify_tools.py           # 消息推送（企微/钉钉/邮件）
+│   │   ├── similarity_tools.py       # [Phase 2] 相似案例检索
+│   │   ├── report_summary_tools.py   # [Phase 2] 日报/周报生成
+│   │   ├── alert_tools.py            # [Phase 2] 未闭环提醒
+│   │   └── stat_tools.py             # [Phase 2] 高风险路口 TopN
+│   ├── data/
+│   │   ├── rules/traffic_rules.md    # 8 类事件处置预案
+│   │   └── trafficmind.db            # SQLite 数据库（自动创建）
+│   └── tests/
+│       └── test_sample_request.py    # 27 个测试用例
+├── frontend/
 │   ├── package.json
 │   ├── vite.config.ts
 │   ├── index.html
 │   └── src/
-│       ├── main.tsx            # 入口 + AntD 深色主题
-│       ├── App.tsx             # 根组件
-│       ├── types/index.ts      # TypeScript 类型
-│       ├── api/index.ts        # API 调用封装
-│       ├── utils/format.ts     # 格式化工具
-│       ├── hooks/useDashboardData.ts  # 轮询 Hook
+│       ├── main.tsx                  # 入口 + Ant Design 深色主题
+│       ├── App.tsx
+│       ├── types/index.ts            # TypeScript 类型定义
+│       ├── api/index.ts              # API 调用封装（12 个接口）
+│       ├── hooks/useDashboardData.ts  # 数据轮询 Hook
 │       └── components/
-│           ├── Dashboard.tsx           # 主大屏布局
-│           ├── Header.tsx              # 标题栏 + 时钟
-│           ├── StatisticsCards.tsx      # 统计卡片
-│           ├── RiskPieChart.tsx        # 风险饼图
-│           ├── EventTypeBarChart.tsx   # 类型柱状图
-│           ├── TrendLineChart.tsx      # 趋势折线图
-│           ├── EventList.tsx           # 事件列表
-│           ├── EventFeed.tsx           # 高风险推送面板
-│           ├── EventDetailModal.tsx    # 事件详情弹窗
-│           ├── EventFormModal.tsx      # 新建事件弹窗
-│           └── StatusBadge.tsx         # 状态标签
-├── docs
-│   └── api_examples.md         # API 调用示例
-└── README.md                   # 本文件
+│           ├── Dashboard.tsx         # 主布局（含 Phase 2 面板）
+│           ├── Header.tsx            # 标题栏 + 时钟
+│           ├── StatisticsCards.tsx    # 统计卡片
+│           ├── RiskPieChart.tsx      # 风险饼图
+│           ├── EventTypeBarChart.tsx # 事件类型柱状图
+│           ├── TrendLineChart.tsx    # 趋势折线图
+│           ├── EventList.tsx         # 事件列表
+│           ├── EventFeed.tsx         # 高风险推送
+│           ├── EventDetailModal.tsx  # 事件详情弹窗
+│           ├── EventFormModal.tsx    # 新建事件弹窗
+│           ├── StatusBadge.tsx       # 状态标签
+│           ├── SimilarCasesPanel.tsx # [Phase 2] 相似案例面板
+│           ├── UnclosedAlertsPanel.tsx # [Phase 2] 未闭环提醒面板
+│           ├── HighRiskRoadsPanel.tsx # [Phase 2] 高风险路口面板
+│           └── ReportPanel.tsx       # [Phase 2] 报告生成面板
+└── docs/
+    └── api_examples.md               # API 调用示例
 ```
 
 ---
 
-## 安装依赖
-
-```bash
-# 1. 进入后端目录
-cd trafficmind-agent/backend
-
-# 2. 创建虚拟环境
-python -m venv .venv
-
-# 3. 激活虚拟环境
-# Windows:
-.venv\Scripts\activate
-# macOS / Linux:
-# source .venv/bin/activate
-
-# 4. 安装依赖
-pip install -r requirements.txt
-
-# 5.（可选）配置环境变量
-# 复制 .env.example 为 .env，可按需填入 DeepSeek API Key 和推送渠道
-# 不配置也可以运行，系统自动降级为本地模板
-copy .env.example .env   # Windows
-# cp .env.example .env    # macOS/Linux
-```
-
----
-
-## 启动命令
+## 安装与启动
 
 ### 后端
 
 ```bash
 cd trafficmind-agent/backend
+
+# 创建虚拟环境
+python -m venv .venv
+
+# 激活（Windows）
+.venv\Scripts\activate
+# 激活（macOS/Linux）
+# source .venv/bin/activate
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 可选：配置环境变量
+copy .env.example .env
+
+# 启动（默认 8000 端口）
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-启动后打开浏览器访问：
+启动后访问：
 - **Swagger API 文档**: http://localhost:8000/docs
 - **健康检查**: http://localhost:8000/health
-- **仪表盘统计**: http://localhost:8000/stats
 
 ### 前端 Dashboard
 
@@ -141,16 +139,62 @@ npm install
 npm run dev
 ```
 
-Vite 开发服务器启动在 `http://localhost:5173`，自动代理 `/api/*` 到后端 8000 端口。
-打开浏览器访问 **http://localhost:5173** 即可看到指挥中心大屏。
+Vite 开发服务器默认启动在 `http://localhost:5173`，通过 Vite proxy 将 `/api/*` 自动转发到后端 `localhost:8000`。
 
-> **提示**: 前端和后端需要同时运行。建议开两个终端分别启动。
+> **注意**：前端和后端需要在**两个终端**同时运行。
+
+### 运行测试
+
+```bash
+cd trafficmind-agent
+pytest backend/tests/test_sample_request.py -v
+# 预期：27 passed
+```
+
+---
+
+## API 接口速览
+
+### 第一阶段（6 个）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/analyze_event` | 分析交通事件，返回完整研判结果 |
+| GET | `/history?limit=50` | 查询历史记录 |
+| GET | `/event/{event_id}` | 查询单条事件详情 |
+| POST | `/event/{event_id}/status` | 更新事件状态（6 种流转） |
+| GET | `/health` | 健康检查 |
+| GET | `/stats` | 仪表盘聚合统计 |
+
+### 第二阶段新增（5 个）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/similar_cases/{event_id}` | 历史相似案例检索（规则相似度） |
+| GET | `/reports/daily` | 交通事件日报 |
+| GET | `/reports/weekly` | 交通事件周报 |
+| GET | `/alerts/unclosed` | 未闭环事件提醒 |
+| GET | `/stats/high_risk_roads` | 高风险路口 TopN 统计 |
+
+### 前端 Dashboard 面板（对应后端数据）
+
+| 面板 | 数据来源 | 说明 |
+|------|---------|------|
+| 统计卡片 | `/stats` | 总事件数 / 高风险数 / 均分 / 待派单 |
+| 图表区 | `/stats` | 风险饼图 / 类型柱状图 / 趋势折线图 |
+| 事件分析 | `/analyze_event` + `/event/{id}` | 新建事件 + 查看研判结果 |
+| 相似案例 | `/similar_cases/{id}` | 历史相似案例检索 |
+| 未闭环提醒 | `/alerts/unclosed` | 自动刷新未闭环事件 |
+| 高风险路口 | `/stats/high_risk_roads` | 路口 TopN + 管理建议 |
+| 报告生成 | `/reports/daily` + `/reports/weekly` | 日报/周报一键生成 |
+| 事件列表 | `/history` | 可排序、可点击查看详情 |
+| 状态管理 | `/event/{id}/status` | 6 种状态流转 |
 
 ---
 
 ## 接口示例
 
-### 1. 分析交通事件
+### 分析交通事件
 
 ```bash
 curl -X POST http://localhost:8000/analyze_event \
@@ -158,10 +202,8 @@ curl -X POST http://localhost:8000/analyze_event \
   -d '{
     "eventId": "E202606290001",
     "eventType": "congestion",
-    "cameraId": "CAM_001",
     "roadName": "人民路-解放路路口",
     "direction": "东向西",
-    "lane": "直行车道",
     "avgSpeed": 8.5,
     "queueLength": 180,
     "duration": 601,
@@ -169,92 +211,142 @@ curl -X POST http://localhost:8000/analyze_event \
     "weather": "rain",
     "timePeriod": "morning_peak",
     "isMainRoad": true,
-    "nearbySchool": false,
     "nearbyHospital": true,
     "confidence": 0.91
   }'
 ```
 
-### 2. 查询历史记录
+### 更多示例
 
-```bash
-curl http://localhost:8000/history
-```
-
-### 3. 查询事件详情
-
-```bash
-curl http://localhost:8000/event/E202606290001
-```
-
-### 4. 更新事件状态
-
-```bash
-curl -X POST http://localhost:8000/event/E202606290001/status \
-  -H "Content-Type: application/json" \
-  -d '{"status": "处置中"}'
-```
-
-更多示例请见 [docs/api_examples.md](docs/api_examples.md)。
+详见 [docs/api_examples.md](docs/api_examples.md)，包含全部 11 个接口的 curl 示例和响应格式。
 
 ---
 
-## 示例请求 JSON
+## 事件类型与状态
 
-```json
-{
-  "eventId": "E202606290001",
-  "eventType": "congestion",
-  "cameraId": "CAM_001",
-  "roadName": "人民路-解放路路口",
-  "direction": "东向西",
-  "lane": "直行车道",
-  "avgSpeed": 8.5,
-  "queueLength": 180,
-  "duration": 601,
-  "vehicleCount": 96,
-  "weather": "rain",
-  "timePeriod": "morning_peak",
-  "isMainRoad": true,
-  "nearbySchool": false,
-  "nearbyHospital": true,
-  "confidence": 0.91
-}
+**8 种事件类型**：拥堵 / 事故 / 违停 / 逆行 / 行人闯入 / 信号灯异常 / 车辆滞留 / 施工占道
+
+**6 种状态流转**：待研判 → 待派单 → 处置中 → 已处置 → 待复盘 → 已归档
+
+**4 个风险等级**：低风险(0-30) / 中风险(31-60) / 高风险(61-80) / 重大风险(81-100)
+
+---
+
+## 完整演示流程
+
+在 `README.md` 同级目录下打开两个终端，按以下顺序操作：
+
+### 终端 1：启动后端
+
+```bash
+cd backend
+.venv\Scripts\activate
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## 示例返回结果
+看到 `TrafficMind Agent 启动完成` 即就绪。
 
-```json
-{
-  "eventId": "E202606290001",
-  "standardEvent": { "... 标准化事件对象 ..." },
-  "riskScore": 100,
-  "riskLevel": "重大风险",
-  "riskReasons": [
-    "事件类型为「拥堵」，基础风险分 +20",
-    "平均车速 8.5 km/h < 10 km/h，严重缓行，+15",
-    "排队长度 180.0 米 > 150 米，拥堵范围大，+15",
-    "持续 601 秒 > 600 秒，事件未快速消散，+10",
-    "天气为雨，影响通行安全，+10",
-    "当前为早高峰时段，交通压力大，+10",
-    "事发路段为主干道，影响范围广，+10",
-    "事发路段邻近医院，需保障急救通道，+10"
-  ],
-  "matchedRule": "... 拥堵事件完整处置预案 ...",
-  "suggestions": [ "... 5条具体处置建议 ..." ],
-  "dispatchMessage": "... 面向指挥中心的调度指令 ...",
-  "publicMessage": "【注意】人民路-解放路路口东向西方向通行缓慢，请过往车辆提前绕行。",
-  "report": "... 八段式结构化报告 ...",
-  "status": "待派单",
-  "saved": true
-}
+### 终端 2：启动前端
+
+```bash
+cd frontend
+npm install   # 仅首次
+npm run dev
 ```
+
+看到 `Local: http://localhost:5173/` 即就绪。
+
+### 演示步骤
+
+| 步骤 | 操作 | 预期结果 |
+|------|------|---------|
+| 1 | 浏览器打开 `http://localhost:5173` | 看到深色大屏，统计卡片显示数据 |
+| 2 | 点击「新建事件」按钮 | 弹出事件表单 |
+| 3 | 填写表单（或点击预设示例数据），点击「提交分析」 | 弹出分析结果：风险等级、分数、处置建议 |
+| 4 | 关闭弹窗，在「历史相似案例」面板点击「检索」 | 展示 5 个相似案例及相似度百分比 |
+| 5 | 查看「未闭环提醒」面板 | 列出未闭环事件及告警原因 |
+| 6 | 查看「高风险路口 TopN」面板 | 展示重点路口及管理建议 |
+| 7 | 在「报告生成」面板点击「日报」，再点击「周报」 | 分别生成并展示报告全文 |
+| 8 | 在底部「事件列表」中点击某条事件 | 弹出详情弹窗 |
+| 9 | 在详情弹窗中可将状态更新为「处置中」或「已归档」 | 状态即时更新，未闭环提醒相应变化 |
+| 10 | 打开 `http://localhost:8000/docs` 查看 Swagger | 11 个接口全部可用 |
+
+---
+
+## 项目截图说明
+
+| 截图 | 位置 | 内容 |
+|------|------|------|
+| 大屏全貌 | 前端 `localhost:5173` | 统计卡片 + 图表 + 6 个功能面板 |
+| API 文档 | 后端 `localhost:8000/docs` | 11 个接口的 Swagger 页面 |
+| 分析结果 | 前端弹窗 | 风险评分、处置建议、调度话术 |
+| 相似案例 | 前端面板 | 相似度百分比 + 相似原因 |
+| 日报生成 | 前端面板 | 7 段式结构化报告全文 |
+| Swagger 新增接口 | 后端 `/docs` | Phase 2 5 个 GET 接口 |
+
+---
+
+## 适合写进简历的项目描述
+
+### 一句话版本
+
+> 独立设计并实现 TrafficMind Agent — 基于 LangGraph + FastAPI + React 的智慧交通事件研判与闭环处置系统，支持 8 种交通事件类型的自动分析、风险评分、相似案例检索、日报生成和深色大屏可视化。
+
+### 要点版本（适合技能列表）
+
+- 后端使用 **FastAPI + LangGraph** 构建 8 节点工作流流水线
+- 实现**确定性风险评分引擎**（基础分 + 9 项加权规则，上限 100 分）
+- 基于**规则相似度**实现历史案例检索（9 维特征匹配），预留 Chroma/FAISS 向量检索扩展
+- 自动生成**7 段式交通事件日报/周报**，支持 DeepSeek 大模型润色
+- 前端使用 **React 18 + Ant Design 5 + ECharts 5 + Vite**，深色主题指挥中心大屏
+- **27 个 pytest 测试用例**全部通过，覆盖端到端功能验证
+
+### STAR 版本（适合面试详细讲述）
+
+**S (Situation)**：城市交通指挥中心每天面对大量摄像头和算法上报的交通事件，缺乏自动化的分析研判工具。
+
+**T (Task)**：设计并实现一套智能交通事件研判与闭环处置系统，支持事件自动分析、风险评级、预案匹配、报告生成和大屏可视化。
+
+**A (Action)**：
+- 使用 FastAPI 构建 12 个 RESTful API 接口
+- 使用 LangGraph 编排 8 节点确定性工作流（解析→评分→规则→建议→话术→报告→存储→通知）
+- 设计 9 项加权规则的风险评分引擎（基础分 + 动态加分，上限 100 分），保证 100% 可解释
+- 基于规则相似度实现历史案例检索（9 维特征），预留向量数据库扩展接口
+- 本地 Markdown 维护 8 类事件处置预案，无需外部数据库
+- 使用 React + Ant Design + ECharts 构建深色大屏 Dashboard
+- 编写 27 个端到端测试用例，覆盖所有接口的正常和异常场景
+- DeepSeek 大模型作为可选增强，未配置时自动降级为本地模板
+
+**R (Result)**：
+- 11 个 API 接口完整可运行，27 个测试用例全部通过
+- 大屏支持统计概览、事件分析、相似案例检索、未闭环提醒、日报/周报生成
+- 零外部依赖可降级运行，不配任何 API Key 也能使用全部核心功能
+
+---
+
+## 面试讲解话术
+
+### 项目介绍（30 秒版本）
+
+> TrafficMind Agent 是一个智慧交通事件研判系统。摄像头和算法上报交通事件后，系统自动完成事件解析、风险评分、预案匹配，生成调度话术和处置报告。后端用 FastAPI + LangGraph，前端是 React 深色大屏。最大的亮点是风险评分完全由确定性规则驱动，100% 可解释；DeepSeek 大模型只用于润色，不配置也能跑。
+
+### 技术亮点（回答"你做了什么技术选型"）
+
+> 我选 LangGraph 做工作流引擎而不是自己写 if-else，因为 8 个节点职责清晰，每个节点独立 try/except，一个失败不影响后续。风险评分用确定性规则而不是直接调大模型，因为交通场景需要可解释性——每个加分项都能追溯原因。相似案例检索第一阶段用规则相似度（9 维加权），但预留了 vector_based_similarity 接口，第三阶段计划接 Chroma + embedding 做语义检索和 RAG。
+
+### 难点攻克（回答"遇到什么困难"）
+
+> 一是数据库兼容迁移——第二阶段新增了 8 个字段，用户已有数据不能丢。我用 ALTER TABLE + try/except 做增量迁移，旧数据库直接兼容。二是 httpx 0.28 改了传输层 API，原来的 ASGITransport 不兼容同步 Client，我换成了 FastAPI 的 TestClient 统一管理。三是 LLM 降级设计——每个调用 LLM 的地方都要考虑降级，LLM 失败时自动回退到本地模板，保证系统不崩。
+
+### 扩展思考（回答"如果继续做你会加什么"）
+
+> 第三阶段计划三个方向。一是向量检索：引入 Chroma/FAISS + embedding 模型把历史事件文本向量化，做语义级相似案例检索和 RAG，让大模型能基于历史处置经验直接生成建议。二是多 Agent 协同：用 LangGraph 的 SubGraph 机制让拥堵 Agent、事故 Agent、信号 Agent 并行分析，再由协调 Agent 汇总决策。三是信号灯策略模拟：对接 SUMO 仿真，让 Agent 生成的信号配时方案先在仿真中验证再下发。
 
 ---
 
 ## 消息推送配置
 
-在 `.env` 中配置以下变量即可启用高风险事件自动推送（可选，不影响核心功能）：
+在 `.env` 中配置以下变量（可选，不影响核心功能）：
 
 ```ini
 # 企业微信机器人 Webhook
@@ -268,7 +360,6 @@ SMTP_HOST=smtp.example.com
 SMTP_PORT=465
 SMTP_USER=alert@example.com
 SMTP_PASSWORD=your_password
-SMTP_FROM=alert@example.com
 SMTP_TO=dispatch@example.com
 
 # 触发推送的最低风险等级
@@ -277,24 +368,23 @@ HIGH_RISK_THRESHOLD=高风险
 
 ---
 
-## 后续扩展方向
+## 后续计划
 
-### 第二阶段：数据增强与可视化
-- 接入真实摄像头视频流，对接目标检测 / 轨迹追踪算法
-- 前端增强：实时事件地图（Leaflet/Cesium）、风险热力图、处置进度甘特图
-- 对接信号灯控制接口，实现信号配时自动调整
+### 第三阶段：智能检索与协同
 
-### 第三阶段：智能调度与协同
-- 多 Agent 协同：拥堵 Agent + 事故 Agent + 信号 Agent 协同决策
-- 引入强化学习优化信号灯配时和分流策略
+- **向量数据库 + RAG**：引入 Chroma 或 FAISS，实现 `vector_based_similarity()` 接口，将历史事件文本通过 embedding 模型向量化，做语义级相似案例检索。结合 DeepSeek 大模型实现 RAG（检索增强生成），让 Agent 基于历史处置经验直接生成上下文化的处置建议
+- **多 Agent 协同**：基于 LangGraph SubGraph 机制，拥堵 Agent + 事故 Agent + 信号 Agent 并行分析，协调 Agent 汇总决策，处理跨类型复合事件
+- **信号灯策略模拟**：对接 SUMO 交通仿真，Agent 生成的信号配时调整方案先在仿真中验证效果（排队长度、平均延误等指标），确认有效后再推送给人工作为参考
 - 接入公安交管平台、122 接处警系统
 
 ### 第四阶段：预测与预防
+
 - 基于历史数据训练事件预测模型（时空预测）
 - 主动巡检：在高峰来临前预判高风险路段
 - 知识图谱：构建交通事件因果推理图谱
 
 ### 工程化增强
+
 - 引入 Redis 做事件缓存和实时状态
 - PostgreSQL 替代 SQLite 支持高并发
 - Docker 容器化部署 + K8s 编排
