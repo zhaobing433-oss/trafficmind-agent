@@ -202,6 +202,100 @@ async def update_status(event_id: str, body: StatusUpdateRequest):
     }
 
 
+# -------------------- 第二阶段新增接口 --------------------
+
+# 导入新增工具模块
+from backend.tools.similarity_tools import find_similar_cases
+from backend.tools.report_summary_tools import generate_daily_report, generate_weekly_report
+from backend.tools.alert_tools import get_unclosed_events
+from backend.tools.stat_tools import get_high_risk_roads
+
+
+@app.get("/similar_cases/{event_id}", summary="查找历史相似案例")
+async def similar_cases(
+    event_id: str,
+    limit: int = 5,
+    min_score: float = 0.4,
+):
+    """
+    根据事件编号查询历史相似案例。
+
+    参数：
+      - limit: 返回数量上限（默认 5）
+      - min_score: 最低相似度阈值（默认 0.4）
+
+    第一阶段使用规则相似度；第三阶段计划引入 Chroma/FAISS 做语义检索。
+    """
+    result = find_similar_cases(event_id, limit=limit, min_score=min_score)
+    if result.get("error"):
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.get("/reports/daily", summary="生成交通事件日报")
+async def daily_report(date: Optional[str] = None):
+    """
+    生成某一天的交通事件日报。
+
+    参数：
+      - date: 日期，格式 YYYY-MM-DD，默认今天
+    """
+    return generate_daily_report(date)
+
+
+@app.get("/reports/weekly", summary="生成交通事件周报")
+async def weekly_report(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    """
+    生成交通事件周报。
+
+    参数：
+      - start_date: 开始日期，格式 YYYY-MM-DD，默认 7 天前
+      - end_date: 结束日期，格式 YYYY-MM-DD，默认今天
+    """
+    return generate_weekly_report(start_date, end_date)
+
+
+@app.get("/alerts/unclosed", summary="未闭环事件提醒")
+async def unclosed_alerts(
+    hours: int = 24,
+    min_risk: str = "中风险",
+):
+    """
+    查询未完成处置闭环的事件。
+
+    参数：
+      - hours: 查询最近多少小时内的事件（默认 24）
+      - min_risk: 最低风险等级筛选（默认"中风险"）
+    """
+    valid_risks = {"低风险", "中风险", "高风险", "重大风险"}
+    if min_risk not in valid_risks:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效风险等级 '{min_risk}'。有效值: {', '.join(valid_risks)}",
+        )
+    return get_unclosed_events(hours=hours, min_risk=min_risk)
+
+
+@app.get("/stats/high_risk_roads", summary="高风险路口 TopN 统计")
+async def high_risk_roads(
+    limit: int = 10,
+    days: int = 7,
+    min_risk: str = "高风险",
+):
+    """
+    统计高风险事件多发的路口。
+
+    参数：
+      - limit: 返回数量上限（默认 10）
+      - days: 统计最近多少天（默认 7）
+      - min_risk: 最低风险等级筛选（默认"高风险"）
+    """
+    return get_high_risk_roads(limit=limit, days=days, min_risk=min_risk)
+
+
 # -------------------- 健康检查 --------------------
 
 @app.get("/health", summary="健康检查")

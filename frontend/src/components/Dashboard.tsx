@@ -1,8 +1,7 @@
 /**
- * Dashboard — 智慧交通指挥中心大屏主布局
- * CSS Grid 深色主题，单页全屏
+ * Dashboard — TrafficMind Agent 智慧交通指挥中心大屏
+ * 第二阶段扩展：新增相似案例 / 未闭环提醒 / 高风险路口 / 报告生成
  */
-
 import { useState } from 'react';
 import { Spin, Alert } from 'antd';
 import { useDashboardData } from '../hooks/useDashboardData';
@@ -16,6 +15,10 @@ import EventList from './EventList';
 import EventFeed from './EventFeed';
 import EventDetailModal from './EventDetailModal';
 import EventFormModal from './EventFormModal';
+import SimilarCasesPanel from './SimilarCasesPanel';
+import UnclosedAlertsPanel from './UnclosedAlertsPanel';
+import HighRiskRoadsPanel from './HighRiskRoadsPanel';
+import ReportPanel from './ReportPanel';
 
 export default function Dashboard() {
   const { stats, events, loading, error, refresh } = useDashboardData();
@@ -26,6 +29,7 @@ export default function Dashboard() {
   });
   const [detailData, setDetailData] = useState<AnalyzeResult | null>(null);
   const [formModalOpen, setFormModalOpen] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
 
   if (loading && !stats) {
     return (
@@ -70,6 +74,28 @@ export default function Dashboard() {
         <TrendLineChart trend={stats?.dailyTrend || []} />
       </div>
 
+      {/* 第二阶段新增区域：右侧面板 */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: 16,
+        marginBottom: 16,
+      }}>
+        <SimilarCasesPanel currentEventId={selectedEventId} />
+        <UnclosedAlertsPanel />
+      </div>
+
+      {/* 高风险路口 + 报告生成 */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: 16,
+        marginBottom: 16,
+      }}>
+        <HighRiskRoadsPanel />
+        <ReportPanel />
+      </div>
+
       {/* 底部：事件列表 + 动态推送 */}
       <div style={{
         display: 'grid',
@@ -79,6 +105,7 @@ export default function Dashboard() {
         <EventList
           events={events}
           onRowClick={async (event) => {
+            setSelectedEventId(event.eventId);
             setDetailModal({ open: true, event });
             try {
               const { getEventById } = await import('../api');
@@ -103,7 +130,10 @@ export default function Dashboard() {
       <EventFormModal
         open={formModalOpen}
         onClose={() => setFormModalOpen(false)}
-        onSuccess={refresh}
+        onSuccess={(eventId?: string) => {
+          if (eventId) setSelectedEventId(eventId);
+          refresh();
+        }}
       />
     </div>
   );
