@@ -15,6 +15,10 @@ langgraph-checkpoint==2.0.10
 # OpenAI-compatible 客户端（用于调用 DeepSeek）
 openai==1.58.1
 
+# 向量数据库 + RAG（第三阶段）
+chromadb>=0.5.0
+sentence-transformers>=3.0.0
+
 # 测试
 pytest==8.3.4
 httpx==0.28.1

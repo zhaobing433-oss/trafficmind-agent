@@ -255,11 +255,46 @@ pytest backend/tests/test_sample_request.py -v
 ### 测试覆盖
 - 27 个测试用例全部通过（第一阶段 12 + 第二阶段 15）
 
+## 第三阶段（已完成）
+
+### 新增功能
+- [x] ChromaDB 向量数据库 + 本地 sentence-transformers embedding
+- [x] RAG 知识库（规则、报告、经验）+ 语义检索
+- [x] RAG 交通知识库问答（LLM 可选降级模板）
+- [x] 混合相似检索（规则 0.6 + 向量 0.4）
+- [x] 多 Agent 协同研判（4 个子 Agent + ReportAgent）
+- [x] 前端 4 个新面板（RAG、问答、混合检索、多Agent）
+
+### 新增文件
+- [backend/rag/__init__.py](backend/rag/__init__.py)
+- [backend/rag/vector_store.py](backend/rag/vector_store.py) — ChromaDB 封装
+- [backend/rag/embedding_tools.py](backend/rag/embedding_tools.py) — 本地 embedding（哈希降级）
+- [backend/rag/knowledge_indexer.py](backend/rag/knowledge_indexer.py) — 知识索引构建
+- [backend/rag/semantic_retriever.py](backend/rag/semantic_retriever.py) — 语义检索
+- [backend/rag/rag_service.py](backend/rag/rag_service.py) — RAG 问答服务
+- [backend/agent/multi_agent.py](backend/agent/multi_agent.py) — 多 Agent 协同
+- 前端：RagPanel / AskPanel / HybridSimilarityPanel / MultiAgentPanel
+
+### 新增 API
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/rag/rebuild_index` | 重建向量索引 |
+| GET | `/rag/search` | 语义检索 |
+| POST | `/rag/ask` | RAG 问答 |
+| GET | `/rag/status` | 向量库状态 |
+| GET | `/similar_cases_hybrid/{event_id}` | 混合检索 |
+| POST | `/agent/multi_analyze` | 多Agent研判 |
+
+### 新增依赖
+- chromadb>=0.5.0
+- sentence-transformers>=3.0.0
+
+### 测试覆盖
+- 39 个测试用例全部通过（Phase1:12 + Phase2:15 + Phase3:12）
+
 ## 后续计划
 
-### 第三阶段：智能检索与协同
-
-1. **向量数据库 + RAG**
+### 第四阶段：预测与预防
    - 引入 Chroma 或 FAISS 向量数据库
    - 实现 `vector_based_similarity()` — 对历史事件文本做 embedding 后向量化存储
    - 语义级相似案例检索（比规则相似度更准确，能发现不同路段但特征相似的案例）

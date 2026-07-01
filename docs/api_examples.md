@@ -473,3 +473,48 @@ curl "http://localhost:8000/stats/high_risk_roads?limit=5&days=30&min_risk=%E4%B
   ]
 }
 ```
+
+---
+
+## 第三阶段新增接口
+
+### 10. POST /rag/rebuild_index — 重建 RAG 知识库索引
+
+```bash
+curl -X POST http://localhost:8000/rag/rebuild_index
+```
+
+### 11. GET /rag/status — 查看向量库状态
+
+```bash
+curl http://localhost:8000/rag/status
+```
+
+### 12. GET /rag/search — 语义检索交通知识库
+
+```bash
+curl "http://localhost:8000/rag/search?query=%E6%8B%A5%E5%A0%B5%E5%A4%84%E7%BD%AE&limit=5"
+curl "http://localhost:8000/rag/search?query=%E4%BA%8B%E6%95%85%E5%BA%94%E6%80%A5&doc_type=dispatch_experience&limit=3"
+```
+
+### 13. POST /rag/ask — RAG 交通知识库问答
+
+```bash
+curl -X POST http://localhost:8000/rag/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "雨天早高峰主干道持续拥堵应该如何处置？", "limit": 5}'
+```
+
+### 14. GET /similar_cases_hybrid/{event_id} — 混合相似案例检索
+
+```bash
+curl "http://localhost:8000/similar_cases_hybrid/E202606300001?limit=5&min_score=0.3"
+```
+
+### 15. POST /agent/multi_analyze — 多 Agent 协同研判
+
+```bash
+curl -X POST http://localhost:8000/agent/multi_analyze \
+  -H "Content-Type: application/json" \
+  -d '{"eventId":"E99001","eventType":"congestion","roadName":"人民路","direction":"东向西","avgSpeed":5.0,"queueLength":300,"duration":1200,"weather":"rain","timePeriod":"morning_peak","isMainRoad":true}'
+```

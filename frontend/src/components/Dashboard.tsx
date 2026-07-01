@@ -19,6 +19,10 @@ import SimilarCasesPanel from './SimilarCasesPanel';
 import UnclosedAlertsPanel from './UnclosedAlertsPanel';
 import HighRiskRoadsPanel from './HighRiskRoadsPanel';
 import ReportPanel from './ReportPanel';
+import RagPanel from './RagPanel';
+import AskPanel from './AskPanel';
+import HybridSimilarityPanel from './HybridSimilarityPanel';
+import MultiAgentPanel from './MultiAgentPanel';
 
 export default function Dashboard() {
   const { stats, events, loading, error, refresh } = useDashboardData();
@@ -94,6 +98,28 @@ export default function Dashboard() {
       }}>
         <HighRiskRoadsPanel />
         <ReportPanel />
+      </div>
+
+      {/* Phase 3: RAG + 问答 */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: 16,
+        marginBottom: 16,
+      }}>
+        <RagPanel />
+        <AskPanel />
+      </div>
+
+      {/* Phase 3: 混合检索 + 多Agent */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: 16,
+        marginBottom: 16,
+      }}>
+        <HybridSimilarityPanel eventId={selectedEventId} />
+        <MultiAgentPanel />
       </div>
 
       {/* 底部：事件列表 + 动态推送 */}

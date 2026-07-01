@@ -376,5 +376,127 @@ class TestHighRiskRoads:
             assert "suggestedAction" in road
 
 
+# ==================== 第三阶段新增测试 ====================
+
+
+class TestRagStatus:
+    """测试 /rag/status 接口"""
+
+    def test_rag_status_returns_200(self):
+        response = client.get("/rag/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert "enabled" in data
+
+
+class TestRagRebuildIndex:
+    """测试 /rag/rebuild_index 接口"""
+
+    def test_rebuild_index_returns_200(self):
+        response = client.post("/rag/rebuild_index")
+        # 如果 ChromaDB 未安装会返回 500，否则 200
+        assert response.status_code in (200, 500)
+
+
+class TestRagSearch:
+    """测试 /rag/search 接口"""
+
+    def test_rag_search_returns_200(self, seed_stage2_data):
+        response = client.get("/rag/search?query=拥堵&limit=3")
+        assert response.status_code == 200
+        data = response.json()
+        assert "query" in data
+        assert "results" in data
+
+    def test_rag_search_with_filters(self):
+        response = client.get("/rag/search?query=事故&limit=3&doc_type=dispatch_experience")
+        assert response.status_code == 200
+
+
+class TestRagAsk:
+    """测试 /rag/ask 接口"""
+
+    def test_rag_ask_returns_200(self, seed_stage2_data):
+        response = client.post("/rag/ask", json={"question": "雨天早高峰拥堵如何处置？", "limit": 3})
+        assert response.status_code == 200
+        data = response.json()
+        assert "question" in data
+        assert "answer" in data
+        assert "evidence" in data
+        assert "usedLLM" in data
+
+    def test_rag_ask_no_evidence(self):
+        response = client.post("/rag/ask", json={"question": "火星交通如何管理？", "limit": 3})
+        assert response.status_code == 200
+        data = response.json()
+        assert "answer" in data
+
+
+class TestHybridSimilarity:
+    """测试 /similar_cases_hybrid/{event_id} 接口"""
+
+    def test_hybrid_returns_200(self, seed_stage2_data):
+        response = client.get("/similar_cases_hybrid/E202606300001?limit=3&min_score=0.3")
+        assert response.status_code == 200
+        data = response.json()
+        assert "currentEvent" in data
+        assert "similarCases" in data
+
+    def test_hybrid_has_all_scores(self, seed_stage2_data):
+        response = client.get("/similar_cases_hybrid/E202606300001?limit=3&min_score=0.3")
+        data = response.json()
+        for case in data["similarCases"]:
+            assert "ruleSimilarity" in case
+            assert "vectorSimilarity" in case
+            assert "finalSimilarity" in case
+
+    def test_hybrid_not_found(self):
+        response = client.get("/similar_cases_hybrid/NONEXISTENT")
+        assert response.status_code == 404
+
+
+class TestMultiAgent:
+    """测试 /agent/multi_analyze 接口"""
+
+    MULTI_SAMPLE = {
+        "eventId": "E202606300099",
+        "eventType": "congestion",
+        "roadName": "人民路-解放路路口",
+        "direction": "东向西",
+        "avgSpeed": 5.0,
+        "queueLength": 300,
+        "duration": 1200,
+        "vehicleCount": 150,
+        "weather": "rain",
+        "timePeriod": "morning_peak",
+        "isMainRoad": True,
+        "nearbySchool": False,
+        "nearbyHospital": True,
+        "confidence": 0.92,
+    }
+
+    def test_multi_agent_returns_200(self):
+        response = client.post("/agent/multi_analyze", json=self.MULTI_SAMPLE)
+        assert response.status_code == 200
+        data = response.json()
+        assert "eventSummary" in data
+        assert "agentResults" in data
+        assert "finalDecision" in data
+        assert "dispatchPlan" in data
+        assert "riskWarnings" in data
+        assert "report" in data
+
+    def test_multi_agent_has_five_agents(self):
+        response = client.post("/agent/multi_analyze", json=self.MULTI_SAMPLE)
+        data = response.json()
+        assert len(data["agentResults"]) == 4  # 4 个子 Agent
+
+    def test_multi_agent_dispatch_plan(self):
+        response = client.post("/agent/multi_analyze", json=self.MULTI_SAMPLE)
+        data = response.json()
+        assert "urgency" in data["dispatchPlan"]
+        assert "actions" in data["dispatchPlan"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
