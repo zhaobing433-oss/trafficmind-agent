@@ -176,6 +176,17 @@ pytest backend/tests/test_sample_request.py -v
 | GET | `/alerts/unclosed` | 未闭环事件提醒 |
 | GET | `/stats/high_risk_roads` | 高风险路口 TopN 统计 |
 
+### 第三阶段新增（6 个）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/rag/rebuild_index` | 重建 RAG 知识库向量索引 |
+| GET | `/rag/search` | 语义检索交通知识库 |
+| POST | `/rag/ask` | RAG 交通知识库问答 |
+| GET | `/rag/status` | 查看向量库状态 |
+| GET | `/similar_cases_hybrid/{event_id}` | 混合相似案例检索（规则+向量） |
+| POST | `/agent/multi_analyze` | 多 Agent 协同研判 |
+
 ### 前端 Dashboard 面板（对应后端数据）
 
 | 面板 | 数据来源 | 说明 |
@@ -368,9 +379,69 @@ HIGH_RISK_THRESHOLD=高风险
 
 ---
 
+## 第三阶段新增功能
+
+### 1. RAG 知识库 + 向量检索
+
+引入 ChromaDB 作为本地向量数据库，将交通规则、历史事件报告、日报周报、调度经验等文本向量化存储，支持语义检索和 RAG 问答。
+
+**三种检索方式对比：**
+
+| 方式 | 原理 | 优点 | 缺点 |
+|------|------|------|------|
+| 规则检索 | 字段匹配（9维加权） | 可解释、稳定 | 不同路段但相似特征的案例检索不到 |
+| 向量检索 | embedding 语义相似度 | 能发现语义相似案例 | 可解释性弱 |
+| 混合检索 | 规则(0.6) + 向量(0.4) | 兼顾稳定性和召回 | 计算开销稍大 |
+
+### 2. 交通知识库问答
+
+基于 RAG 架构，用户可以用自然语言提问交通管理问题，系统检索相关知识后生成回答（含证据来源）。
+
+### 3. 多 Agent 协同研判
+
+5 个子 Agent（拥堵/事故/信号/调度/报告）独立分析同一事件，综合研判给出 finalDecision。
+
+### 4. 向量库索引重建
+
+```bash
+# 重建索引（将规则、历史报告、经验写入向量库）
+curl -X POST http://localhost:8000/rag/rebuild_index
+
+# 查看向量库状态
+curl http://localhost:8000/rag/status
+```
+
+### 5. 前端新增面板
+
+- **RAG 知识库面板** — 向量库状态 + 语义检索
+- **交通知识问答面板** — 自然语言提问 + RAG 回答
+- **混合相似检索面板** — 规则相似度 + 向量相似度 + 最终相似度
+- **多 Agent 协同面板** — 各子 Agent 研判结果 + dispatchPlan
+
+---
+
+## 第三阶段演示流程
+
+1. 启动后端：`cd backend && uvicorn app:app --reload --host 0.0.0.0 --port 8000`
+2. 启动前端：`cd frontend && npm run dev`
+3. 重建 RAG 索引：`curl -X POST http://localhost:8000/rag/rebuild_index`
+4. 前端「RAG 知识库」面板搜索"拥堵处置"查看检索结果
+5. 前端「交通知识问答」输入"雨天早高峰主干道拥堵如何处置？"查看回答
+6. 分析一个事件后，在「混合相似检索」面板查看规则+向量双路结果
+7. 在「多 Agent 协同研判」面板点击运行，查看各 Agent 判断
+8. 查看 Swagger：`http://localhost:8000/docs` 确认 17 个接口全部可用
+
+---
+
 ## 后续计划
 
-### 第三阶段：智能检索与协同
+### 第三阶段：智能检索与协同（当前阶段）
+- [x] ChromaDB 向量数据库
+- [x] RAG 知识库问答
+- [x] 混合相似检索（规则+向量）
+- [x] 多 Agent 协同研判框架
+
+### 第四阶段：预测与预防
 
 - **向量数据库 + RAG**：引入 Chroma 或 FAISS，实现 `vector_based_similarity()` 接口，将历史事件文本通过 embedding 模型向量化，做语义级相似案例检索。结合 DeepSeek 大模型实现 RAG（检索增强生成），让 Agent 基于历史处置经验直接生成上下文化的处置建议
 - **多 Agent 协同**：基于 LangGraph SubGraph 机制，拥堵 Agent + 事故 Agent + 信号 Agent 并行分析，协调 Agent 汇总决策，处理跨类型复合事件

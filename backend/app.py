@@ -205,10 +205,15 @@ async def update_status(event_id: str, body: StatusUpdateRequest):
 # -------------------- 第二阶段新增接口 --------------------
 
 # 导入新增工具模块
-from backend.tools.similarity_tools import find_similar_cases
+from backend.tools.similarity_tools import find_similar_cases, hybrid_similarity
 from backend.tools.report_summary_tools import generate_daily_report, generate_weekly_report
 from backend.tools.alert_tools import get_unclosed_events
 from backend.tools.stat_tools import get_high_risk_roads
+from backend.rag.knowledge_indexer import build_knowledge_index
+from backend.rag.semantic_retriever import semantic_search
+from backend.rag.rag_service import rag_ask
+from backend.rag.vector_store import get_collection_stats
+from backend.agent.multi_agent import multi_agent_analyze
 
 
 @app.get("/similar_cases/{event_id}", summary="查找历史相似案例")
@@ -294,6 +299,122 @@ async def high_risk_roads(
       - min_risk: 最低风险等级筛选（默认"高风险"）
     """
     return get_high_risk_roads(limit=limit, days=days, min_risk=min_risk)
+
+
+# -------------------- 第三阶段新增接口 --------------------
+
+
+@app.post("/rag/rebuild_index", summary="重建 RAG 知识库索引")
+async def rebuild_rag_index():
+    """
+    重建向量索引，将交通规则、历史报告、日报周报、调度经验等文本向量化写入 ChromaDB。
+    """
+    result = build_knowledge_index()
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("message", "索引构建失败"))
+    return result
+
+
+@app.get("/rag/search", summary="语义检索交通知识库")
+async def rag_search(
+    query: str,
+    limit: int = 5,
+    doc_type: Optional[str] = None,
+    event_type: Optional[str] = None,
+    road_name: Optional[str] = None,
+    risk_level: Optional[str] = None,
+):
+    """
+    语义检索交通知识库。
+
+    参数：
+      - query: 检索查询文本（必填）
+      - limit: 返回数量（默认5）
+      - doc_type: 文档类型过滤（rule/event_report/daily_report/weekly_report/dispatch_experience）
+      - event_type: 事件类型过滤
+      - road_name: 路段名过滤
+      - risk_level: 风险等级过滤
+    """
+    return semantic_search(
+        query=query,
+        limit=limit,
+        doc_type=doc_type,
+        event_type=event_type,
+        road_name=road_name,
+        risk_level=risk_level,
+    )
+
+
+class AskRequest(BaseModel):
+    """RAG 问答请求体"""
+    question: str
+    limit: Optional[int] = 5
+
+
+@app.post("/rag/ask", summary="RAG 交通知识库问答")
+async def rag_ask_endpoint(body: AskRequest):
+    """
+    基于交通知识库进行 RAG 问答。检索相关规则、案例、经验后生成回答。
+
+    请求体：
+      - question: 用户问题
+      - limit: 检索文档数（默认5）
+    """
+    return rag_ask(body.question, body.limit or 5)
+
+
+@app.get("/rag/status", summary="查看向量库状态")
+async def rag_status():
+    """查看 ChromaDB 向量库状态。"""
+    return get_collection_stats()
+
+
+@app.get("/similar_cases_hybrid/{event_id}", summary="混合相似案例检索")
+async def similar_cases_hybrid(
+    event_id: str,
+    limit: int = 5,
+    min_score: float = 0.4,
+):
+    """
+    混合相似度检索：规则相似度（权重 0.6）+ 向量语义相似度（权重 0.4）。
+
+    如果向量库未构建，自动降级为纯规则相似度。
+    """
+    result = hybrid_similarity(event_id, limit=limit, min_score=min_score)
+    if result.get("error") or result.get("currentEvent") is None:
+        raise HTTPException(status_code=404, detail=result.get("error", f"事件 {event_id} 不存在"))
+    return result
+
+
+class MultiAgentRequest(BaseModel):
+    """多 Agent 协同研判请求体（与 /analyze_event 相同的字段结构）"""
+    eventId: str
+    eventType: str
+    roadName: str
+    direction: Optional[str] = ""
+    avgSpeed: float
+    queueLength: float
+    duration: float
+    vehicleCount: Optional[int] = 0
+    weather: Optional[str] = "clear"
+    timePeriod: Optional[str] = "off_peak"
+    isMainRoad: Optional[bool] = False
+    nearbySchool: Optional[bool] = False
+    nearbyHospital: Optional[bool] = False
+    confidence: Optional[float] = 0.9
+
+    model_config = ConfigDict(extra="allow")
+
+
+@app.post("/agent/multi_analyze", summary="多 Agent 协同研判")
+async def multi_agent_analyze_endpoint(body: MultiAgentRequest):
+    """
+    多 Agent 协同研判：拥堵Agent + 事故Agent + 信号Agent + 调度Agent + 报告Agent。
+
+    返回各子 Agent 的独立分析结果和综合研判结论。
+    不替代 /analyze_event，而是作为增强版接口。
+    """
+    return multi_agent_analyze(body.model_dump())
 
 
 # -------------------- 健康检查 --------------------
