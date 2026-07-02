@@ -377,6 +377,37 @@ HIGH_RISK_THRESHOLD=高风险
 - **信号灯策略模拟**：对接 SUMO 交通仿真，Agent 生成的信号配时调整方案先在仿真中验证效果（排队长度、平均延误等指标），确认有效后再推送给人工作为参考
 - 接入公安交管平台、122 接处警系统
 
+---
+
+## 第四阶段新增功能
+
+### 受控 ReAct 诊断 Agent (`POST /agent/react_diagnose`)
+
+仅调用只读工具（白名单），不可修改状态/派单/通知。每步输出 thought/action/observation，所有结论引用 evidence。LLM 不可用时规则模板降级。
+
+### 动态 Agent 路由 (`POST /agent/routed_analyze`)
+
+根据事件类型、风险等级、天气/路段特征动态选择参与研判的 Agent，跳过不相关的 Agent。
+
+### 冲突检测与融合
+
+自动检测 Agent 建议冲突（如信号优化 vs 急救通道、分流 vs 封控），生成融合方案。
+
+### 事件驱动链式协同
+
+规则触发式链式调用——"如果 CongestionAgent 发现 queueLength>200 且 avgSpeed<10，则触发 SignalAgent"。
+
+### 前端 Stage4 面板
+
+ReAct 诊断 + 动态路由协同研判 + 冲突展示 + 事件链展示。
+
+**新增接口：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/agent/react_diagnose` | 受控 ReAct 诊断 |
+| POST | `/agent/routed_analyze` | 动态路由协同研判 |
+
 ### 第四阶段：预测与预防
 
 - 基于历史数据训练事件预测模型（时空预测）

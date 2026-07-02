@@ -205,10 +205,21 @@ async def update_status(event_id: str, body: StatusUpdateRequest):
 # -------------------- 第二阶段新增接口 --------------------
 
 # 导入新增工具模块
-from backend.tools.similarity_tools import find_similar_cases
+from backend.tools.similarity_tools import find_similar_cases, hybrid_similarity
 from backend.tools.report_summary_tools import generate_daily_report, generate_weekly_report
 from backend.tools.alert_tools import get_unclosed_events
 from backend.tools.stat_tools import get_high_risk_roads
+# Phase 3
+from backend.rag.knowledge_indexer import build_knowledge_index
+from backend.rag.semantic_retriever import semantic_search
+from backend.rag.rag_service import rag_ask
+from backend.rag.vector_store import get_collection_stats
+# Phase 4
+from backend.agent.react_agent import controlled_react_diagnose
+from backend.agent.router import route_agents
+from backend.agent.conflict_resolver import detect_conflicts, resolve_conflicts
+from backend.agent.event_chain import build_event_chain
+from backend.agent.multi_agent import multi_agent_analyze, CongestionAgent, AccidentAgent, SignalAgent, DispatchAgent
 
 
 @app.get("/similar_cases/{event_id}", summary="查找历史相似案例")
@@ -294,6 +305,183 @@ async def high_risk_roads(
       - min_risk: 最低风险等级筛选（默认"高风险"）
     """
     return get_high_risk_roads(limit=limit, days=days, min_risk=min_risk)
+
+
+# -------------------- 第三阶段接口 --------------------
+
+@app.post("/rag/rebuild_index", summary="重建 RAG 知识库索引")
+async def rebuild_rag_index():
+    result = build_knowledge_index()
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("message", "索引构建失败"))
+    return result
+
+
+@app.get("/rag/search", summary="语义检索交通知识库")
+async def rag_search(query: str, limit: int = 5, doc_type: Optional[str] = None,
+                     event_type: Optional[str] = None, road_name: Optional[str] = None,
+                     risk_level: Optional[str] = None):
+    return semantic_search(query=query, limit=limit, doc_type=doc_type,
+                           event_type=event_type, road_name=road_name, risk_level=risk_level)
+
+
+class AskRequest(BaseModel):
+    question: str
+    limit: Optional[int] = 5
+
+
+@app.post("/rag/ask", summary="RAG 交通知识库问答")
+async def rag_ask_endpoint(body: AskRequest):
+    return rag_ask(body.question, body.limit or 5)
+
+
+@app.get("/rag/status", summary="查看向量库状态")
+async def rag_status():
+    return get_collection_stats()
+
+
+@app.get("/similar_cases_hybrid/{event_id}", summary="混合相似案例检索")
+async def similar_cases_hybrid(event_id: str, limit: int = 5, min_score: float = 0.4):
+    result = hybrid_similarity(event_id, limit=limit, min_score=min_score)
+    if result.get("error") or result.get("currentEvent") is None:
+        raise HTTPException(status_code=404, detail=result.get("error", f"事件 {event_id} 不存在"))
+    return result
+
+
+class MultiAgentRequest(BaseModel):
+    eventId: str; eventType: str; roadName: str
+    direction: Optional[str] = ""; avgSpeed: float; queueLength: float; duration: float
+    vehicleCount: Optional[int] = 0; weather: Optional[str] = "clear"
+    timePeriod: Optional[str] = "off_peak"; isMainRoad: Optional[bool] = False
+    nearbySchool: Optional[bool] = False; nearbyHospital: Optional[bool] = False
+    confidence: Optional[float] = 0.9
+    model_config = ConfigDict(extra="allow")
+
+
+@app.post("/agent/multi_analyze", summary="多 Agent 协同研判")
+async def multi_agent_analyze_endpoint(body: MultiAgentRequest):
+    return multi_agent_analyze(body.model_dump())
+
+
+# -------------------- 第四阶段接口 --------------------
+
+class ReactDiagnoseRequest(BaseModel):
+    question: str
+    max_steps: Optional[int] = 4
+
+
+@app.post("/agent/react_diagnose", summary="受控 ReAct 诊断分析")
+async def react_diagnose(body: ReactDiagnoseRequest):
+    """
+    受控 ReAct 诊断 Agent。只能调用只读工具（白名单），
+    不允许修改状态、推送通知、改变风险评分。
+    每步输出 thought/action/observation，最多 max_steps 步。
+    """
+    result = controlled_react_diagnose(body.question, body.max_steps or 4)
+    return result
+
+
+class RoutedAnalyzeRequest(BaseModel):
+    eventId: str; eventType: str; roadName: str
+    direction: Optional[str] = ""; avgSpeed: float; queueLength: float; duration: float
+    vehicleCount: Optional[int] = 0; weather: Optional[str] = "clear"
+    timePeriod: Optional[str] = "off_peak"; isMainRoad: Optional[bool] = False
+    nearbySchool: Optional[bool] = False; nearbyHospital: Optional[bool] = False
+    confidence: Optional[float] = 0.9
+    model_config = ConfigDict(extra="allow")
+
+
+@app.post("/agent/routed_analyze", summary="动态路由多 Agent 协同研判（含冲突检测）")
+async def routed_analyze(body: RoutedAnalyzeRequest):
+    """
+    第四阶段增强版多 Agent 协同研判：
+    1. 动态路由选择 Agent
+    2. 各 Agent 独立分析
+    3. 冲突检测与融合
+    4. 事件驱动链式协同
+    """
+    event_info = body.model_dump()
+    event_info["eventTypeCn"] = event_info.get("eventType", "")  # will be normalized later
+
+    # Step 1: 路由
+    routing = route_agents(event_info)
+
+    # Step 2: 执行选中的 Agent
+    agent_map = {
+        "CongestionAgent": CongestionAgent,
+        "AccidentAgent": AccidentAgent,
+        "SignalAgent": SignalAgent,
+        "DispatchAgent": DispatchAgent,
+    }
+
+    # Normalize event info for agents (add defaults for computed fields)
+    from backend.agent.multi_agent import _get_event_info
+    normalized_info = _get_event_info(event_info)
+
+    agent_results = []
+    for name in routing["selectedAgents"]:
+        cls = agent_map.get(name)
+        if cls:
+            result = cls().analyze(normalized_info)
+            agent_results.append(result)
+
+    # Step 3: 事件驱动链
+    chain_result = build_event_chain(normalized_info, agent_results)
+
+    # Step 4: 冲突检测与融合
+    conflicts = detect_conflicts(agent_results)
+    resolution = resolve_conflicts(conflicts, agent_results, normalized_info)
+
+    # Step 5: 风险警告
+    risk_warnings = list(resolution.get("riskWarnings", []))
+    if normalized_info.get("weather", "clear") in ("rain", "snow", "fog"):
+        risk_warnings.append(f"天气预警：{normalized_info['weather']}")
+
+    # Step 6: 报告
+    from datetime import datetime
+    report_lines = [
+        "=" * 50,
+        "   TrafficMind Agent 动态路由协同研判报告",
+        "=" * 50,
+        f"事件类型：{normalized_info.get('eventType', event_info.get('eventType', ''))}",
+        f"路段：{normalized_info['roadName']}",
+        "",
+        f"路由选择：{', '.join(routing['selectedAgents'])}",
+        f"路由理由：{'；'.join(routing['routingReasons'][:3])}",
+        "",
+    ]
+    for r in agent_results:
+        report_lines.append(f"[{r.get('agentName', '')}] urgency={r.get('urgency', '')}")
+        for f in r.get("findings", []):
+            report_lines.append(f"  - {f}")
+    if conflicts:
+        report_lines.append(f"\n检测到 {len(conflicts)} 个建议冲突，已融合处理")
+    report_lines += ["", "=" * 50]
+
+    return {
+        "eventSummary": {
+            "eventType": event_info.get("eventType", ""),
+            "roadName": event_info["roadName"],
+            "analyzedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
+        "selectedAgents": routing["selectedAgents"],
+        "routingReasons": routing["routingReasons"],
+        "agentResults": agent_results,
+        "conflicts": conflicts,
+        "resolvedPlan": resolution.get("resolvedPlan", {}),
+        "finalDecision": resolution.get("finalDecision", ""),
+        "dispatchPlan": {
+            "urgency": resolution.get("resolvedPlan", {}).get("urgency", "low"),
+            "actions": resolution.get("resolvedPlan", {}).get("mergedSuggestions", []),
+        },
+        "riskWarnings": risk_warnings,
+        "report": "\n".join(report_lines),
+        # 链式协同信息
+        "eventChain": {
+            "triggerReasons": chain_result.get("triggerReasons", []),
+            "triggeredAgents": chain_result.get("finalPlan", {}).get("triggeredAgents", []),
+        },
+    }
 
 
 # -------------------- 健康检查 --------------------

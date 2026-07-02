@@ -240,13 +240,86 @@ def vector_based_similarity(event_id: str, limit: int = 5, min_score: float = 0.
         min_score: 最低相似度阈值
 
     Returns:
-        与 find_similar_cases 格式相同
-
-    Raises:
-        NotImplementedError: 当前阶段未实现
+        与 find_similar_cases 格式相同；向量库不可用时返回空列表
     """
-    raise NotImplementedError(
-        "向量相似度检索将在第三阶段实现。"
-        "计划使用 Chroma/FAISS + embedding 模型做语义级历史案例检索和 RAG。"
-        "当前请使用 find_similar_cases() 进行规则相似度检索。"
+    from backend.tools.db_tools import get_event_by_id
+    from backend.rag.vector_store import _CHROMA_AVAILABLE
+    from backend.rag.vector_store import search_similar as chroma_search
+
+    current = get_event_by_id(event_id)
+    if not current:
+        return {"currentEvent": None, "similarCases": [], "error": f"事件 {event_id} 不存在"}
+    if not _CHROMA_AVAILABLE:
+        return {"currentEvent": _build_summary(current), "similarCases": [], "error": "向量库不可用"}
+
+    query_text = (
+        f"事件类型: {current.get('eventTypeCn', current.get('eventType', ''))} "
+        f"路段: {current.get('roadName', '')} "
+        f"风险等级: {current.get('riskLevel', '')} "
+        f"天气: {current.get('weather', 'clear')} "
+        f"时段: {current.get('timePeriod', 'off_peak')}"
     )
+    try:
+        vector_results = chroma_search(query_text, limit=limit * 2, where={"docType": "event_report"})
+    except Exception as e:
+        return {"currentEvent": _build_summary(current), "similarCases": [], "error": str(e)}
+
+    scored = []
+    for r in vector_results:
+        meta = r.get("metadata", {})
+        ev_id = meta.get("eventId", "")
+        if ev_id == event_id: continue
+        score = r.get("score", 0.0)
+        if score >= min_score:
+            scored.append({"eventId": ev_id, "eventType": meta.get("eventType", ""),
+                "roadName": meta.get("roadName", ""), "riskLevel": meta.get("riskLevel", ""),
+                "similarityScore": round(score, 2),
+                "similarityReasons": [r.get("reason", "语义相似")],
+                "matchedEvidence": r.get("content", "")[:300],
+                "report": r.get("content", "")[:500], "createdAt": meta.get("createdAt", ""),})
+    scored.sort(key=lambda x: x["similarityScore"], reverse=True)
+    return {"currentEvent": _build_summary(current), "similarCases": scored[:limit]}
+
+
+def rule_based_similarity(current_event, history_event):
+    """规则相似度（calculate_similarity 别名）。"""
+    return calculate_similarity(current_event, history_event)
+
+
+def hybrid_similarity(event_id: str, limit: int = 5, min_score: float = 0.4) -> Dict[str, Any]:
+    """混合相似度：规则(0.6) + 向量(0.4)。"""
+    rule_result = find_similar_cases(event_id, limit=limit * 2, min_score=0.2)
+    vector_result = vector_based_similarity(event_id, limit=limit * 2, min_score=0.2)
+    current = rule_result.get("currentEvent") or vector_result.get("currentEvent")
+    combined: Dict[str, Dict[str, Any]] = {}
+    for case in rule_result.get("similarCases", []):
+        eid = case["eventId"]
+        combined[eid] = {"eventId": eid, "eventType": case.get("eventType", ""),
+            "roadName": case.get("roadName", ""), "riskLevel": case.get("riskLevel", ""),
+            "ruleSimilarity": case.get("similarityScore", 0.0), "vectorSimilarity": 0.0,
+            "finalSimilarity": case.get("similarityScore", 0.0) * 0.6,
+            "similarityReasons": case.get("similarityReasons", []),
+            "matchedEvidence": "", "report": case.get("report", ""), "createdAt": case.get("createdAt", ""),}
+    for case in vector_result.get("similarCases", []):
+        eid = case["eventId"]
+        if eid in combined:
+            combined[eid]["vectorSimilarity"] = case.get("similarityScore", 0.0)
+            combined[eid]["finalSimilarity"] = round(combined[eid]["ruleSimilarity"] * 0.6 + case.get("similarityScore", 0.0) * 0.4, 2)
+            if case.get("matchedEvidence"): combined[eid]["matchedEvidence"] = case["matchedEvidence"]
+        else:
+            combined[eid] = {"eventId": eid, "eventType": case.get("eventType", ""),
+                "roadName": case.get("roadName", ""), "riskLevel": case.get("riskLevel", ""),
+                "ruleSimilarity": 0.0, "vectorSimilarity": case.get("similarityScore", 0.0),
+                "finalSimilarity": case.get("similarityScore", 0.0) * 0.4,
+                "similarityReasons": case.get("similarityReasons", []),
+                "matchedEvidence": case.get("matchedEvidence", ""),
+                "report": case.get("report", ""), "createdAt": case.get("createdAt", ""),}
+    results = sorted(combined.values(), key=lambda x: x["finalSimilarity"], reverse=True)
+    return {"currentEvent": current, "similarCases": [r for r in results if r["finalSimilarity"] >= min_score][:limit]}
+
+
+def _build_summary(event):
+    return {"eventId": event.get("eventId", ""), "eventType": event.get("eventTypeCn", event.get("eventType", "")),
+            "roadName": event.get("roadName", ""), "direction": event.get("direction", ""),
+            "riskScore": event.get("riskScore", 0), "riskLevel": event.get("riskLevel", ""),
+            "status": event.get("status", ""), "createdAt": event.get("createdAt", ""),}

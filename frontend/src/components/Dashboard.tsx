@@ -19,6 +19,7 @@ import SimilarCasesPanel from './SimilarCasesPanel';
 import UnclosedAlertsPanel from './UnclosedAlertsPanel';
 import HighRiskRoadsPanel from './HighRiskRoadsPanel';
 import ReportPanel from './ReportPanel';
+import Stage4Panel from './Stage4Panel';
 
 export default function Dashboard() {
   const { stats, events, loading, error, refresh } = useDashboardData();
@@ -94,6 +95,11 @@ export default function Dashboard() {
       }}>
         <HighRiskRoadsPanel />
         <ReportPanel />
+      </div>
+
+      {/* Phase 4: 可控Agent协同 */}
+      <div style={{ marginBottom: 16 }}>
+        <Stage4Panel />
       </div>
 
       {/* 底部：事件列表 + 动态推送 */}

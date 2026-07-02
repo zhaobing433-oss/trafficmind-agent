@@ -376,5 +376,72 @@ class TestHighRiskRoads:
             assert "suggestedAction" in road
 
 
+# ==================== Phase 3 + 4 测试 ====================
+
+
+class TestRagEndpoints:
+    def test_rag_status(self):
+        r = client.get("/rag/status"); assert r.status_code == 200
+        assert "enabled" in r.json()
+    def test_rebuild_index(self):
+        r = client.post("/rag/rebuild_index"); assert r.status_code in (200, 500)
+    def test_rag_search(self, seed_stage2_data):
+        r = client.get("/rag/search?query=%E6%8B%A5%E5%A0%B5&limit=3")
+        assert r.status_code == 200; assert "results" in r.json()
+    def test_rag_ask(self, seed_stage2_data):
+        r = client.post("/rag/ask", json={"question": "雨天早高峰拥堵如何处置？", "limit": 3})
+        assert r.status_code == 200; assert "answer" in r.json()
+    def test_hybrid_similarity(self, seed_stage2_data):
+        r = client.get("/similar_cases_hybrid/E202606300001?limit=3&min_score=0.3")
+        assert r.status_code == 200
+        for c in r.json().get("similarCases", []):
+            assert "ruleSimilarity" in c; assert "vectorSimilarity" in c; assert "finalSimilarity" in c
+    def test_multi_agent(self):
+        body = {"eventId":"E99901","eventType":"congestion","roadName":"t","avgSpeed":8.5,"queueLength":180,"duration":601,"weather":"rain","timePeriod":"morning_peak"}
+        r = client.post("/agent/multi_analyze", json=body)
+        assert r.status_code == 200; d = r.json()
+        assert "agentResults" in d; assert "finalDecision" in d; assert "dispatchPlan" in d
+
+
+class TestReactDiagnose:
+    def test_react_returns_200(self):
+        r = client.post("/agent/react_diagnose", json={"question": "最近高风险事件多吗？", "max_steps": 3})
+        assert r.status_code == 200; d = r.json()
+        assert "question" in d; assert "steps" in d; assert "finalAnswer" in d; assert "usedLLM" in d
+    def test_react_has_tool_calls(self):
+        r = client.post("/agent/react_diagnose", json={"question": "人民路为什么高风险事件多？", "max_steps": 3})
+        d = r.json()
+        assert len(d.get("toolCalls", [])) > 0
+        forbidden = {"update_event_status", "send_notification", "delete_event", "modify_risk_score", "analyze_event"}
+        for tc in d.get("toolCalls", []):
+            assert tc["tool"] not in forbidden
+    def test_react_no_api_key(self):
+        r = client.post("/agent/react_diagnose", json={"question": "统计当前事件数量", "max_steps": 2})
+        assert r.status_code == 200; assert len(r.json().get("finalAnswer", "")) > 0
+
+
+class TestRoutedAnalyze:
+    S = {"eventId":"E99902","eventType":"congestion","roadName":"人民路","direction":"东向西","avgSpeed":5.0,"queueLength":300,"duration":1200,"weather":"rain","timePeriod":"morning_peak","isMainRoad":True,"nearbyHospital":True}
+    def test_routed_returns_200(self):
+        r = client.post("/agent/routed_analyze", json=self.S)
+        assert r.status_code == 200; d = r.json()
+        for k in ["selectedAgents","routingReasons","agentResults","conflicts","resolvedPlan","finalDecision","dispatchPlan","report"]:
+            assert k in d, f"missing {k}"
+    def test_routed_has_routing(self):
+        d = client.post("/agent/routed_analyze", json=self.S).json()
+        assert len(d["selectedAgents"]) >= 2; assert len(d["routingReasons"]) >= 1
+    def test_routed_congestion_routing(self):
+        d = client.post("/agent/routed_analyze", json=self.S).json()
+        assert "CongestionAgent" in d["selectedAgents"]
+        assert "DispatchAgent" in d["selectedAgents"]
+    def test_routed_conflict_detection(self):
+        body = {**self.S, "eventType":"accident", "nearbyHospital":True, "nearbySchool":True}
+        d = client.post("/agent/routed_analyze", json=body).json()
+        assert "conflicts" in d; assert isinstance(d["conflicts"], list)
+    def test_old_multi_analyze_still_works(self):
+        r = client.post("/agent/multi_analyze", json=self.S)
+        assert r.status_code == 200
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
