@@ -10,6 +10,7 @@ TrafficMind Agent - FastAPI 主应用
 
 import sys
 import os
+from datetime import datetime
 from contextlib import asynccontextmanager
 
 # 确保 backend 的父目录在 sys.path 中，以便 `from backend.xxx` 可正常工作
@@ -220,6 +221,13 @@ from backend.agent.router import route_agents
 from backend.agent.conflict_resolver import detect_conflicts, resolve_conflicts
 from backend.agent.event_chain import build_event_chain
 from backend.agent.multi_agent import multi_agent_analyze, CongestionAgent, AccidentAgent, SignalAgent, DispatchAgent
+from backend.chat.chat_db import (
+    create_session, list_sessions, get_session, delete_session,
+    add_message, get_session_messages, get_memory_summary as get_chat_memory_summary,
+)
+from backend.chat.memory_manager import build_context_for_llm, update_memory_summary
+from backend.rag.grounded_answer import generate_grounded_answer
+from backend.rag.semantic_retriever import semantic_search
 
 
 @app.get("/similar_cases/{event_id}", summary="查找历史相似案例")
@@ -481,6 +489,104 @@ async def routed_analyze(body: RoutedAnalyzeRequest):
             "triggerReasons": chain_result.get("triggerReasons", []),
             "triggeredAgents": chain_result.get("finalPlan", {}).get("triggeredAgents", []),
         },
+    }
+
+
+# -------------------- 第六阶段：Chat 会话 API --------------------
+
+@app.post("/chat/sessions", summary="创建新会话")
+async def create_chat_session(body: Dict[str, Any] = {"mode": "react"}):
+    sid = "sess_" + datetime.now().strftime("%Y%m%d%H%M%S") + "_" + str(int(datetime.now().timestamp() * 1000) % 100000)
+    return create_session(sid, body.get("mode", "react"))
+
+
+@app.get("/chat/sessions", summary="获取最近会话列表")
+async def list_chat_sessions(limit: int = 30):
+    return {"sessions": list_sessions(limit)}
+
+
+@app.get("/chat/sessions/{session_id}", summary="获取会话详情")
+async def get_chat_session(session_id: str):
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    messages = get_session_messages(session_id)
+    mem = get_chat_memory_summary(session_id) or {}
+    return {"session": session, "messages": messages, "memorySummary": mem}
+
+
+@app.delete("/chat/sessions/{session_id}", summary="删除会话")
+async def delete_chat_session(session_id: str):
+    ok = delete_session(session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"success": True, "sessionId": session_id}
+
+
+class ChatMessageRequest(BaseModel):
+    content: str
+    mode: Optional[str] = "react"
+
+
+@app.post("/chat/sessions/{session_id}/messages", summary="发送消息并获取回答")
+async def send_chat_message(session_id: str, body: ChatMessageRequest):
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    q = body.content.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="消息内容不能为空")
+    mode = body.mode or "react"
+
+    # 1. Save user message
+    user_msg_id = "um_" + str(int(datetime.now().timestamp() * 1000))
+    add_message(user_msg_id, session_id, "user", q, mode)
+
+    # 2. Build context from memory
+    memory_ctx = ""
+    try:
+        memory_ctx = build_context_for_llm(session_id, q)
+    except Exception:
+        pass
+
+    # 3. RAG retrieval + grounded answer
+    rag_results = semantic_search(q, limit=10).get("results", [])
+    ga = generate_grounded_answer(q, rag_results, memory_ctx, mode)
+
+    # 4. Save assistant message
+    asst_msg_id = "am_" + str(int(datetime.now().timestamp() * 1000))
+    result_summary = {
+        "confidence": ga["confidence"],
+        "usedLLM": ga.get("usedLLM", False),
+        "abstained": ga.get("abstained", False),
+        "evidenceCount": len(ga.get("evidence", [])),
+    }
+    add_message(asst_msg_id, session_id, "assistant", ga["answer"], mode, result_summary)
+
+    # 5. Update title if first message
+    if session.get("title") == "新对话":
+        from backend.chat.chat_db import update_session_title
+        update_session_title(session_id, q[:20])
+
+    # 6. Update memory summary
+    try:
+        update_memory_summary(session_id)
+    except Exception:
+        pass
+
+    return {
+        "sessionId": session_id,
+        "userMessage": {"id": user_msg_id, "role": "user", "content": q, "mode": mode},
+        "assistantMessage": {
+            "id": asst_msg_id, "role": "assistant", "content": ga["answer"],
+            "mode": mode, "confidence": ga["confidence"],
+            "abstained": ga.get("abstained", False), "usedLLM": ga.get("usedLLM", False),
+        },
+        "evidence": ga.get("evidence", []),
+        "confidence": ga["confidence"],
+        "abstained": ga.get("abstained", False),
+        "warnings": ga.get("warnings", []),
     }
 
 

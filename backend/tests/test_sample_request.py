@@ -443,5 +443,123 @@ class TestRoutedAnalyze:
         assert r.status_code == 200
 
 
+# ==================== Phase 6 测试 ====================
+
+
+class TestChatSessions:
+    """Chat 会话 CRUD"""
+    sid: str = ""
+
+    def test_create_session(self):
+        r = client.post("/chat/sessions", json={"mode": "react"})
+        assert r.status_code == 200
+        d = r.json()
+        assert "sessionId" in d
+        TestChatSessions.sid = d["sessionId"]
+
+    def test_list_sessions(self):
+        r = client.get("/chat/sessions")
+        assert r.status_code == 200
+        assert len(r.json()["sessions"]) >= 1
+
+    def test_send_message(self):
+        assert TestChatSessions.sid, "No session created"
+        r = client.post(f"/chat/sessions/{TestChatSessions.sid}/messages",
+                        json={"content": "雨天早高峰主干道拥堵如何处置？", "mode": "react"})
+        assert r.status_code == 200
+        d = r.json()
+        assert "sessionId" in d
+        assert "userMessage" in d
+        assert "assistantMessage" in d
+        assert "abstained" in d
+        assert "evidence" in d
+
+    def test_get_session_detail(self):
+        assert TestChatSessions.sid, "No session created"
+        r = client.get(f"/chat/sessions/{TestChatSessions.sid}")
+        assert r.status_code == 200
+        d = r.json()
+        assert "session" in d
+        assert "messages" in d
+        assert len(d["messages"]) >= 2  # user + assistant
+
+    def test_delete_session(self):
+        assert TestChatSessions.sid, "No session created"
+        r = client.delete(f"/chat/sessions/{TestChatSessions.sid}")
+        assert r.status_code == 200
+        assert r.json()["success"] is True
+
+
+class TestRagGrounded:
+    """RAG 可信回答：有证据 / 无证据"""
+
+    def test_with_evidence(self):
+        r = client.post("/chat/sessions", json={"mode": "rag"})
+        sid = r.json()["sessionId"]
+        r = client.post(f"/chat/sessions/{sid}/messages",
+                        json={"content": "雨天早高峰主干道拥堵应该怎么处置？", "mode": "rag"})
+        d = r.json()
+        assert d["abstained"] is False, "应有证据，不应拒答"
+        assert len(d.get("evidence", [])) > 0, "应有检索证据"
+        client.delete(f"/chat/sessions/{sid}")
+
+    def test_without_evidence(self):
+        r = client.post("/chat/sessions", json={"mode": "rag"})
+        sid = r.json()["sessionId"]
+        r = client.post(f"/chat/sessions/{sid}/messages",
+                        json={"content": "火星基地交通信号灯如何优化？", "mode": "rag"})
+        d = r.json()
+        # May abstain OR provide low-confidence answer
+        assert "abstained" in d
+        assert "evidence" in d
+        client.delete(f"/chat/sessions/{sid}")
+
+    def test_policy_threshold(self):
+        """retrieval_policy: empty results → abstain"""
+        from backend.rag.retrieval_policy import apply_retrieval_threshold
+        r = apply_retrieval_threshold([])
+        assert r["abstain"] is True
+        assert r["level"] == "none"
+
+        # low score
+        r = apply_retrieval_threshold([{"score": 0.20}])
+        assert r["abstain"] is True
+
+        # high score
+        r = apply_retrieval_threshold([{"score": 0.80}])
+        assert r["abstain"] is False
+        assert r["level"] == "high"
+
+
+class TestMemorySummary:
+    """上下文摘要"""
+
+    def test_long_session_summary(self):
+        r = client.post("/chat/sessions", json={"mode": "react"})
+        sid = r.json()["sessionId"]
+        msgs = [
+            "人民路最近高风险事件多吗？",
+            "有哪些具体的处置建议？",
+            "信号灯配时需要调整吗？",
+            "医院周边的拥堵怎么处理？",
+            "学校附近有没有类似问题？",
+            "帮我生成一份周报",
+            "未闭环事件有多少？",
+        ]
+        for q in msgs:
+            client.post(f"/chat/sessions/{sid}/messages", json={"content": q, "mode": "react"})
+
+        # Check memory summary exists
+        from backend.chat.chat_db import get_memory_summary
+        mem = get_memory_summary(sid)
+        if mem:
+            assert mem.get("summary"), "Summary should not be empty"
+        # Context should not be infinite
+        from backend.chat.memory_manager import build_context_for_llm
+        ctx = build_context_for_llm(sid, "最新问题")
+        assert len(ctx) < 4000, f"Context too long: {len(ctx)} chars"
+        client.delete(f"/chat/sessions/{sid}")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
