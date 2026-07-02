@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ConfigProvider, theme } from 'antd';
+import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import App from './App';
 
@@ -9,13 +9,19 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ConfigProvider
       locale={zhCN}
       theme={{
-        algorithm: theme.darkAlgorithm,
         token: {
-          colorPrimary: '#1677ff',
-          colorBgBase: '#0a0e27',
-          colorBgContainer: 'rgba(16, 20, 52, 0.85)',
-          colorBorder: 'rgba(255, 255, 255, 0.08)',
-          borderRadius: 6,
+          colorPrimary: '#0F766E',
+          colorSuccess: '#10B981',
+          colorWarning: '#F59E0B',
+          colorError: '#EF4444',
+          colorBgBase: '#F7F8FA',
+          colorBgContainer: '#FFFFFF',
+          colorBgLayout: '#F7F8FA',
+          colorText: '#111827',
+          colorTextSecondary: '#6B7280',
+          colorBorder: '#E5E7EB',
+          borderRadius: 12,
+          borderRadiusLG: 20,
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
         },
       }}
