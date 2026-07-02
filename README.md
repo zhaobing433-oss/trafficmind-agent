@@ -408,6 +408,55 @@ ReAct 诊断 + 动态路由协同研判 + 冲突展示 + 事件链展示。
 | POST | `/agent/react_diagnose` | 受控 ReAct 诊断 |
 | POST | `/agent/routed_analyze` | 动态路由协同研判 |
 
+---
+
+## 第五阶段：现代化 AI 对话式工作台
+
+- 浅色主题现代 AI 工作台（品牌色 #0F766E）
+- 左侧 Sidebar + 8 个导航视图 + 动态最近分析
+- ChatWorkspace 对话消息流 + 前端伪流式回答
+- 12 个场景卡片入口 + 5 种分析模式
+- ThinkingAvatar 动态头像 + 消息对齐 (user右/assistant左)
+- localStorage 会话记忆 + 上下文压缩 + 自动标题总结
+
+---
+
+## 第六阶段：业务级会话持久化 + 可信 RAG
+
+### 会话持久化
+
+- SQLite 4 张表: chat_sessions / messages / memory_summaries / evidence_logs
+- 5 个 Chat API: 创建/列表/详情/删除/发送消息
+
+### 可信 RAG
+
+- 召回 → 重排 → 阈值过滤 → 证据打包 → grounded answer
+- 4 级置信度: none (<0.35) / low (0.35-0.55) / medium (0.55-0.75) / high (≥0.75)
+- 证据不足时主动拒答 (abstain)，不编造
+- LLM 不可用时模板降级
+
+### 上下文记忆管理
+
+- 短期上下文 (最近 4~6 条消息)
+- 长期摘要 (memory_summaries 表)
+- 上下文压缩 (summary + 最近消息，不超过 4000 字)
+
+### 新增接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/chat/sessions` | 创建会话 |
+| GET | `/chat/sessions` | 会话列表 |
+| GET | `/chat/sessions/{id}` | 会话详情+消息 |
+| DELETE | `/chat/sessions/{id}` | 删除会话 |
+| POST | `/chat/sessions/{id}/messages` | 发送消息→RAG→回答 |
+
+### 测试
+
+```
+50 passed / 0 failed
+```
+
 ### 第四阶段：预测与预防
 
 - 基于历史数据训练事件预测模型（时空预测）
