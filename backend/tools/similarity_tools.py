@@ -286,8 +286,25 @@ def rule_based_similarity(current_event, history_event):
     return calculate_similarity(current_event, history_event)
 
 
-def hybrid_similarity(event_id: str, limit: int = 5, min_score: float = 0.4) -> Dict[str, Any]:
-    """混合相似度：规则(0.6) + 向量(0.4)。"""
+def hybrid_similarity(event_id: str, limit: int = 5, min_score: float = 0.4,
+                      rule_weight: float = None, vector_weight: float = None) -> Dict[str, Any]:
+    """混合相似度：规则 + 向量。权重可配置，默认从 similarity_config 读取。"""
+    from backend.tools.similarity_config import get_weights, get_weight_reason
+    from backend.rag.intent_router import classify_traffic_intent
+
+    # Determine weights
+    current = None
+    from backend.tools.db_tools import get_event_by_id
+    ev = get_event_by_id(event_id)
+    if ev:
+        intent = classify_traffic_intent(ev.get("eventTypeCn", ev.get("eventType", "")))
+    else:
+        intent = "general_qa"
+
+    w = get_weights(intent)
+    rw = rule_weight if rule_weight is not None else w["rule"]
+    vw = vector_weight if vector_weight is not None else w["vector"]
+
     rule_result = find_similar_cases(event_id, limit=limit * 2, min_score=0.2)
     vector_result = vector_based_similarity(event_id, limit=limit * 2, min_score=0.2)
     current = rule_result.get("currentEvent") or vector_result.get("currentEvent")
@@ -297,20 +314,24 @@ def hybrid_similarity(event_id: str, limit: int = 5, min_score: float = 0.4) -> 
         combined[eid] = {"eventId": eid, "eventType": case.get("eventType", ""),
             "roadName": case.get("roadName", ""), "riskLevel": case.get("riskLevel", ""),
             "ruleSimilarity": case.get("similarityScore", 0.0), "vectorSimilarity": 0.0,
-            "finalSimilarity": case.get("similarityScore", 0.0) * 0.6,
+            "finalSimilarity": round(case.get("similarityScore", 0.0) * rw, 2),
+            "weightsUsed": {"rule": rw, "vector": vw},
+            "weightReason": get_weight_reason(intent),
             "similarityReasons": case.get("similarityReasons", []),
             "matchedEvidence": "", "report": case.get("report", ""), "createdAt": case.get("createdAt", ""),}
     for case in vector_result.get("similarCases", []):
         eid = case["eventId"]
         if eid in combined:
             combined[eid]["vectorSimilarity"] = case.get("similarityScore", 0.0)
-            combined[eid]["finalSimilarity"] = round(combined[eid]["ruleSimilarity"] * 0.6 + case.get("similarityScore", 0.0) * 0.4, 2)
+            combined[eid]["finalSimilarity"] = round(combined[eid]["ruleSimilarity"] * rw + case.get("similarityScore", 0.0) * vw, 2)
             if case.get("matchedEvidence"): combined[eid]["matchedEvidence"] = case["matchedEvidence"]
         else:
             combined[eid] = {"eventId": eid, "eventType": case.get("eventType", ""),
                 "roadName": case.get("roadName", ""), "riskLevel": case.get("riskLevel", ""),
                 "ruleSimilarity": 0.0, "vectorSimilarity": case.get("similarityScore", 0.0),
-                "finalSimilarity": case.get("similarityScore", 0.0) * 0.4,
+                "finalSimilarity": round(case.get("similarityScore", 0.0) * vw, 2),
+                "weightsUsed": {"rule": rw, "vector": vw},
+                "weightReason": get_weight_reason(intent),
                 "similarityReasons": case.get("similarityReasons", []),
                 "matchedEvidence": case.get("matchedEvidence", ""),
                 "report": case.get("report", ""), "createdAt": case.get("createdAt", ""),}

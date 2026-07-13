@@ -217,13 +217,16 @@ from backend.rag.rag_service import rag_ask
 from backend.rag.vector_store import get_collection_stats
 # Phase 4
 from backend.agent.react_agent import controlled_react_diagnose
+from backend.agent.chat_stream import chat_stream_generator
+from backend.agent.streaming import sse_event, sse_error
 from backend.agent.router import route_agents
 from backend.agent.conflict_resolver import detect_conflicts, resolve_conflicts
 from backend.agent.event_chain import build_event_chain
 from backend.agent.multi_agent import multi_agent_analyze, CongestionAgent, AccidentAgent, SignalAgent, DispatchAgent
 from backend.chat.chat_db import (
     create_session, list_sessions, get_session, delete_session,
-    add_message, get_session_messages, get_memory_summary as get_chat_memory_summary,
+    add_message, get_session_messages, update_session_title,
+    get_memory_summary as get_chat_memory_summary,
 )
 from backend.chat.memory_manager import build_context_for_llm, update_memory_summary
 from backend.rag.grounded_answer import generate_grounded_answer
@@ -492,7 +495,7 @@ async def routed_analyze(body: RoutedAnalyzeRequest):
     }
 
 
-# -------------------- 第六阶段：Chat 会话 API --------------------
+# ==================== 第六阶段：Chat 会话 API ====================
 
 @app.post("/chat/sessions", summary="创建新会话")
 async def create_chat_session(body: Dict[str, Any] = {"mode": "react"}):
@@ -513,6 +516,16 @@ async def get_chat_session(session_id: str):
     messages = get_session_messages(session_id)
     mem = get_chat_memory_summary(session_id) or {}
     return {"session": session, "messages": messages, "memorySummary": mem}
+
+
+@app.patch("/chat/sessions/{session_id}/title", summary="重命名会话")
+async def rename_chat_session(session_id: str, body: Dict[str, Any]):
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    from backend.chat.chat_db import update_session_title
+    update_session_title(session_id, body.get("title", "")[:50])
+    return {"success": True, "title": body.get("title", "")[:50]}
 
 
 @app.delete("/chat/sessions/{session_id}", summary="删除会话")
@@ -590,11 +603,151 @@ async def send_chat_message(session_id: str, body: ChatMessageRequest):
     }
 
 
+# -------------------- Phase 8: SSE 流式接口 --------------------
+
+from fastapi.responses import StreamingResponse
+from backend.agent.multi_agent import _get_event_info
+
+
+class StreamRequest(BaseModel):
+    sessionId: Optional[str] = None
+    content: str
+    mode: Optional[str] = "react"
+
+
+VALID_MODES = {"react", "routed", "rag", "hybrid", "report", "collaboration"}
+
+
+@app.post("/chat/stream", summary="Chat SSE 流式对话")
+async def chat_stream(body: StreamRequest):
+    """SSE 流式对话。支持 react/routed/rag/hybrid/report/collaboration。"""
+    m = body.mode or "react"
+    if m not in VALID_MODES:
+        m = "react"
+
+    async def event_generator():
+        try:
+            async for event in chat_stream_generator(session_id=body.sessionId, content=body.content, mode=m):
+                yield event
+        except Exception as e:
+            yield sse_error(str(e))
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+class RoutedStreamRequest(BaseModel):
+    sessionId: Optional[str] = None
+    eventId: Optional[str] = None
+    eventType: str = "congestion"
+    roadName: str = "未知路段"
+    direction: Optional[str] = ""
+    avgSpeed: float = 0
+    queueLength: float = 0
+    duration: float = 0
+    weather: Optional[str] = "clear"
+    timePeriod: Optional[str] = "off_peak"
+    isMainRoad: Optional[bool] = False
+    nearbySchool: Optional[bool] = False
+    nearbyHospital: Optional[bool] = False
+    confidence: Optional[float] = 0.9
+    model_config = ConfigDict(extra="allow")
+
+
+@app.post("/agent/routed_analyze/stream", summary="协同分析 SSE 流式")
+async def routed_analyze_stream(body: RoutedStreamRequest):
+    """多 Agent 协同分析 SSE 流式，支持 sessionId 持久化。"""
+    import asyncio as _asyncio
+    async def agent_stream():
+        # Session handling
+        sid = body.sessionId
+        if not sid:
+            sess = create_session(f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{id(datetime.now()) % 100000}", "collaboration")
+            sid = sess["sessionId"]
+            yield sse_event("session_created", {"sessionId": sid})
+        # Save user message
+        user_content = f"协同分析: {body.eventType} {body.roadName} {body.direction or ''}"
+        title = f"{body.roadName}协同研判" if body.roadName != "未知路段" else "协同分析"
+        update_session_title(sid, title[:20])
+        um_id = f"um_{int(datetime.now().timestamp() * 1000)}"
+        add_message(um_id, sid, "user", user_content, "collaboration")
+
+        info = _get_event_info(body.model_dump())
+
+        from backend.agent.router import route_agents
+        routing = route_agents(info)
+        # Use dynamic agent selection — only selected agents participate
+        agents_order = [a for a in routing["selectedAgents"] if a != "ReportAgent"]
+
+        yield sse_event("event_parse_start", {"text": "正在解析事件信息..."})
+        await _asyncio.sleep(0.3)
+        yield sse_event("event_parse_done", {"eventType": info.get("eventType"), "roadName": info.get("roadName")})
+
+        from backend.agent.router import route_agents
+        routing = route_agents(info)
+        yield sse_event("agent_route_done", {"selectedAgents": routing["selectedAgents"], "routingReasons": routing["routingReasons"]})
+
+        from backend.agent.multi_agent import CongestionAgent, SignalAgent, DispatchAgent
+        agent_map = {"CongestionAgent": CongestionAgent, "SignalAgent": SignalAgent, "DispatchAgent": DispatchAgent}
+        all_results = []
+        for name in agents_order:
+            yield sse_event("agent_start", {"agentName": name, "text": f"{name} 正在分析..."})
+            await _asyncio.sleep(0.3)
+            cls = agent_map.get(name)
+            if cls:
+                result = cls().analyze(info)
+                all_results.append(result)
+                yield sse_event("agent_result", result)
+
+        yield sse_event("conflict_check_start", {"text": "正在检测 Agent 建议冲突..."})
+        from backend.agent.conflict_resolver import detect_conflicts
+        conflicts = detect_conflicts(all_results)
+        yield sse_event("conflict_check_done", {"conflicts": conflicts, "conflictCount": len(conflicts)})
+
+        yield sse_event("fusion_start", {"text": "正在融合各 Agent 结论..."})
+        fusion = f"综合 {len(all_results)} 个 Agent 的分析，核心风险为{'高' if routing['riskTriggers'] else '待评估'}。紧急度评估为{'高' if len(routing['riskTriggers']) >= 2 else '中'}。"
+        if conflicts: fusion += f"检测到 {len(conflicts)} 个建议冲突，已按安全优先和急救通道优先原则融合处理。"
+        for r in all_results:
+            if r.get("suggestion"): fusion += f"[{r['agentName']}] {r['suggestion']}。"
+        for chunk in _text_chunks(fusion):
+            yield sse_event("fusion_delta", {"text": chunk})
+            await _asyncio.sleep(0.03)
+        yield sse_event("fusion_done", {"fusionSummary": fusion})
+
+        am_id = f"am_{int(datetime.now().timestamp() * 1000)}"
+        add_message(am_id, sid, "assistant", fusion, "collaboration",
+                    {"selectedAgents": routing["selectedAgents"], "conflictCount": len(conflicts)})
+        yield sse_event("done", {"sessionId": sid, "assistantMessageId": am_id, "title": title[:20], "agentResults": all_results, "fusionSummary": fusion})
+
+    return StreamingResponse(agent_stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _text_chunks(text: str, size: int = 6) -> list:
+    if not text: return [""]
+    chunks = []; start = 0
+    for i, ch in enumerate(text):
+        if ch in "。\n？！，；" and i - start >= size:
+            chunks.append(text[start:i + 1]); start = i + 1
+    if start < len(text): chunks.append(text[start:])
+    return chunks if chunks else [text[i:i + size] for i in range(0, len(text), size)]
+
+
 # -------------------- 健康检查 --------------------
 
 @app.get("/health", summary="健康检查")
 async def health():
-    return {"status": "ok", "service": "TrafficMind Agent"}
+    from backend.config import LLM_ENABLED, DEEPSEEK_MODEL
+    from backend.rag.vector_store import _CHROMA_AVAILABLE
+    from backend.rag.vector_store import get_collection_stats as rag_stats
+    return {
+        "status": "ok",
+        "service": "TrafficMind Agent",
+        "llmAvailable": LLM_ENABLED,
+        "llmProvider": "DeepSeek" if LLM_ENABLED else None,
+        "llmModel": DEEPSEEK_MODEL if LLM_ENABLED else None,
+        "llmMode": "llm" if LLM_ENABLED else "template_fallback",
+        "chromaAvailable": _CHROMA_AVAILABLE,
+    }
 
 
 # -------------------- 仪表盘统计 --------------------

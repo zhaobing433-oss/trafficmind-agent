@@ -82,9 +82,16 @@ def create_session(session_id: str, mode: str = "react") -> Dict[str, Any]:
 
 
 def list_sessions(limit: int = 30) -> List[Dict[str, Any]]:
+    """按最后消息时间排序——重命名不会改变顺序，只有新消息才会。"""
     init_chat_tables()
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM chat_sessions ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
+    rows = conn.execute("""
+        SELECT s.*,
+               COALESCE((SELECT MAX(m.created_at) FROM chat_messages m WHERE m.session_id = s.id), s.created_at) AS last_message_at
+        FROM chat_sessions s
+        ORDER BY last_message_at DESC
+        LIMIT ?
+    """, (limit,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -111,9 +118,9 @@ def delete_session(session_id: str) -> bool:
 
 
 def update_session_title(session_id: str, title: str):
+    """重命名标题——不更新 updated_at，避免改变排序。"""
     conn = get_conn()
-    conn.execute("UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
-                 (title, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), session_id))
+    conn.execute("UPDATE chat_sessions SET title = ? WHERE id = ?", (title, session_id))
     conn.commit()
     conn.close()
 

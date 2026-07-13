@@ -6,6 +6,8 @@ export interface Message {
   mode: string;
   content: string;
   timestamp: number;
+  streaming?: boolean;
+  result?: Record<string, unknown>;
   /** 精简后的 result，不保存完整原始 JSON */
   summaryResult?: SummaryResult;
 }

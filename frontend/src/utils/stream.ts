@@ -5,38 +5,63 @@ export function thinkingSteps(): string {
   return steps[Math.floor(Math.random() * steps.length)];
 }
 
+/**
+ * 流式逐句输出文本。
+ * 按句号/换行/逗号切分，每段有明确停顿。
+ * 使用 requestAnimationFrame 保证 UI 实时更新。
+ */
 export async function streamText(
   msgId: string,
   fullText: string,
   onUpdate: (content: string) => void,
-  delay = 15
+  delayMs = 30
 ): Promise<void> {
   if (!fullText) return;
-  const chunks = splitIntoChunks(fullText, 3);
-  for (let i = 1; i <= chunks.length; i++) {
-    onUpdate(chunks.slice(0, i).join(''));
-    await sleep(delay);
+  const segments = splitBySentences(fullText);
+
+  let accumulated = '';
+  for (const seg of segments) {
+    accumulated += seg;
+    onUpdate(accumulated);
+    // Use rAF to force React to flush this render before proceeding
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => {
+        setTimeout(resolve, delayMs);
+      });
+    });
   }
 }
 
-function splitIntoChunks(text: string, charsPerChunk: number): string[] {
-  const chunks: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    let end = i + charsPerChunk;
-    // Try to break at sentence boundary
-    if (end < text.length) {
-      const nextPeriod = text.indexOf('。', end);
-      const nextNewline = text.indexOf('\n', end);
-      const boundary = Math.min(nextPeriod > 0 ? nextPeriod + 1 : Infinity, nextNewline > 0 ? nextNewline + 1 : Infinity);
-      if (boundary < end + 30) end = boundary;
+/** 按语义边界切分文本：句号、换行、逗号、问号 */
+function splitBySentences(text: string): string[] {
+  const result: string[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    // Break at these natural boundaries, and include the boundary char in current segment
+    if (ch === '。' || ch === '\n' || ch === '？' || ch === '！' || ch === '，' || ch === '；') {
+      result.push(text.slice(start, i + 1));
+      start = i + 1;
     }
-    chunks.push(text.slice(i, Math.min(end, text.length)));
-    i = end;
   }
-  return chunks;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  // Remaining text
+  if (start < text.length) {
+    result.push(text.slice(start));
+  }
+  // If too few segments, split further
+  if (result.length <= 2 && text.length > 20) {
+    const refined: string[] = [];
+    for (const seg of result) {
+      if (seg.length > 15) {
+        // split every 8-15 chars for long segments
+        for (let j = 0; j < seg.length; j += 12) {
+          refined.push(seg.slice(j, j + 12));
+        }
+      } else {
+        refined.push(seg);
+      }
+    }
+    return refined;
+  }
+  return result;
 }

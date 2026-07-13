@@ -10,13 +10,14 @@ interface Props {
   children: ReactNode;
   activeView: string;
   onNavigate: (view: string) => void;
-  onRecentClick: (id: string, mode: string) => void;
+  onRecentClick: (id: string) => void;
   onNewConversation: () => void;
+  onRenameSession: (id: string, newTitle: string) => void;
   activeConvId?: string;
   recentList: RecentItem[];
 }
 
-export default function LayoutShell({ children, activeView, onNavigate, onRecentClick, onNewConversation, activeConvId, recentList }: Props) {
+export default function LayoutShell({ children, activeView, onNavigate, onRecentClick, onNewConversation, onRenameSession, activeConvId, recentList }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -27,6 +28,7 @@ export default function LayoutShell({ children, activeView, onNavigate, onRecent
         onNavigate={onNavigate}
         onRecentClick={onRecentClick}
         onNewConversation={onNewConversation}
+        onRenameSession={onRenameSession}
         activeView={activeView}
         activeConvId={activeConvId}
         recentList={recentList}

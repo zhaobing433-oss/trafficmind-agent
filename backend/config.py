@@ -10,9 +10,11 @@ from dotenv import load_dotenv
 
 # 项目根目录
 _BACKEND_DIR = Path(__file__).resolve().parent
+_PROJECT_DIR = _BACKEND_DIR.parent
 
-# 加载 .env 文件（优先从 backend/ 目录加载）
-load_dotenv(_BACKEND_DIR / ".env")
+# 加载 .env 文件（优先项目根目录，兼容 backend/ 目录）
+load_dotenv(_PROJECT_DIR / ".env")
+load_dotenv(_BACKEND_DIR / ".env", override=False)  # backend/.env 不覆盖已有值
 
 # -------------------- DeepSeek API 配置 --------------------
 
