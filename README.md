@@ -457,6 +457,19 @@ ReAct 诊断 + 动态路由协同研判 + 冲突展示 + 事件链展示。
 50 passed / 0 failed
 ```
 
+## Phase 8：SSE 真流式 Agent 执行与统一会话历史
+
+详见 [docs/PHASE8_SSE_AGENT_STREAMING.md](docs/PHASE8_SSE_AGENT_STREAMING.md)
+
+- `POST /chat/stream` — 通用对话 SSE 流式（react/rag/routed/hybrid/report/collaboration）
+- `POST /agent/routed_analyze/stream` — 协同分析 SSE 流式（动态 Agent 路由 + 融合总结）
+- DeepSeek `stream=true` 真流式 delta 转发
+- LLM 标题自动生成（8-15字中文，首轮一次，后续锁定）
+- 所有工作区统一写入 chat_sessions/chat_messages
+- 最近分析 mode 标签（诊断/知识库/研判/相似/报告/协同）
+- SSE 优先 + REST 降级
+- 测试：83 passed / 0 failed
+
 ### 第四阶段：预测与预防
 
 - 基于历史数据训练事件预测模型（时空预测）
