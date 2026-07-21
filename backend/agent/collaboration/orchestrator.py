@@ -123,7 +123,7 @@ class CollaborationOrchestrator:
             yield _task_sse("task_ready", task, run_id)
             self.repo.save_task(run_id, task.to_dict())
 
-        for _layer_idx in range(5):  # max 5 layers
+        for _layer_idx in range(6):  # max 6 layers (domain, dispatch, detect, arbiter, fusion)
             ready = graph.get_ready_tasks()
             if not ready: break
             for task in ready:
@@ -131,7 +131,7 @@ class CollaborationOrchestrator:
                 self.repo.update_task(run_id, task.to_dict())
                 yield _task_sse("task_started", task, run_id)
 
-                if task.agent_name in ("ConflictDetector", "FusionAgent"):
+                if task.agent_name in ("ConflictDetector", "ConflictArbiter", "FusionAgent"):
                     # System agents — count once (not via executor)
                     budget.record_agent_call(task.agent_name)
                     graph.mark_succeeded(task.task_id)
@@ -142,6 +142,66 @@ class CollaborationOrchestrator:
                         yield sse_event("conflict_check_done", {"runId": run_id, "conflicts": conflicts, "conflictCount": len(conflicts)})
                         task.output_snapshot = {"conflicts": conflicts, "conflictCount": len(conflicts)}
                         self.repo.update_task(run_id, task.to_dict())
+
+                        # === DYNAMIC INSERTION: ConflictArbiter ===
+                        has_high = conflicts and any(c.get("severity") in ("high", "critical") for c in conflicts)
+                        if has_high:
+                            arbiter_task = AgentTaskNode("task_arbiter", run_id, "ConflictArbiter",
+                                                         "arbitrate", depends_on=["task_conflict_detect"],
+                                                         timeout_seconds=30)
+                            graph.add_task(arbiter_task)
+                            # Rewire: FusionAgent now depends on ConflictArbiter instead of ConflictDetector
+                            graph.tasks["task_fusion"].depends_on = ["task_arbiter"]
+                            try:
+                                graph.validate_dependencies()
+                            except ValueError:
+                                # Rollback: keep original dependency
+                                graph.tasks["task_fusion"].depends_on = ["task_conflict_detect"]
+                            else:
+                                # Emit task_ready for the dynamically inserted task
+                                yield _task_sse("task_ready", arbiter_task, run_id)
+                                self.repo.save_task(run_id, arbiter_task.to_dict())
+
+                    elif task.agent_name == "ConflictArbiter":
+                        # Execute arbitration for each conflict
+                        from backend.agent.collaboration.agents import conflict_arbiter as _arbiter
+                        arb_results = []
+                        safety_first = "在学生过街安全与机动车通行效率冲突时，学生生命安全绝对优先。行人相位保障是第一原则；机动车绿灯延长必须在确保行人安全过街时间充足后方可实施。"
+                        for c in state.conflicts:
+                            arb = _arbiter(c)
+                            arb["conflict_id"] = c.get("id", f"arb_{len(arb_results)}")
+                            arb["safety_first_rule"] = safety_first
+                            arb["limitations"] = [
+                                "信号配时精确值需现场勘查确认",
+                                "学生过街流量需学校提供统计数据",
+                            ]
+                            arb_results.append(arb)
+                            yield sse_event("arbitration_result", {
+                                "runId": run_id,
+                                "conflictId": arb["conflict_id"],
+                                "requiresHumanReview": arb.get("requires_human_review", False),
+                                "safetyFirstRule": safety_first,
+                                "resolution": arb.get("resolution", ""),
+                                "limitations": arb.get("limitations", []),
+                            })
+                        state.arbitration_results = arb_results
+                        task.output_snapshot = {"arbitrationResults": arb_results, "arbitrationCount": len(arb_results)}
+                        self.repo.update_task(run_id, task.to_dict())
+                        # Save conflicts with resolutions
+                        for c, arb in zip(state.conflicts, arb_results):
+                            self.repo.save_conflict({
+                                "conflict_id": arb.get("conflict_id", ""),
+                                "run_id": run_id,
+                                "type": c.get("type", ""),
+                                "field": c.get("field", ""),
+                                "participants": c.get("agents", []),
+                                "severity": c.get("severity", "low"),
+                                "status": "resolved" if arb.get("resolved") else "open",
+                                "resolution": arb.get("resolution", ""),
+                                "resolved_by": "ConflictArbiter",
+                                "requires_human_review": arb.get("requires_human_review", False),
+                            })
+
                     elif task.agent_name == "FusionAgent":
                         state.transition("fusing")
                         yield sse_event("fusion_start", {"runId": run_id, "text": "正在调用大模型融合各 Agent 结论..."})
@@ -151,6 +211,12 @@ class CollaborationOrchestrator:
                                 f"[{a}] findings: {r.get('findings', [])} suggestion: {r.get('suggestion', '')}"
                                 for a, r in state.task_results.items()
                             )
+                            if state.arbitration_results:
+                                arb_text = "；".join(
+                                    f"仲裁{ar.get('conflict_id','')}: {ar.get('resolution','')}"
+                                    for ar in state.arbitration_results
+                                )
+                                agent_text += f"\n\n仲裁结果: {arb_text}"
                             prompt = f"基于以下多Agent协同分析结果，生成一段自然语言融合决策总结（200字以内）：\n\n{agent_text}\n\n融合决策："
                             fusion = ""
                             try:
@@ -174,10 +240,28 @@ class CollaborationOrchestrator:
                             for chunk in _chunk_text(fusion):
                                 yield sse_event("fusion_delta", {"runId": run_id, "text": chunk, "executionMode": "template_fallback"})
                                 await asyncio.sleep(0.02)
-                        final = {"fusionSummary": fusion, "generationMode": "llm" if LLM_ENABLED else "template_fallback", "requiresHumanReview": state.conflicts and any(c.get("severity") in ("high","critical") for c in state.conflicts), "actionPlan": list(state.task_results.keys()), "monitoringIndicators": [], "limitations": [], "confidence": 0.8}
+
+                        # Build structured final_decision consuming arbitration results
+                        has_high_conflict = state.conflicts and any(c.get("severity") in ("high", "critical") for c in state.conflicts)
+                        unresolved = [a for a in state.arbitration_results if not a.get("resolved")]
+                        final = {
+                            "fusionSummary": fusion,
+                            "generationMode": "llm" if LLM_ENABLED else "template_fallback",
+                            "requiresHumanReview": bool(unresolved) or has_high_conflict,
+                            "actionPlan": list(state.task_results.keys()),
+                            "monitoringIndicators": [],
+                            "limitations": [],
+                            "confidence": 0.8,
+                            "arbitration": {
+                                "results": state.arbitration_results,
+                                "totalConflicts": len(state.conflicts),
+                                "resolvedCount": len(state.arbitration_results) - len(unresolved),
+                                "unresolvedCount": len(unresolved),
+                            },
+                        }
                         yield sse_event("fusion_done", {"runId": run_id, "fusionSummary": fusion, "generationMode": "llm" if LLM_ENABLED else "template_fallback"})
                         state.final_decision = final
-                        task.output_snapshot = {"fusionSummary": fusion, "generationMode": "llm" if LLM_ENABLED else "template_fallback", "agentResults": list(state.task_results.keys())}
+                        task.output_snapshot = {"fusionSummary": fusion, "generationMode": "llm" if LLM_ENABLED else "template_fallback", "agentResults": list(state.task_results.keys()), "arbitrationConsumed": len(state.arbitration_results) > 0}
                         self.repo.update_task(run_id, task.to_dict())
                     yield _task_sse("task_succeeded", task, run_id)
                 else:
@@ -287,8 +371,20 @@ def _build_fusion(state: CollaborationRunState) -> str:
     agents = [name for name, r in state.task_results.items() if r.get("findings")]
     parts = [f"综合 {len(agents)} 个 Agent 的分析结果"]
     if state.conflicts:
-        parts.append(f"，检测到 {len(state.conflicts)} 个建议冲突已按安全优先原则融合处理")
+        parts.append(f"，检测到 {len(state.conflicts)} 个建议冲突")
+        resolved = [a for a in state.arbitration_results if a.get("resolved")]
+        unresolved = [a for a in state.arbitration_results if not a.get("resolved")]
+        if resolved:
+            parts.append(f"，其中 {len(resolved)} 个已自动仲裁解决")
+        if unresolved:
+            parts.append(f"，{len(unresolved)} 个高风险冲突需人工审核")
+        parts.append("，已按安全优先原则融合处理")
     parts.append("。")
+    if state.arbitration_results:
+        for ar in state.arbitration_results:
+            if ar.get("safety_first_rule"):
+                parts.append(f"[仲裁原则] {ar['safety_first_rule']}。")
+                break
     for name, r in state.task_results.items():
         if r.get("suggestion"):
             parts.append(f"[{name}] {r['suggestion']}。")

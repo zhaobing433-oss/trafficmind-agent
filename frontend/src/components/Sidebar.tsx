@@ -78,11 +78,18 @@ export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick
                 {group.items.map(s => (
                   <div key={s.id} onClick={() => onRecentClick(s.id)}
                     style={{ padding: '5px 6px', borderRadius: 7, cursor: 'pointer', background: activeConvId === s.id ? '#F0FDFA' : 'transparent', border: activeConvId === s.id ? '1px solid #0F766E20' : '1px solid transparent', marginBottom: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {editingId === s.id ? (
                         <Input size="small" value={editTitle} onChange={e => setEditTitle(e.target.value)} onPressEnter={() => confirmRename(s.id)} onBlur={() => confirmRename(s.id)} onClick={e => e.stopPropagation()} style={{ fontSize: 11 }} autoFocus />
                       ) : (
-                        <div style={{ fontSize: 11, color: activeConvId === s.id ? '#0F766E' : '#374151', fontWeight: activeConvId === s.id ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '未命名交通分析'}</div>
+                        <>
+                          <div style={{ fontSize: 11, color: activeConvId === s.id ? '#0F766E' : '#374151', fontWeight: activeConvId === s.id ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.title || '未命名交通分析'}</div>
+                          {MODE_LABELS[s.mode] && (
+                            <Tag style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0, border: 'none', background: '#F3F4F6', color: '#6B7280', borderRadius: 4, flexShrink: 0 }}>
+                              {MODE_LABELS[s.mode]}
+                            </Tag>
+                          )}
+                        </>
                       )}
                     </div>
                     {!editingId && <span onClick={(e) => startRename(e as React.MouseEvent, s)} style={{ color: '#D1D5DB', cursor: 'pointer', fontSize: 11, padding: 2, flexShrink: 0 }}><EditOutlined /></span>}

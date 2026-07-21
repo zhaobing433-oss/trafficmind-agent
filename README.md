@@ -33,7 +33,7 @@ TrafficMind Agent 是一个智能交通事件分析系统。当摄像头和算�
 | 相似检索 | 规则相似度（9 项加权），预留 Chroma/FAISS 扩展 |
 | 前端 | React 18 + Ant Design 5 + ECharts 5 + Vite |
 | 消息推送 | 企业微信 / 钉钉 Webhook + SMTP 邮件 |
-| 测试 | pytest + FastAPI TestClient（27 个用例） |
+| 测试 | pytest + FastAPI TestClient（191 个用例） |
 
 ---
 
@@ -69,7 +69,7 @@ trafficmind-agent
 │   │   ├── rules/traffic_rules.md    # 8 类事件处置预案
 │   │   └── trafficmind.db            # SQLite 数据库（自动创建）
 │   └── tests/
-│       └── test_sample_request.py    # 27 个测试用例
+│       └── test_sample_request.py    # 191 个测试用例
 ├── frontend/
 │   ├── package.json
 │   ├── vite.config.ts
@@ -147,8 +147,8 @@ Vite 开发服务器默认启动在 `http://localhost:5173`，通过 Vite proxy 
 
 ```bash
 cd trafficmind-agent
-pytest backend/tests/test_sample_request.py -v
-# 预期：27 passed
+pytest backend/tests/ -v
+# 预期：191 passed
 ```
 
 ---
@@ -299,7 +299,7 @@ npm run dev
 - 基于**规则相似度**实现历史案例检索（9 维特征匹配），预留 Chroma/FAISS 向量检索扩展
 - 自动生成**7 段式交通事件日报/周报**，支持 DeepSeek 大模型润色
 - 前端使用 **React 18 + Ant Design 5 + ECharts 5 + Vite**，深色主题指挥中心大屏
-- **27 个 pytest 测试用例**全部通过，覆盖端到端功能验证
+- **191 个 pytest 测试用例**全部通过，覆盖端到端功能验证
 
 ### STAR 版本（适合面试详细讲述）
 
@@ -314,11 +314,11 @@ npm run dev
 - 基于规则相似度实现历史案例检索（9 维特征），预留向量数据库扩展接口
 - 本地 Markdown 维护 8 类事件处置预案，无需外部数据库
 - 使用 React + Ant Design + ECharts 构建深色大屏 Dashboard
-- 编写 27 个端到端测试用例，覆盖所有接口的正常和异常场景
+- 编写 191 个端到端测试用例，覆盖所有接口的正常和异常场景
 - DeepSeek 大模型作为可选增强，未配置时自动降级为本地模板
 
 **R (Result)**：
-- 11 个 API 接口完整可运行，27 个测试用例全部通过
+- 11 个 API 接口完整可运行，191 个测试用例全部通过
 - 大屏支持统计概览、事件分析、相似案例检索、未闭环提醒、日报/周报生成
 - 零外部依赖可降级运行，不配任何 API Key 也能使用全部核心功能
 
@@ -469,6 +469,92 @@ ReAct 诊断 + 动态路由协同研判 + 冲突展示 + 事件链展示。
 - 最近分析 mode 标签（诊断/知识库/研判/相似/报告/协同）
 - SSE 优先 + REST 降级
 - 测试：83 passed / 0 failed
+
+## Phase 9：多 Agent 协作通信、动态冲突仲裁与历史审计
+
+详见 [docs/PHASE9_MULTI_AGENT_COLLABORATION.md](docs/PHASE9_MULTI_AGENT_COLLABORATION.md)
+
+### 核心能力
+
+- **Pydantic 标准消息协议** — 14 种消息类型，全局唯一 ID，完整审计追踪
+- **DAG 任务图** — 5 层拓扑排序执行，支持动态插入中间节点
+- **ConflictArbiter 动态仲裁** — 检测到 high/critical 冲突时自动插入仲裁层
+- **11 状态运行状态机** — 合法转换校验，可中断/可恢复
+- **上下文裁剪** — 每个 Agent 只接收角色允许的字段子集（最小权限）
+- **SQLite 5 表持久化** — runs / tasks / messages / conflicts / events 完整审计
+- **SSE 真流式** — 全生命周期事件实时推送到前端
+- **多 Run 隔离** — 前端 runsById + activeRunId 独立状态管理
+- **历史恢复** — 完整恢复 DAG、Agent 卡片、融合总结、仲裁结果
+- **会话类型标签** — 6 种 mode → 中文标签（协同/知识库/诊断/研判/相似/报告）
+
+### 系统架构（文字版）
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                         POST /agent/routed_analyze/stream            │
+│                              (SSE Stream)                            │
+└──────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                      CollaborationOrchestrator                      │
+│                                                                     │
+│  1. parse_content_to_event()  ← NL → 标准化事件                     │
+│  2. route_agents()            ← 确定性规则选择 Agent                   │
+│  3. build DAG                 ← 5 层任务图                           │
+│  4. execute tasks layer by layer ← 拓扑排序执行                       │
+│     ├── execute_single_agent() ← 领域 Agent (executor + budget)       │
+│     ├── _detect_simple_conflicts() ← 冲突检测                        │
+│     ├── [ConflictArbiter]     ← 动态插入 (if high conflicts)          │
+│     └── FusionAgent           ← DeepSeek stream / template fallback  │
+│  5. persist → SQLite          ← 5 张表完整审计                        │
+│  6. emit SSE events           ← 实时推送到前端                        │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### 正确 DAG (5 层)
+
+```
+第1层: CongestionAgent, SignalAgent, PublicSafetyAgent
+第2层: DispatchAgent
+第3层: ConflictDetector
+第4层: ConflictArbiter    ← 动态插入 (仅当 high/critical 冲突)
+第5层: FusionAgent
+```
+
+### ConflictArbiter 示例
+
+当 SignalAgent（建议延长机动车绿灯）与 PublicSafetyAgent（建议保障行人过街相位）冲突时：
+
+```json
+{
+  "event": "arbitration_result",
+  "data": {
+    "runId": "run_1710000000000",
+    "conflictId": "arb_0",
+    "requiresHumanReview": true,
+    "safetyFirstRule": "在学生过街安全与机动车通行效率冲突时，学生生命安全绝对优先。行人相位保障是第一原则；机动车绿灯延长必须在确保行人安全过街时间充足后方可实施。",
+    "resolution": "高风险冲突需要人工研判",
+    "limitations": [
+      "信号配时精确值需现场勘查确认",
+      "学生过街流量需学校提供统计数据"
+    ]
+  }
+}
+```
+
+### 新增接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/collaboration/runs/{run_id}` | 查询单次运行完整审计记录 |
+| GET | `/collaboration/sessions/{session_id}/runs` | 查询会话的所有运行摘要 |
+
+### 测试
+
+```
+191 passed / 0 failed (TypeScript 0 errors)
+```
 
 ### 第四阶段：预测与预防
 

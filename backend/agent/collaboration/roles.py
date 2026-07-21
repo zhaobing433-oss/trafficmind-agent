@@ -17,22 +17,6 @@ REGISTERED_AGENTS: Dict[str, AgentCapability] = {
         "allowed_tools": [], "allowed_input_fields": ["task_results"],
         "required_input_fields": [], "max_calls": 1, "max_retries": 0, "timeout_seconds": 10, "dependencies": [],
     },
-    "FusionAgent": {
-        "name": "FusionAgent", "role": "融合总结",
-        "responsibilities": ["只融合已确认的结果，不生成没有依据的新事实"],
-        "forbidden_responsibilities": ["不得在领域 Agent 完成前融合", "不得编造未经验证的结论"],
-        "accepted_message_types": ["fusion.request"], "produced_message_types": ["run.completed"],
-        "allowed_tools": [], "allowed_input_fields": ["agent_results", "arbitration_results", "conflicts"],
-        "required_input_fields": ["agent_results"], "max_calls": 1, "max_retries": 0, "timeout_seconds": 30, "dependencies": [],
-    },
-    "ConflictArbiter": {
-        "name": "ConflictArbiter", "role": "冲突仲裁",
-        "responsibilities": ["只处理结构化冲突，不重新执行完整业务分析"],
-        "forbidden_responsibilities": ["不得重新分析拥堵/信号/安全", "不得修改 Agent 原始结论"],
-        "accepted_message_types": ["arbitration.request"], "produced_message_types": ["arbitration.result"],
-        "allowed_tools": [], "allowed_input_fields": ["conflicts"],
-        "required_input_fields": [], "max_calls": 1, "max_retries": 0, "timeout_seconds": 10, "dependencies": [],
-    },
     "CongestionAgent": {
         "name": "CongestionAgent",
         "role": "拥堵分析",
