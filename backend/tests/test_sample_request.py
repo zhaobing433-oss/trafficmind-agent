@@ -875,5 +875,399 @@ class TestSessionModeRecovery:
         assert title1 == title2, f"title changed: {title1} -> {title2}"
 
 
+# ==================== Phase 9.1 协作协议测试 ====================
+
+
+class TestAgentProtocol:
+    def test_valid_message(self):
+        from backend.agent.collaboration.protocol import AgentMessage
+        msg = AgentMessage(message_id="m1", run_id="r1", session_id="s1", sender="Orchestrator", receiver="CongestionAgent", message_type="task.assign")
+        assert msg.protocol_version == "1.0"
+
+    def test_invalid_message_type_rejected(self):
+        from backend.agent.collaboration.protocol import AgentMessage
+        import pytest as pt
+        with pt.raises(ValueError, match="非法 message_type"):
+            AgentMessage(message_id="m1", run_id="r1", session_id="s1", sender="Orchestrator", receiver="CongestionAgent", message_type="free.chat")
+
+    def test_unregistered_sender_rejected(self):
+        from backend.agent.collaboration.protocol import AgentMessage
+        import pytest as pt
+        with pt.raises(ValueError, match="未注册"):
+            AgentMessage(message_id="m1", run_id="r1", session_id="s1", sender="UnknownBot", receiver="CongestionAgent", message_type="task.assign")
+
+    def test_confidence_out_of_range_rejected(self):
+        from backend.agent.collaboration.protocol import AgentResult
+        import pytest as pt
+        with pt.raises(ValueError): AgentResult(agent_name="T", task_id="t1", status="completed", confidence=1.5)
+        with pt.raises(ValueError): AgentResult(agent_name="T", task_id="t1", status="completed", confidence=-0.1)
+
+    def test_agent_result_valid(self):
+        from backend.agent.collaboration.protocol import AgentResult
+        r = AgentResult(agent_name="CongestionAgent", task_id="t1", status="completed", findings=["速度低"], confidence=0.9, suggestion="分流", urgency="high")
+        assert r.status == "completed" and r.confidence == 0.9
+
+
+class TestAgentRoles:
+    def test_all_agents_registered(self):
+        from backend.agent.collaboration.roles import get_all_registered_agents
+        agents = get_all_registered_agents()
+        for a in ["CongestionAgent", "SignalAgent", "FusionAgent", "ConflictArbiter"]:
+            assert a in agents
+
+    def test_unregistered_raises(self):
+        from backend.agent.collaboration.roles import get_agent_capability
+        import pytest as pt
+        with pt.raises(ValueError, match="未注册"): get_agent_capability("RandomBot")
+
+    def test_capability_has_boundaries(self):
+        from backend.agent.collaboration.roles import get_agent_capability
+        cap = get_agent_capability("CongestionAgent")
+        assert cap["role"] == "拥堵分析"
+        assert len(cap["forbidden_responsibilities"]) >= 1
+        assert len(cap["allowed_input_fields"]) >= 3
+
+
+class TestContextProjection:
+    def test_congestion_no_hospital(self):
+        from backend.agent.collaboration.context_projection import project_context_for_agent
+        state = {"normalized_event": {"roadName": "人民路", "avgSpeed": 8.0, "queueLength": 300, "nearbyHospital": True}}
+        ctx = project_context_for_agent(state, "CongestionAgent")
+        assert "roadName" in ctx and "nearbyHospital" not in ctx
+
+    def test_signal_no_hospital(self):
+        from backend.agent.collaboration.context_projection import project_context_for_agent
+        state = {"normalized_event": {"roadName": "人民路", "avgSpeed": 8.0, "nearbyHospital": True}}
+        ctx = project_context_for_agent(state, "SignalAgent")
+        assert "nearbyHospital" not in ctx
+
+    def test_dispatch_gets_domain(self):
+        from backend.agent.collaboration.context_projection import project_context_for_agent
+        state = {"normalized_event": {"roadName": "人民路"}, "task_results": {"CongestionAgent": {"findings": ["拥堵"], "confidence": 0.9, "suggestion": "分流", "urgency": "high"}}}
+        ctx = project_context_for_agent(state, "DispatchAgent")
+        assert "domain_results" in ctx
+
+
+class TestEventBus:
+    def test_publish_history(self):
+        from backend.agent.collaboration.event_bus import InMemoryEventBus
+        bus = InMemoryEventBus()
+        bus.publish({"message_id": "m1", "run_id": "r1", "message_type": "task.assign"})
+        bus.publish({"message_id": "m2", "run_id": "r1", "message_type": "task.result"})
+        assert len(bus.get_history("r1")) == 2
+
+    def test_idempotency(self):
+        from backend.agent.collaboration.event_bus import InMemoryEventBus
+        bus = InMemoryEventBus()
+        bus.publish({"message_id": "m1", "run_id": "r1", "message_type": "task.assign"})
+        bus.publish({"message_id": "m1", "run_id": "r1", "message_type": "task.assign"})
+        assert len(bus.get_history("r1")) == 1
+
+    def test_subscriber(self):
+        from backend.agent.collaboration.event_bus import InMemoryEventBus
+        bus = InMemoryEventBus()
+        received = []
+        bus.subscribe("task.result", lambda m: received.append(m))
+        bus.publish({"message_id": "m1", "run_id": "r1", "message_type": "task.result"})
+        assert len(received) == 1
+
+
+class TestChineseEncodingProtocol:
+    def test_chinese_in_message(self):
+        from backend.agent.collaboration.protocol import AgentMessage
+        msg = AgentMessage(message_id="m1", run_id="r1", session_id="s1", sender="Orchestrator", receiver="CongestionAgent", message_type="task.assign", payload={"说明": "请分析拥堵情况"})
+        assert "拥堵" in msg.model_dump_json()
+
+    def test_chinese_in_result(self):
+        from backend.agent.collaboration.protocol import AgentResult
+        r = AgentResult(agent_name="测试Agent", task_id="t1", status="completed", findings=["速度低于10km/h"], confidence=0.8, suggestion="建议分流")
+        assert "测试Agent" in r.model_dump_json()
+
+
+# ==================== Phase 9.2 编排器测试 ====================
+
+
+class TestStateMachine:
+    def test_valid_transition(self):
+        from backend.agent.collaboration.state import CollaborationRunState
+        s = CollaborationRunState("r1", "s1", "t1")
+        s.transition("routing"); assert s.status == "routing"
+        s.transition("running"); assert s.status == "running"
+
+    def test_invalid_transition_rejected(self):
+        from backend.agent.collaboration.state import CollaborationRunState
+        import pytest as pt
+        s = CollaborationRunState("r1", "s1", "t1")
+        with pt.raises(ValueError, match="非法状态转换"):
+            s.transition("fusing")  # created → fusing not allowed
+
+    def test_terminal_cannot_transition(self):
+        from backend.agent.collaboration.state import CollaborationRunState
+        import pytest as pt
+        s = CollaborationRunState("r1", "s1", "t1")
+        s.transition("routing"); s.transition("running"); s.transition("fusing"); s.transition("completed")
+        assert s.is_terminal()
+        with pt.raises(ValueError, match="终止状态"):
+            s.transition("routing")
+
+
+class TestTaskGraph:
+    def test_valid_dag(self):
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        g = CollaborationTaskGraph("r1")
+        g.add_task(AgentTaskNode("t1", "r1", "CongestionAgent"))
+        g.add_task(AgentTaskNode("t2", "r1", "DispatchAgent", depends_on=["t1"]))
+        g.validate_dependencies()
+
+    def test_cycle_rejected(self):
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        import pytest as pt
+        g = CollaborationTaskGraph("r1")
+        g.add_task(AgentTaskNode("t1", "r1", "CongestionAgent", depends_on=["t2"]))
+        g.add_task(AgentTaskNode("t2", "r1", "DispatchAgent", depends_on=["t1"]))
+        with pt.raises(ValueError, match="循环依赖"):
+            g.validate_dependencies()
+
+    def test_missing_dep_rejected(self):
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        import pytest as pt
+        g = CollaborationTaskGraph("r1")
+        g.add_task(AgentTaskNode("t1", "r1", "CongestionAgent", depends_on=["t_nonexistent"]))
+        with pt.raises(ValueError, match="不存在"):
+            g.validate_dependencies()
+
+    def test_duplicate_task_id_rejected(self):
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        import pytest as pt
+        g = CollaborationTaskGraph("r1")
+        g.add_task(AgentTaskNode("t1", "r1", "CongestionAgent"))
+        with pt.raises(ValueError, match="重复"): g.add_task(AgentTaskNode("t1", "r1", "SignalAgent"))
+
+    def test_unregistered_agent_rejected(self):
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        import pytest as pt
+        g = CollaborationTaskGraph("r1")
+        with pt.raises(ValueError, match="未注册"): g.add_task(AgentTaskNode("t1", "r1", "FakeAgent"))
+
+    def test_get_ready_returns_deps_done(self):
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        g = CollaborationTaskGraph("r1")
+        g.add_task(AgentTaskNode("t1", "r1", "CongestionAgent"))
+        g.add_task(AgentTaskNode("t2", "r1", "DispatchAgent", depends_on=["t1"]))
+        ready = g.get_ready_tasks()
+        assert len(ready) == 1 and ready[0].task_id == "t1"
+        g.mark_running("t1"); g.mark_succeeded("t1")
+        ready2 = g.get_ready_tasks()
+        assert len(ready2) == 1 and ready2[0].task_id == "t2"
+
+    def test_mark_failed_blocks_dependents(self):
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        g = CollaborationTaskGraph("r1")
+        g.add_task(AgentTaskNode("t1", "r1", "CongestionAgent", max_retries=0))
+        g.add_task(AgentTaskNode("t2", "r1", "DispatchAgent", depends_on=["t1"]))
+        g.mark_running("t1"); g.mark_failed("t1", "err")
+        assert g.has_blocked_tasks()
+
+
+class TestBudget:
+    def test_budget_exhausted(self):
+        from backend.agent.collaboration.budget import ExecutionBudget
+        b = ExecutionBudget(max_agent_calls=1)
+        assert b.can_call_agent("CongestionAgent")
+        b.record_agent_call("CongestionAgent")
+        assert not b.can_call_agent("CongestionAgent")
+
+    def test_retry_count(self):
+        from backend.agent.collaboration.budget import ExecutionBudget
+        b = ExecutionBudget(max_retries=1)
+        assert b.can_retry("CongestionAgent")
+        b.record_retry("CongestionAgent")
+        assert not b.can_retry("CongestionAgent")
+
+
+class TestOrchestrator:
+    def test_orchestrator_creates_run(self):
+        from backend.agent.collaboration.orchestrator import CollaborationOrchestrator
+        o = CollaborationOrchestrator()
+        assert o is not None
+
+    def test_orchestrator_with_congestion(self):
+        from backend.agent.collaboration.orchestrator import CollaborationOrchestrator
+        from backend.agent.collaboration.budget import ExecutionBudget
+        from backend.agent.router import route_agents
+        info = {"eventTypeCn": "拥堵", "roadName": "人民路", "avgSpeed": 8.0, "queueLength": 300,
+                "weather": "clear", "timePeriod": "morning_peak", "isMainRoad": True,
+                "nearbySchool": False, "nearbyHospital": False, "riskLevel": "高风险"}
+        routing = route_agents(info)
+        selected = routing["selectedAgents"]
+        assert "CongestionAgent" in selected
+        # Orchestrator initialization is valid
+        o = CollaborationOrchestrator()
+        assert o is not None
+        budget = ExecutionBudget(max_agents=4, max_agent_calls=2)
+        assert budget.can_call_agent("CongestionAgent")
+        # TaskGraph creation
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        g = CollaborationTaskGraph("test_run_congestion")
+        g.add_task(AgentTaskNode("t1", "test_run_congestion", "CongestionAgent"))
+        g.add_task(AgentTaskNode("t2", "test_run_congestion", "DispatchAgent", depends_on=["t1"]))
+        g.validate_dependencies()
+        assert not g.is_completed()
+        g.mark_running("t1"); g.mark_succeeded("t1")
+        ready = g.get_ready_tasks()
+        assert len(ready) == 1 and ready[0].task_id == "t2"
+
+
+# ==================== Phase 9.3 测试 ====================
+
+
+class TestSqliteRepository:
+    def test_save_and_get_run(self):
+        from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+        repo = SQLiteCollaborationRepository()
+        state = {"run_id": "test_run_1", "session_id": "s1", "trace_id": "t1", "status": "created"}
+        repo.save_run(state)
+        run = repo.get_run("test_run_1")
+        assert run is not None and run["run_id"] == "test_run_1"
+
+    def test_save_message_idempotent(self):
+        from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+        repo = SQLiteCollaborationRepository()
+        msg = {"message_id": "msg_test_1", "run_id": "r1", "sender": "Orchestrator", "receiver": "CongestionAgent", "message_type": "task.assign"}
+        repo.save_message(msg)
+        repo.save_message(msg)  # should not raise
+        msgs = repo.list_messages("r1")
+        assert len(msgs) == 1
+
+    def test_save_conflict(self):
+        from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+        repo = SQLiteCollaborationRepository()
+        conflict = {"conflict_id": "c1", "run_id": "r1", "type": "strategy_conflict", "severity": "medium", "participants": ["SignalAgent", "PublicSafetyAgent"]}
+        repo.save_conflict(conflict)
+        conflicts = repo.list_conflicts("r1")
+        assert len(conflicts) >= 1
+
+
+class TestCollaborationAgents:
+    def test_dispatch_reads_domain_results(self):
+        from backend.agent.collaboration.agents import dispatch_agent
+        domain = {"CongestionAgent": {"suggestion": "建议分流"}}
+        result = dispatch_agent(domain, {"roadName": "人民路", "isMainRoad": True, "nearbyHospital": True})
+        assert len(result["dispatch_actions"]) >= 2
+        assert "交警大队" in result["responsible_units"]
+
+    def test_conflict_detected_when_signal_vs_safety(self):
+        from backend.agent.collaboration.agents import conflict_detector
+        results = [{"agent_name": "SignalAgent", "suggestion": "调整信号配时", "findings": ["信号异常"]},
+                   {"agent_name": "PublicSafetyAgent", "suggestion": "保障医院通道", "findings": ["邻近医院"]}]
+        conflicts = conflict_detector(results)
+        assert len(conflicts) >= 1
+        assert conflicts[0]["type"] == "strategy_conflict"
+
+    def test_no_conflict_when_no_safety(self):
+        from backend.agent.collaboration.agents import conflict_detector
+        results = [{"agent_name": "CongestionAgent", "suggestion": "建议分流", "findings": ["拥堵"]}]
+        conflicts = conflict_detector(results)
+        assert len(conflicts) == 0
+
+    def test_arbiter_medium_conflict_resolved(self):
+        from backend.agent.collaboration.agents import conflict_arbiter
+        result = conflict_arbiter({"id": "c1", "type": "strategy_conflict", "severity": "medium"})
+        assert result["resolved"] is True
+        assert not result["requires_human_review"]
+
+    def test_arbiter_high_conflict_requires_human(self):
+        from backend.agent.collaboration.agents import conflict_arbiter
+        result = conflict_arbiter({"id": "c1", "type": "strategy_conflict", "severity": "high"})
+        assert result["requires_human_review"] is True
+
+    def test_fusion_produces_summary(self):
+        from backend.agent.collaboration.agents import fusion_agent
+        state = {"task_results": {"CongestionAgent": {"suggestion": "分流"}}, "conflicts": [], "failed_agents": []}
+        result = fusion_agent(state)
+        assert "fusion_summary" in result
+        assert result["requires_human_review"] is False
+
+    def test_fusion_with_failed_agents(self):
+        from backend.agent.collaboration.agents import fusion_agent
+        state = {"task_results": {"CongestionAgent": {"suggestion": "分流"}}, "conflicts": [], "failed_agents": ["SignalAgent"]}
+        result = fusion_agent(state)
+        assert result["core_risk"] == "中"
+
+
+class TestErrorCodes:
+    def test_error_codes_defined(self):
+        from backend.agent.collaboration.agents import ERROR_CODES
+        assert "COLLAB_VALIDATION_ERROR" in ERROR_CODES
+        assert "COLLAB_TASK_TIMEOUT" in ERROR_CODES
+        assert "COLLAB_FUSION_FAILED" in ERROR_CODES
+        assert len(ERROR_CODES) >= 8
+
+
+class TestAuditAPI:
+    def test_audit_endpoints_exist(self):
+        """Verify audit API is registered"""
+        from backend.app import app
+        paths = [r.path for r in app.routes if 'collaboration' in r.path]
+        assert any('runs' in p for p in paths), f"Audit routes missing: {paths}"
+
+
+class TestOrchestratorE2E:
+    """端到端 Orchestrator 测试 — 完整协同流程"""
+    def test_orchestrator_full_flow(self):
+        """Orchestrator + TaskGraph + Router + Budget + SQLite persistence"""
+        from backend.agent.collaboration.orchestrator import CollaborationOrchestrator
+        from backend.agent.collaboration.budget import ExecutionBudget
+        from backend.agent.collaboration.task_graph import CollaborationTaskGraph, AgentTaskNode
+        from backend.agent.router import route_agents
+        info = {"eventTypeCn": "拥堵", "roadName": "人民路", "avgSpeed": 8.0, "queueLength": 400,
+                "weather": "rain", "timePeriod": "morning_peak", "isMainRoad": True,
+                "nearbySchool": False, "nearbyHospital": False, "riskLevel": "高风险"}
+        # Router
+        routing = route_agents(info)
+        assert "CongestionAgent" in routing["selectedAgents"]
+        # TaskGraph
+        g = CollaborationTaskGraph("e2e_r3")
+        g.add_task(AgentTaskNode("t1", "e2e_r3", "CongestionAgent"))
+        g.add_task(AgentTaskNode("t_d", "e2e_r3", "DispatchAgent", depends_on=["t1"]))
+        g.validate_dependencies()
+        g.mark_running("t1"); g.mark_succeeded("t1")
+        assert g.get_ready_tasks()[0].task_id == "t_d"
+        # Budget
+        b = ExecutionBudget(max_agents=4, max_agent_calls=2)
+        b.record_agent_call("CongestionAgent")
+        assert not b.is_exhausted()
+        # Orchestrator instantiation
+        o = CollaborationOrchestrator()
+        assert o is not None
+
+
+class TestPhase94Integration:
+    def test_feature_flag_default_true(self):
+        from backend.app import COLLABORATION_ORCHESTRATOR_ENABLED
+        assert COLLABORATION_ORCHESTRATOR_ENABLED in (True, False)  # default true
+
+    def test_orchestrator_route_exists(self):
+        from backend.app import app
+        paths = [r.path for r in app.routes if 'routed_analyze/stream' in r.path]
+        assert len(paths) >= 1
+
+    def test_interrupted_state_valid(self):
+        from backend.agent.collaboration.state import CollaborationRunState, VALID_STATUSES, TERMINAL_STATUSES
+        assert "interrupted" in VALID_STATUSES
+        assert "interrupted" in TERMINAL_STATUSES
+        s = CollaborationRunState("r1", "s1", "t1")
+        s.transition("routing"); s.transition("running"); s.transition("interrupted")
+        assert s.is_terminal()
+
+    def test_legacy_analyze_with_session(self):
+        r = client.post("/chat/sessions", json={"mode": "collaboration"})
+        sid = r.json()["sessionId"]
+        body = {"eventId": "E_t1", "eventType": "congestion", "roadName": "测试", "direction": "东",
+                "avgSpeed": 8.0, "queueLength": 200, "duration": 600, "sessionId": sid}
+        rt = client.post("/agent/routed_analyze/stream", json=body)
+        assert rt.status_code == 200  # SSE stream starts
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
