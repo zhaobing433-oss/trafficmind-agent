@@ -26,7 +26,25 @@ export function reduceCollaborationEvent(state: CollaborationRun, event: Event):
 
   switch (evType) {
     case 'run_created':
-      return { ...initialState(), runId: event.runId as string, traceId: event.traceId as string, sessionId: event.sessionId as string, startedAt: event.timestamp as string, status: 'created', selectedAgents: (event.selectedAgents as string[]) || [] } as CollaborationRun;
+      return {
+        ...initialState(),
+        runId: event.runId as string, traceId: event.traceId as string,
+        sessionId: (event.sessionId || event.session_id || '') as string,
+        startedAt: event.timestamp as string, status: 'created',
+        selectedAgents: (event.selectedAgents as string[]) || [],
+        userQuery: (event.userQuery as string) || '',
+        contextPolicy: (event.contextPolicy as string) || 'fresh_event',
+        fieldSources: (event.fieldSources as Record<string, string>) || {},
+        previousRunContext: (event.previousRunContext && typeof event.previousRunContext === 'object' && (event.previousRunContext as Record<string,unknown>).runId)
+          ? {
+              runId: String((event.previousRunContext as Record<string,unknown>).runId || ''),
+              summary: String((event.previousRunContext as Record<string,unknown>).summary || ''),
+              status: String((event.previousRunContext as Record<string,unknown>).status || ''),
+              event: ((event.previousRunContext as Record<string,unknown>).event || {}) as Record<string, unknown>,
+              updatedAt: String((event.previousRunContext as Record<string,unknown>).updatedAt || ''),
+            } as CollaborationRun['previousRunContext']
+          : null,
+      } as CollaborationRun;
 
     case 'agent_route_done':
       return { ...state, selectedAgents: (event.selectedAgents as string[]) || state.selectedAgents, routingReasons: (event.routingReasons as string[]) || [], status: 'routing' };
@@ -49,20 +67,41 @@ export function reduceCollaborationEvent(state: CollaborationRun, event: Event):
     }
 
     case 'task_started':
-    case 'task_ready':
-      return { ...state, tasks: state.tasks.map(t => t.taskId === event.taskId ? { ...t, status: 'running' as const, attempt: Number(event.attempt || t.attempt + 1) } : t) };
+    case 'task_ready': {
+      const tid = (event.taskId || '') as string;
+      const exists = state.tasks.some(t => t.taskId === tid);
+      if (!exists && tid) {
+        // Dynamic task insertion (e.g. ConflictArbiter added after task_graph_created)
+        const newTask: CollaborationTask = {
+          taskId: tid,
+          agentName: (event.agentName || '') as string,
+          taskType: 'arbitrate',
+          status: 'running' as const,
+          dependsOn: (event.dependsOn || []) as string[],
+          priority: 5, attempt: Number(event.attempt || 1),
+          maxRetries: 1, timeoutSeconds: 30, error: '',
+        };
+        return { ...state, tasks: [...state.tasks, newTask] };
+      }
+      return {
+        ...state,
+        tasks: state.tasks.map(t => t.taskId === tid
+          ? { ...t, status: 'running' as const, attempt: Number(event.attempt || t.attempt + 1) }
+          : t),
+      };
+    }
 
     case 'task_retrying':
-      return { ...state, tasks: state.tasks.map(t => t.taskId === event.taskId ? { ...t, status: 'retrying' as const, attempt: Number(event.attempt || 1) } : t) };
+      return { ...state, tasks: state.tasks.map(t => t.taskId === (event.taskId as string || '') ? { ...t, status: 'retrying' as const, attempt: Number(event.attempt || 1) } : t) };
 
     case 'task_succeeded':
-      return { ...state, tasks: state.tasks.map(t => t.taskId === event.taskId ? { ...t, status: 'succeeded' as const } : t) };
+      return { ...state, tasks: state.tasks.map(t => t.taskId === (event.taskId as string || '') ? { ...t, status: 'succeeded' as const } : t) };
 
     case 'task_failed':
-      return { ...state, tasks: state.tasks.map(t => t.taskId === event.taskId ? { ...t, status: 'failed' as const, error: (event.error as string) || '' } : t) };
+      return { ...state, tasks: state.tasks.map(t => t.taskId === (event.taskId as string || '') ? { ...t, status: 'failed' as const, error: (event.error as string) || '' } : t) };
 
     case 'task_blocked':
-      return { ...state, tasks: state.tasks.map(t => t.taskId === event.taskId ? { ...t, status: 'blocked' as const } : t) };
+      return { ...state, tasks: state.tasks.map(t => t.taskId === (event.taskId as string || '') ? { ...t, status: 'blocked' as const } : t) };
 
     case 'agent_result': {
       const an = (event.agentName || event.agent_name || '') as string;
@@ -99,12 +138,29 @@ export function reduceCollaborationEvent(state: CollaborationRun, event: Event):
     }
 
     case 'conflict_check_done': {
-      const conflicts = (event.conflicts || []) as CollaborationConflict[];
+      const rawConflicts = (Array.isArray(event.conflicts) ? event.conflicts : []) as Record<string,unknown>[];
+      const conflicts: CollaborationConflict[] = rawConflicts.map((c, i) => ({
+        id: String(c.id || `conflict_${i}`),
+        type: String(c.type || ''),
+        description: String(c.description || ''),
+        // Backend uses "agents" — normalize to "participants"
+        participants: (Array.isArray(c.participants) ? c.participants
+          : Array.isArray(c.agents) ? c.agents
+          : []) as string[],
+        proposals: (Array.isArray(c.proposals) ? c.proposals : []) as Record<string,unknown>[],
+        severity: String(c.severity || 'low'),
+        status: String(c.status || 'open'),
+        resolution: String(c.resolution || ''),
+        resolvedBy: String(c.resolvedBy || c.resolved_by || ''),
+        requiresHumanReview: Boolean(c.requiresHumanReview || c.requires_human_review),
+      }));
       return { ...state, conflicts, status: 'arbitrating' };
     }
 
-    case 'arbitration_result':
-      return { ...state, arbitrationResults: [...state.arbitrationResults, event as unknown as Record<string,unknown>] };
+    case 'arbitration_result': {
+      const safeArbitrationResults = Array.isArray(state.arbitrationResults) ? state.arbitrationResults : [];
+      return { ...state, arbitrationResults: [...safeArbitrationResults, event as unknown as Record<string,unknown>] };
+    }
 
     case 'fusion_start':
       return { ...state, status: 'fusing' };

@@ -646,15 +646,16 @@ class RoutedStreamRequest(BaseModel):
     eventType: str = "congestion"
     roadName: str = "未知路段"
     direction: Optional[str] = ""
-    avgSpeed: float = 0
-    queueLength: float = 0
-    duration: float = 0
+    avgSpeed: Optional[float] = None
+    queueLength: Optional[float] = None
+    duration: Optional[float] = None
     weather: Optional[str] = "clear"
     timePeriod: Optional[str] = "off_peak"
     isMainRoad: Optional[bool] = False
     nearbySchool: Optional[bool] = False
     nearbyHospital: Optional[bool] = False
     confidence: Optional[float] = 0.9
+    contextPolicy: Optional[str] = "fresh_event"
     model_config = ConfigDict(extra="allow")
 
 
@@ -679,28 +680,72 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
     from backend.agent.collaboration.budget import ExecutionBudget
 
     async def agent_stream():
-        # Parse event info: try structured fields first, then NL content
-        raw = body.model_dump()
-        if not raw.get("avgSpeed") and not raw.get("queueLength"):
-            from backend.agent.collaboration.event_parser import parse_content_to_event
-            raw.update(parse_content_to_event(body.content or raw.get("content", "")))
-        raw["originalInput"] = getattr(body, "content", "") or ""
-        info = _get_event_info(raw)
+        from backend.agent.collaboration.event_parser import parse_content_to_event, build_current_event
+        from backend.agent.collaboration.db_repository import load_previous_run_context
+
+        # ===== Step 1: Parse CURRENT message ONLY =====
+        content_text = body.content or (body.model_dump().get("content", ""))
+        context_policy = body.contextPolicy or "fresh_event"
+
+        nl_parsed = {}
+        if content_text:
+            nl_parsed = parse_content_to_event(content_text)
+
+        # ===== Step 2: Build currentEvent — STRICTLY from current message =====
+        # NEVER merge previous run data into currentEvent
+        explicit = body.model_dump()
+        current_event = build_current_event(nl_parsed, explicit, context_policy)
+        field_sources = current_event.get("fieldSources", {})
+
+        # ===== Step 3: Load previous run context — SEPARATE object =====
         sid = body.sessionId
         if not sid:
             sess = create_session(f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{id(datetime.now()) % 100000}", "collaboration")
             sid = sess["sessionId"]
             yield sse_event("session_created", {"sessionId": sid})
 
+        previous_run_context = load_previous_run_context(sid) if sid else None
+
+        # ===== Step 4: Build info from currentEvent only =====
+        raw = current_event
+        raw["originalInput"] = content_text or ""
+        raw["contextPolicy"] = context_policy
+        raw["fieldSources"] = field_sources
+        info = _get_event_info(raw)
+        info["fieldSources"] = field_sources
+        info["contextPolicy"] = context_policy
+        info["originalInput"] = content_text or ""
+
         run_id = f"run_{int(datetime.now().timestamp() * 1000)}"
         trace_id = f"trace_{run_id}"
-        title = f"{info.get('roadName', '协同分析')[:16]}协同研判"
+
+        # Generate title from user query content — not from default roadName
+        query_text = content_text or ""
+        if info.get("nearbySchool") and "冲突" in query_text:
+            title = "学校门口信号冲突研判"
+        elif info.get("nearbySchool"):
+            title = "学校周边交通研判"
+        elif info.get("conflictIntent"):
+            title = "交通冲突协同研判"
+        elif any(w in query_text for w in ["信号", "绿灯", "配时"]):
+            title = "信号灯协同研判"
+        elif any(w in query_text for w in ["事故", "碰撞", "追尾"]):
+            title = "交通事故协同研判"
+        elif any(w in query_text for w in ["拥堵", "堵车", "排队"]):
+            title = "拥堵路段协同研判"
+        elif info.get("roadName") and "未命名" not in str(info.get("roadName", "")):
+            title = f"{str(info.get('roadName', ''))[:12]}协同研判"
+        else:
+            # Fallback: first 16 chars of user query
+            title = (query_text[:16] or "协同分析") + "协同研判"
+        # Ensure 8-16 chars
+        title = title[:20]
 
         # Save user message
-        user_content = f"协同分析: {info.get('roadName', '')}" if info.get('roadName') else body.content or '自然语言协同请求'
+        user_content = query_text[:100] or "协同分析请求"
         um_id = f"um_{int(datetime.now().timestamp() * 1000)}"
         add_message(um_id, sid, "user", user_content, "collaboration")
-        # Generate title on first round
+        # Generate title on first round only — never overwrite on subsequent rounds
         from backend.chat.chat_db import get_session
         sess_check = get_session(sid)
         if sess_check and (not sess_check.get("title") or sess_check.get("title") == "新对话"):
@@ -715,9 +760,12 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
         try:
             orchestrator = CollaborationOrchestrator()
             budget = ExecutionBudget(max_agents=4, max_agent_calls=2, max_retries=1, max_total_seconds=90)
-            async for event_str in orchestrator.execute(run_id, sid, info, selected,
-                                                         routing.get("skippedAgents", []),
-                                                         routing.get("routingReasons", []), budget):
+            async for event_str in orchestrator.execute(
+                run_id, sid, info, selected,
+                routing.get("skippedAgents", []),
+                routing.get("routingReasons", []), budget,
+                previous_run_context=previous_run_context,
+            ):
                 # Capture fusionSummary from fusion_done event
                 if 'event: fusion_done' in event_str:
                     import re as _re

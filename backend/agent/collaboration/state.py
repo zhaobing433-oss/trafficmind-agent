@@ -33,9 +33,12 @@ class CollaborationRunState:
         self.trace_id = trace_id
         self.status: str = "created"
 
-        # Input
+        # Input — currentEvent (当前消息解析结果，不含上一轮数据)
         self.original_input: Dict[str, Any] = {}
         self.normalized_event: Dict[str, Any] = {}
+
+        # Previous run context — 独立存储，不合并到 normalized_event
+        self.previous_run_context: Optional[Dict[str, Any]] = None
 
         # Routing
         self.selected_agents: List[str] = []
@@ -101,6 +104,7 @@ class CollaborationRunState:
             "trace_id": self.trace_id,
             "status": self.status,
             "normalized_event": self.normalized_event,
+            "previous_run_context": self.previous_run_context,
             "original_input": self.original_input,
             "selected_agents": self.selected_agents,
             "skipped_agents": self.skipped_agents,

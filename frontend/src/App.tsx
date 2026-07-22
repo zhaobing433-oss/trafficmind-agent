@@ -27,12 +27,16 @@ export default function App() {
   // Stable key: only change when we WANT to reset the workspace (new conv / recent click)
   const [workspaceKey, setWorkspaceKey] = useState(0);
 
+  // Stable session ID ref — prevents stale closure in callbacks
+  const sessionIdRef = useRef<string | null>(null);
+  useEffect(() => { sessionIdRef.current = activeSessionId; }, [activeSessionId]);
+
   useEffect(() => { chatApi.listSessions(30).then(setSessions).catch(() => {}); }, [recentRefresh]);
   const refreshSessions = useCallback(() => setRecentRefresh(Date.now()), []);
   // CRITICAL: session created via first send — do NOT reset the component (key stays same)
-  const handleSessionCreated = useCallback((id: string) => { setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); }, []);
-  const handleNewConversation = () => { setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); };
-  const handleScenario = (prompt: string, mode: string, targetView: string) => { setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); };
+  const handleSessionCreated = useCallback((id: string) => { sessionIdRef.current = id; setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); }, []);
+  const handleNewConversation = () => { sessionIdRef.current = null; setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); };
+  const handleScenario = (prompt: string, mode: string, targetView: string) => { sessionIdRef.current = null; setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); };
   const handleNavigate = (v: string) => { setView(v); };
   const handleRecentClick = async (id: string) => {
     // Fetch session to determine its mode, then route to correct workspace
@@ -60,7 +64,7 @@ export default function App() {
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard /> :
          view === 'qa' ? <QaDashboard onRefresh={refreshSessions} /> :
-         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} /> : (
+         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> : (
           <>
             <HomeHero />
             <ScenarioGrid onSelect={handleScenario} />
@@ -103,11 +107,11 @@ function buildFusionSummary(results: Record<string,unknown>): string {
 type Step = { id: string; agentName: string; status: 'pending' | 'thinking' | 'done'; message: string; result?: Record<string,unknown> };
 const AGENT_STEPS = ['CongestionAgent', 'SignalAgent', 'PublicSafetyAgent', 'DispatchAgent', 'ReportAgent'];
 
-function CollaborationWorkspace({ activeSessionId, onRefresh }: { activeSessionId: string | null; onRefresh: () => void }) {
-  return <CollaborationWorkspaceInner activeSessionId={activeSessionId} onRefresh={onRefresh} />;
+function CollaborationWorkspace({ activeSessionId, onRefresh, onSessionCreated }: { activeSessionId: string | null; onRefresh: () => void; onSessionCreated: (id: string) => void }) {
+  return <CollaborationWorkspaceInner activeSessionId={activeSessionId} onRefresh={onRefresh} onSessionCreated={onSessionCreated} />;
 }
 
-function CollaborationWorkspaceInner({ activeSessionId, onRefresh }: { activeSessionId: string | null; onRefresh: () => void }) {
+function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCreated }: { activeSessionId: string | null; onRefresh: () => void; onSessionCreated: (id: string) => void }) {
   // Core multi-run state
   const [activeRunId, setActiveRunId] = useState<string>('');
   const [runsById, setRunsById] = useState<Record<string, CollaborationRun>>({});
@@ -117,6 +121,9 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh }: { activeSes
   const [messages, setMessages] = useState<Record<string, unknown>[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const isSubmitting = useRef(false);
+  // Stable session ID — synced from parent, updated on session_created
+  const sessionIdRef = useRef<string | null>(activeSessionId);
+  useEffect(() => { sessionIdRef.current = activeSessionId; }, [activeSessionId]);
 
   // Derived: active run
   const activeRun = activeRunId ? runsById[activeRunId] || null : null;
@@ -193,14 +200,21 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh }: { activeSes
     setMessages(prev => [...prev, userMsg]);
     const question = input.trim(); setInput('');
 
-    const sessionId = activeSessionId || undefined;
+    const sessionId = sessionIdRef.current || undefined;
     let currentRun = createEmptyRun(sessionId || '');
 
     const clientRequestId = 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
 
-    // Do NOT create a temp run — only show runs from real SSE run_created events
+    // Detect context policy: if the user mentions continuing or "上述", use continue_event
+    const followUpPattern = /(继续|基于上|上述|刚才|同一|沿用)/;
+    const explicitValuePattern = /(\d+\.?\d*)\s*(?:km\/h|公里|码|米|m|分钟|分)/;
+    const contextPolicy = followUpPattern.test(question) && !explicitValuePattern.test(question)
+      ? 'continue_event' : 'fresh_event';
+
+    // Only send NL content — backend parser extracts structured fields from text.
+    // Dynamic measurements (avgSpeed, queueLength, duration) are NEVER pre-filled.
     await collabApi.streamCollaboration(
-      { sessionId, content: question, mode: 'collaboration', clientRequestId, eventType: 'congestion', roadName: '人民路', direction: '东向西', avgSpeed: 8.0, queueLength: 400, duration: 900, weather: 'rain', timePeriod: 'morning_peak', isMainRoad: true },
+      { sessionId, content: question, mode: 'collaboration', clientRequestId, contextPolicy },
       {
         onEvent: (event) => {
           const evRunId = (event.runId as string) || '';
@@ -214,6 +228,9 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh }: { activeSes
           });
 
           if (event.eventType === 'session_created' && event.sessionId) {
+            const sid = event.sessionId as string;
+            sessionIdRef.current = sid;
+            onSessionCreated(sid);
             onRefresh();
           }
           if (event.eventType === 'run_created') {

@@ -24,6 +24,17 @@ export interface CollaborationRun {
   startedAt: string; completedAt: string;
   isHydrated?: boolean;
   userQuery?: string;
+  contextPolicy?: string;
+  fieldSources?: Record<string, string>;
+  previousRunContext?: {
+    runId: string; summary: string; status: string;
+    event: {
+      avgSpeed?: number | null; queueLength?: number | null;
+      roadName?: string; eventTypeCn?: string;
+      nearbySchool?: boolean; nearbyHospital?: boolean; isMainRoad?: boolean;
+    };
+    updatedAt: string;
+  } | null;
 }
 
 export interface CollaborationTask {

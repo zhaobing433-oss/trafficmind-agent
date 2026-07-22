@@ -148,7 +148,7 @@ Vite 开发服务器默认启动在 `http://localhost:5173`，通过 Vite proxy 
 ```bash
 cd trafficmind-agent
 pytest backend/tests/ -v
-# 预期：191 passed
+# 预期：251 passed
 ```
 
 ---
@@ -299,7 +299,7 @@ npm run dev
 - 基于**规则相似度**实现历史案例检索（9 维特征匹配），预留 Chroma/FAISS 向量检索扩展
 - 自动生成**7 段式交通事件日报/周报**，支持 DeepSeek 大模型润色
 - 前端使用 **React 18 + Ant Design 5 + ECharts 5 + Vite**，深色主题指挥中心大屏
-- **191 个 pytest 测试用例**全部通过，覆盖端到端功能验证
+- **251 个 pytest 测试用例**全部通过，覆盖端到端功能验证
 
 ### STAR 版本（适合面试详细讲述）
 
@@ -553,7 +553,7 @@ ReAct 诊断 + 动态路由协同研判 + 冲突展示 + 事件链展示。
 ### 测试
 
 ```
-191 passed / 0 failed (TypeScript 0 errors)
+251 passed / 0 failed (TypeScript 0 errors)
 ```
 
 ### 第四阶段：预测与预防

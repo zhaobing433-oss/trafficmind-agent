@@ -110,3 +110,82 @@ def parse_content_to_event(content: str) -> Dict[str, Any]:
         result["nearbySchool"] = False
 
     return result
+
+
+def build_current_event(
+    nl_parsed: Dict[str, Any],
+    explicit_fields: Dict[str, Any] = None,
+    context_policy: str = "fresh_event",
+) -> Dict[str, Any]:
+    """
+    构建 currentEvent — 严格只包含当前消息提供或解析出的字段。
+
+    NEVER merges previous run data into currentEvent.
+    previousRunContext must be loaded separately via load_previous_run_context().
+
+    Args:
+        nl_parsed: parse_content_to_event() 的输出（当前 NL 消息解析结果）
+        explicit_fields: 请求中明确提供的结构化字段（如 avgSpeed=8.0）
+        context_policy: fresh_event / continue_event / follow_up
+
+    Returns:
+        currentEvent dict with fieldSources tracking
+    """
+    explicit = explicit_fields or {}
+    field_sources: Dict[str, str] = {}
+
+    # ===== DYNAMIC FIELDS: never inherited, must be in current message =====
+    dynamic_fields = ["avgSpeed", "queueLength", "duration"]
+    for field in dynamic_fields:
+        if nl_parsed.get(field) is not None:
+            nl_parsed[field] = nl_parsed[field]  # keep as-is
+            field_sources[field] = "current_message"
+        elif explicit.get(field) is not None and context_policy == "continue_event":
+            # continue_event: explicit values from request may be inherited
+            nl_parsed[field] = explicit[field]
+            field_sources[field] = "explicit_previous_reference"
+        else:
+            nl_parsed[field] = None
+            field_sources[field] = "missing"
+
+    # ===== STABLE FIELDS: can be inherited in continue_event =====
+    stable_fields = [
+        "roadName", "direction", "isMainRoad", "nearbySchool", "nearbyHospital",
+        "eventTypeCn", "eventType", "weather", "timePeriod",
+        "pedestrianRisk", "signalOptimizationRequested", "conflictIntent",
+    ]
+    # Defaults from parser that should NOT mask explicit values in continue_event
+    PARSER_DEFAULTS = {"roadName": "未命名路段", "direction": "", "weather": "clear", "timePeriod": "off_peak"}
+    for field in stable_fields:
+        parsed_val = nl_parsed.get(field)
+        is_bool_false = isinstance(parsed_val, bool) and not parsed_val
+        is_parser_default = field in PARSER_DEFAULTS and parsed_val == PARSER_DEFAULTS[field]
+        if parsed_val is not None and not is_bool_false and not is_parser_default:
+            field_sources[field] = "current_message"
+        elif parsed_val is not None and context_policy == "continue_event" and explicit.get(field) is not None:
+            # Parser returned a default value; explicit takes precedence in continue_event
+            nl_parsed[field] = explicit[field]
+            field_sources[field] = "explicit_previous_reference"
+        elif parsed_val is not None:
+            # bool False or parser default from NL — still "current_message" (fresh event)
+            field_sources[field] = "current_message"
+        elif context_policy == "continue_event" and explicit.get(field) is not None:
+            nl_parsed[field] = explicit[field]
+            field_sources[field] = "explicit_previous_reference"
+        else:
+            field_sources[field] = "missing"
+
+    # ===== Ensure result keys exist =====
+    for field in dynamic_fields + stable_fields:
+        if field not in nl_parsed:
+            nl_parsed[field] = None if field in dynamic_fields else (
+                False if field.startswith("is") or field.startswith("nearby") or field.startswith("has") else
+                "clear" if field == "weather" else
+                "off_peak" if field == "timePeriod" else ""
+            )
+
+    nl_parsed["fieldSources"] = field_sources
+    nl_parsed["contextPolicy"] = context_policy
+    nl_parsed["originalInput"] = explicit.get("content", "") or explicit.get("originalInput", "")
+
+    return nl_parsed

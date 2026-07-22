@@ -74,7 +74,12 @@ class SQLiteCollaborationRepository:
     def save_run(self, state):
         init_collaboration_tables()
         conn = get_conn(); now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        conn.execute("""INSERT OR REPLACE INTO collaboration_runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        # Ensure previous_run_context column exists (non-destructive migration)
+        try:
+            conn.execute("ALTER TABLE collaboration_runs ADD COLUMN previous_run_context TEXT DEFAULT '{}'")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        conn.execute("""INSERT OR REPLACE INTO collaboration_runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (state["run_id"], state.get("session_id",""), state.get("trace_id",""),
              state["status"], state.get("protocol_version","1.0"),
              json.dumps(state.get("normalized_event",{}), ensure_ascii=False),
@@ -82,7 +87,9 @@ class SQLiteCollaborationRepository:
              json.dumps(state.get("skipped_agents",[]), ensure_ascii=False),
              json.dumps(state.get("failed_agents",[]), ensure_ascii=False),
              json.dumps(state.get("budget_usage",{}), ensure_ascii=False),
-             json.dumps(state.get("final_decision",""), ensure_ascii=False), state.get("started_at",""), now, state.get("completed_at","")))
+             json.dumps(state.get("final_decision",""), ensure_ascii=False),
+             state.get("started_at",""), now, state.get("completed_at",""),
+             json.dumps(state.get("previous_run_context", None), ensure_ascii=False)))
         conn.commit(); conn.close()
 
     def get_run(self, run_id: str) -> Optional[Dict]:
@@ -157,3 +164,71 @@ class SQLiteCollaborationRepository:
         init_collaboration_tables(); conn = get_conn()
         rows = conn.execute("SELECT * FROM collaboration_events WHERE run_id=? ORDER BY sequence_number",(run_id,)).fetchall()
         conn.close(); return [dict(r) for r in rows]
+
+
+def load_previous_run_context(session_id: str) -> Optional[Dict[str, Any]]:
+    """
+    从 SQLite 加载会话上一次运行的上下文摘要。
+    只返回摘要和关键字段，不返回完整事件——确保 currentEvent 完全独立。
+
+    Returns:
+        None (no previous run) 或 {
+            "runId": str,
+            "summary": str,
+            "status": str,
+            "event": {   # ONLY stable + key fields for context
+                "avgSpeed": float|None,
+                "queueLength": float|None,
+                "roadName": str,
+                "eventTypeCn": str,
+                "nearbySchool": bool,
+                "nearbyHospital": bool,
+                "isMainRoad": bool,
+            },
+            "updatedAt": str,
+        }
+    """
+    init_collaboration_tables()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM collaboration_runs WHERE session_id=? "
+            "ORDER BY updated_at DESC LIMIT 1",
+            (session_id,)
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        # Parse JSON fields
+        import json as _json
+        normalized_event = {}
+        try:
+            normalized_event = _json.loads(d.get("normalized_event", "{}"))
+        except Exception:
+            pass
+        final_decision = d.get("final_decision", "")
+        # Extract a brief summary from final_decision
+        summary = ""
+        if isinstance(final_decision, str) and final_decision:
+            summary = final_decision[:200]
+        elif isinstance(final_decision, dict):
+            summary = str(final_decision.get("fusionSummary", ""))[:200]
+        elif isinstance(normalized_event, dict):
+            summary = f"{normalized_event.get('roadName', '')}{normalized_event.get('eventTypeCn', '')}研判"
+        return {
+            "runId": d.get("run_id", ""),
+            "summary": summary or f"{normalized_event.get('roadName', '')}研判",
+            "status": d.get("status", ""),
+            "event": {
+                "avgSpeed": normalized_event.get("avgSpeed"),
+                "queueLength": normalized_event.get("queueLength"),
+                "roadName": normalized_event.get("roadName", ""),
+                "eventTypeCn": normalized_event.get("eventTypeCn", ""),
+                "nearbySchool": normalized_event.get("nearbySchool", False),
+                "nearbyHospital": normalized_event.get("nearbyHospital", False),
+                "isMainRoad": normalized_event.get("isMainRoad", False),
+            },
+            "updatedAt": d.get("updated_at", ""),
+        }
+    finally:
+        conn.close()

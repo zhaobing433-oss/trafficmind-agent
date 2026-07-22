@@ -64,20 +64,29 @@ class CollaborationOrchestrator:
         skipped_agents: List[str] = None,
         routing_reasons: List[str] = None,
         budget: ExecutionBudget = None,
+        previous_run_context: Dict[str, Any] = None,
     ) -> AsyncGenerator[str, None]:
-        """执行一次协作。生成 SSE 事件。"""
+        """执行一次协作。生成 SSE 事件。
+
+        event_info = currentEvent (仅当前消息解析结果)
+        previous_run_context = 独立的上一次运行上下文（不合并到 currentEvent）
+        """
         bus = get_event_bus()
         trace_id = f"trace_{run_id}"
         budget = budget or ExecutionBudget()
         state = CollaborationRunState(run_id, session_id, trace_id)
         state.original_input = event_info
-        state.normalized_event = event_info
+        state.normalized_event = event_info  # = currentEvent only
+        state.previous_run_context = previous_run_context  # separate!
         state.selected_agents = selected_agents
         state.skipped_agents = skipped_agents or []
         self.repo.save_run(state.to_dict())
 
-        # Parse NL content into normalized event if not already parsed
-        if not event_info.get("avgSpeed") and not event_info.get("queueLength"):
+        # Parse NL content — caller (app.py) already handled NL parsing and fieldSources.
+        # Only re-parse as fallback if event_info has no parsed fields and originalInput is present.
+        context_policy = event_info.get("contextPolicy", "fresh_event")
+        field_sources = event_info.get("fieldSources", {})
+        if not event_info.get("avgSpeed") and not event_info.get("queueLength") and not field_sources:
             from backend.agent.collaboration.event_parser import parse_content_to_event
             content = event_info.get("originalInput", event_info.get("content", ""))
             if content:
@@ -86,7 +95,15 @@ class CollaborationOrchestrator:
                 yield sse_event("event_parse_done", {"normalizedEvent": event_info})
 
         user_query = event_info.get("originalInput", event_info.get("content", ""))
-        yield sse_event("run_created", {"runId": run_id, "traceId": trace_id, "userQuery": user_query, "selectedAgents": [a for a in selected_agents if a not in ("FusionAgent", "ConflictDetector")]})
+        yield sse_event("run_created", {
+            "runId": run_id, "traceId": trace_id,
+            "sessionId": session_id,
+            "userQuery": user_query,
+            "contextPolicy": context_policy,
+            "fieldSources": field_sources,
+            "previousRunContext": previous_run_context,
+            "selectedAgents": [a for a in selected_agents if a not in ("FusionAgent", "ConflictDetector")],
+        })
         state.transition("routing")
         yield sse_event("agent_route_done", {"selectedAgents": selected_agents, "routingReasons": routing_reasons or []})
 
@@ -316,7 +333,7 @@ class CollaborationOrchestrator:
 
         # --- SEND COMPLETION EVENTS AFTER SAVE ---
         if state.status == "completed":
-            yield sse_event("run_completed", {"runId": run_id, "status": "completed"})
+            yield sse_event("run_completed", {"runId": run_id, "sessionId": session_id, "status": "completed"})
         elif state.status == "partial_success":
             yield sse_event("run_partial_success", {"reason": "部分任务未完成"})
         else:
