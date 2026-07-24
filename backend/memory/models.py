@@ -209,12 +209,16 @@ class MemoryWriteCandidate:
     memory_key: str = ""
     value: Dict[str, Any] = field(default_factory=dict)
     text_content: str = ""
-    source_type: str = ""
-    source_run_id: str = ""
-    source_message_id: str = ""
+    status: str = "candidate"
     confidence: float = 0.8
     authority_level: int = 0
+    source_type: str = ""
+    source_id: str = ""
+    source_run_id: str = ""
+    source_message_id: str = ""
     valid_until: Optional[str] = None
+    reason: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
     policy_check: Dict[str, Any] = field(default_factory=dict)
 
 

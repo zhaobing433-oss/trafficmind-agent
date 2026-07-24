@@ -1,9 +1,10 @@
 """
 Memory V2 — 结构化 Session Memory
 
-Phase 10: 可追踪、可纠正、可过期、可按 Agent 精确注入的 Session 记忆系统。
+Phase 10 里程碑二: 结构化记忆抽取、写入门控、用户纠正和 Supersede。
 
-本阶段不接入 Orchestrator，不改前端，不创建跨 Session 向量记忆。
+本里程碑实现写入侧：Extractor → WriteGate → ConflictResolver → Store → Trace。
+Memory 召回和 Agent 注入留待后续里程碑。
 """
 
 from backend.memory.models import (
@@ -29,6 +30,12 @@ from backend.memory.repository import MemoryStore, MemoryTransaction
 from backend.memory.factory import create_memory_repository
 from backend.memory.policy import MemoryPolicy, DEFAULT_POLICY
 from backend.memory.time_utils import utc_now, to_iso_utc, parse_iso_datetime, is_expired
+
+# Phase 10 里程碑二
+from backend.memory.extractor import MemoryExtractor, MemoryExtractionResult
+from backend.memory.write_gate import MemoryWriteGate, GateDecision
+from backend.memory.conflict_resolver import ConflictResolver
+from backend.memory.coordinator import MemoryCoordinator
 
 __all__ = [
     # Models
@@ -62,4 +69,11 @@ __all__ = [
     "to_iso_utc",
     "parse_iso_datetime",
     "is_expired",
+    # Phase 10 Milestone 2
+    "MemoryExtractor",
+    "MemoryExtractionResult",
+    "MemoryWriteGate",
+    "GateDecision",
+    "ConflictResolver",
+    "MemoryCoordinator",
 ]

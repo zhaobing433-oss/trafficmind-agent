@@ -680,6 +680,101 @@ async def routed_analyze_stream(body: RoutedStreamRequest):
     return await _legacy_analyze_stream(body)
 
 
+async def _run_memory_extraction(
+    session_id: str, run_id: str,
+    user_message_id: str, assistant_message_id: str,
+    user_input: str, current_event: Dict[str, Any],
+    selected_agents: List[str],
+    conflicts: List[Dict], arbitration_results: List[Dict],
+    fusion_summary: str, final_decision: Any,
+    requires_human_review: bool, run_status: str,
+    degraded: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Phase 10 Memory V2: 运行抽取并写入结构化记忆。
+
+    失败不影响 Run 完成。
+    """
+    try:
+        from backend.memory.coordinator import MemoryCoordinator
+        from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+
+        # Query run details for agent_results and final_decision
+        collab_repo = SQLiteCollaborationRepository()
+        run_data = collab_repo.get_run(run_id)
+        tasks = []
+        conflict_records = []
+        try:
+            import sqlite3 as _sq
+            from backend.config import DB_PATH as _dbp
+            conn = _sq.connect(_dbp)
+            conn.row_factory = _sq.Row
+            trows = conn.execute(
+                "SELECT * FROM collaboration_tasks WHERE run_id=? AND status='succeeded'",
+                (run_id,),
+            ).fetchall()
+            tasks = [dict(r) for r in trows]
+            crows = conn.execute(
+                "SELECT * FROM collaboration_conflicts WHERE run_id=?", (run_id,)
+            ).fetchall()
+            conflict_records = [dict(r) for r in crows]
+            conn.close()
+        except Exception:
+            pass
+
+        # Build agent_results from tasks
+        agent_results = []
+        for t in tasks:
+            output = t.get("output_snapshot", "{}")
+            if isinstance(output, str):
+                try:
+                    output = json.loads(output)
+                except Exception:
+                    output = {}
+            if output:
+                agent_results.append({
+                    "agentName": t.get("agent_name", ""),
+                    "suggestion": output.get("suggestion", ""),
+                    "findings": output.get("findings", []),
+                    "urgency": output.get("urgency", "low"),
+                    "confidence": output.get("confidence", 0),
+                })
+
+        # Use run_data for final_decision if not already captured
+        fd = final_decision
+        if not fd and run_data:
+            raw_fd = run_data.get("final_decision", "")
+            if isinstance(raw_fd, str) and raw_fd:
+                try:
+                    fd = json.loads(raw_fd)
+                except Exception:
+                    fd = {"fusionSummary": raw_fd}
+
+        coordinator = MemoryCoordinator()
+        result = coordinator.extract_and_write(
+            session_id=session_id,
+            run_id=run_id,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            user_input=user_input,
+            current_event=current_event,
+            selected_agents=selected_agents,
+            agent_results=agent_results,
+            conflicts=conflicts or [],
+            arbitration_results=arbitration_results or [],
+            fusion_summary=fusion_summary or "",
+            final_decision=fd or {},
+            requires_human_review=requires_human_review,
+            run_status=run_status,
+            degraded=degraded,
+            is_first_round=False,  # 由调用方判定
+        )
+        return result
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
     """使用 CollaborationOrchestrator 执行协同分析。"""
     import asyncio as _asyncio
@@ -766,6 +861,12 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
         degraded = False
         fallback_reason = ""
         fusion_summary = ""
+        # Phase 10 Memory V2 tracking
+        run_status = "unknown"
+        conflicts_list = []
+        arbitration_list = []
+        final_decision_for_memory = None
+        requires_human_review_for_memory = False
         try:
             orchestrator = CollaborationOrchestrator()
             budget = ExecutionBudget(max_agents=4, max_agent_calls=2, max_retries=1, max_total_seconds=90)
@@ -780,6 +881,13 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
                     import re as _re
                     match = _re.search(r'\"fusionSummary\":\s*\"([^\"]+)\"', event_str)
                     if match: fusion_summary = match.group(1)
+                # Phase 10 Memory tracking
+                if 'event: run_completed' in event_str:
+                    run_status = "completed"
+                elif 'event: run_partial_success' in event_str:
+                    run_status = "partial_success"
+                elif 'event: run_failed' in event_str:
+                    run_status = "failed"
                 yield event_str
             # Orchestrator handles its own done event — wrapper does NOT send duplicate
         except Exception as e:
@@ -798,6 +906,29 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
         am_id = f"am_{int(datetime.now().timestamp() * 1000)}"
         add_message(am_id, sid, "assistant", assistant_content, "collaboration",
                     {"runId": run_id, "executionEngine": "orchestrator", "degraded": degraded, "fusionSummary": assistant_content})
+
+        # ===== Phase 10 Memory V2: 写入侧 =====
+        if run_status != "failed":
+            _mem_result = await _run_memory_extraction(
+                sid, run_id, um_id, am_id,
+                query_text, info, selected,
+                conflicts_list, arbitration_list,
+                fusion_summary, final_decision_for_memory,
+                requires_human_review_for_memory,
+                run_status, degraded,
+            )
+            if _mem_result:
+                yield sse_event("memory_write_completed", {
+                    "runId": _mem_result["runId"],
+                    "sessionId": _mem_result["sessionId"],
+                    "candidateCount": _mem_result["candidateCount"],
+                    "createdCount": _mem_result["createdCount"],
+                    "deduplicatedCount": _mem_result["deduplicatedCount"],
+                    "supersededCount": _mem_result["supersededCount"],
+                    "rejectedCount": _mem_result["rejectedCount"],
+                    "confirmedCount": _mem_result["confirmedCount"],
+                    "latencyMs": _mem_result["latencyMs"],
+                })
 
     return StreamingResponse(agent_stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
