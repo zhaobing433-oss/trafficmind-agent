@@ -26,6 +26,11 @@ from backend.memory.constants import (
     EXCLUDED_STATUSES,
 )
 from backend.memory.time_utils import utc_now, to_iso_utc, parse_iso_datetime
+from backend.memory.event_thread import (
+    MemoryEventThread, MemorySessionState,
+    EVENT_THREAD_DDL, EVENT_THREAD_MIGRATION,
+    generate_thread_id,
+)
 
 
 # ================================================================
@@ -188,6 +193,15 @@ def init_memory_tables():
         )
     except sqlite3.OperationalError:
         pass  # 索引已存在
+
+    # Phase 10 M3: Event Thread tables
+    c.executescript(EVENT_THREAD_DDL)
+    for migration_sql in EVENT_THREAD_MIGRATION:
+        try:
+            c.execute(migration_sql)
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
     conn.commit()
     conn.close()
 
@@ -508,7 +522,8 @@ class SQLiteMemoryRepository(MemoryStore):
         allowed = {
             "memory_type", "memory_key", "text_content", "status",
             "confidence", "authority_level", "valid_from", "valid_until",
-            "supersedes_id", "last_accessed_at", "access_count",
+            "supersedes_id", "event_thread_id",
+            "last_accessed_at", "access_count",
         }
         # 归一化时间字段
         for field in ("valid_from", "valid_until"):
@@ -757,7 +772,122 @@ class SQLiteMemoryRepository(MemoryStore):
                 "DELETE FROM memory_traces WHERE session_id = ?",
                 (session_id,),
             ).rowcount
+            c3 = conn.execute(
+                "DELETE FROM memory_event_threads WHERE session_id = ?",
+                (session_id,),
+            ).rowcount
+            c4 = conn.execute(
+                "DELETE FROM memory_session_states WHERE session_id = ?",
+                (session_id,),
+            ).rowcount
             _tx_safe_commit(conn)
-            return c1 + c2
+            return c1 + c2 + c3 + c4
         finally:
             _tx_safe_close(conn)
+
+    # ================================================================
+    # Event Thread (Phase 10 M3)
+    # ================================================================
+
+    def create_event_thread(
+        self, session_id: str, title: str = "",
+        started_run_id: str = "",
+    ) -> MemoryEventThread:
+        thread_id = generate_thread_id()
+        now = to_iso_utc()
+        conn = _get_raw_conn()
+        try:
+            # Close any existing active thread
+            conn.execute(
+                "UPDATE memory_event_threads SET status='closed', "
+                "closed_at=?, updated_at=? WHERE session_id=? AND status='active'",
+                (now, now, session_id),
+            )
+            # Create new thread
+            conn.execute(
+                "INSERT INTO memory_event_threads "
+                "(id, session_id, status, title, started_run_id, last_run_id, "
+                "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                (thread_id, session_id, "active", title, started_run_id,
+                 started_run_id, now, now),
+            )
+            # Update session state
+            conn.execute(
+                "INSERT OR REPLACE INTO memory_session_states "
+                "(session_id, active_event_thread_id, updated_at) VALUES (?,?,?)",
+                (session_id, thread_id, now),
+            )
+            _tx_safe_commit(conn)
+        finally:
+            _tx_safe_close(conn)
+        return MemoryEventThread(
+            id=thread_id, session_id=session_id, status="active",
+            title=title, started_run_id=started_run_id,
+            last_run_id=started_run_id, created_at=now, updated_at=now,
+        )
+
+    def get_event_thread(self, thread_id: str) -> Optional[MemoryEventThread]:
+        conn = _get_raw_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM memory_event_threads WHERE id=?", (thread_id,)
+            ).fetchone()
+        finally:
+            _tx_safe_close(conn)
+        if not row:
+            return None
+        return MemoryEventThread.from_row(dict(row))
+
+    def get_active_event_thread(self, session_id: str) -> Optional[MemoryEventThread]:
+        conn = _get_raw_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM memory_event_threads "
+                "WHERE session_id=? AND status='active' LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        finally:
+            _tx_safe_close(conn)
+        if not row:
+            return None
+        return MemoryEventThread.from_row(dict(row))
+
+    def close_event_thread(self, thread_id: str) -> bool:
+        now = to_iso_utc()
+        conn = _get_raw_conn()
+        try:
+            conn.execute(
+                "UPDATE memory_event_threads SET status='closed', "
+                "closed_at=?, updated_at=? WHERE id=?",
+                (now, now, thread_id),
+            )
+            _tx_safe_commit(conn)
+            return conn.total_changes > 0
+        finally:
+            _tx_safe_close(conn)
+
+    def update_event_thread_last_run(self, thread_id: str, run_id: str):
+        now = to_iso_utc()
+        conn = _get_raw_conn()
+        try:
+            conn.execute(
+                "UPDATE memory_event_threads SET last_run_id=?, "
+                "updated_at=? WHERE id=?",
+                (run_id, now, thread_id),
+            )
+            _tx_safe_commit(conn)
+        finally:
+            _tx_safe_close(conn)
+
+    def get_session_memory_state(self, session_id: str) -> Optional[MemorySessionState]:
+        conn = _get_raw_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM memory_session_states WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+        finally:
+            _tx_safe_close(conn)
+        if not row:
+            return None
+        return MemorySessionState.from_row(dict(row))

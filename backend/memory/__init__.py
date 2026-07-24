@@ -37,6 +37,16 @@ from backend.memory.write_gate import MemoryWriteGate, GateDecision
 from backend.memory.conflict_resolver import ConflictResolver
 from backend.memory.coordinator import MemoryCoordinator
 
+# Phase 10 里程碑三
+from backend.memory.event_thread import (
+    MemoryEventThread, MemorySessionState, build_thread_title, generate_thread_id,
+)
+from backend.memory.recall_classifier import RecallClassifier, MemoryRecallDecision
+from backend.memory.recall_planner import RecallPlanner, MemoryRecallPlan
+from backend.memory.retriever import MemoryRetriever, FilteredItem
+from backend.memory.reranker import MemoryReranker
+from backend.memory.injector import MemoryInjector
+
 __all__ = [
     # Models
     "MemoryItem",

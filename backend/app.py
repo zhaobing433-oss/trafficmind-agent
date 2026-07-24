@@ -692,15 +692,29 @@ async def _run_memory_extraction(
 ) -> Optional[Dict[str, Any]]:
     """Phase 10 Memory V2: 运行抽取并写入结构化记忆。
 
+    从 CollaborationRepository 读取 Run 最终状态，不依赖 SSE 字符串解析。
     失败不影响 Run 完成。
     """
     try:
         from backend.memory.coordinator import MemoryCoordinator
         from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
 
-        # Query run details for agent_results and final_decision
+        # === Read Run state from collaboration repository (source of truth) ===
         collab_repo = SQLiteCollaborationRepository()
         run_data = collab_repo.get_run(run_id)
+
+        # Derive fields from repository data
+        _run_status = run_data.get("status", run_status) if run_data else run_status
+
+        # Parse final_decision from repository
+        _fd = final_decision
+        if run_data and not _fd:
+            raw_fd = run_data.get("final_decision", "")
+            if isinstance(raw_fd, str) and raw_fd:
+                try:
+                    _fd = json.loads(raw_fd)
+                except Exception:
+                    _fd = {"fusionSummary": raw_fd}
         tasks = []
         conflict_records = []
         try:
@@ -739,15 +753,8 @@ async def _run_memory_extraction(
                     "confidence": output.get("confidence", 0),
                 })
 
-        # Use run_data for final_decision if not already captured
-        fd = final_decision
-        if not fd and run_data:
-            raw_fd = run_data.get("final_decision", "")
-            if isinstance(raw_fd, str) and raw_fd:
-                try:
-                    fd = json.loads(raw_fd)
-                except Exception:
-                    fd = {"fusionSummary": raw_fd}
+        # Use repository-derived final_decision if not already captured
+        fd = _fd
 
         coordinator = MemoryCoordinator()
         result = coordinator.extract_and_write(
@@ -764,7 +771,7 @@ async def _run_memory_extraction(
             fusion_summary=fusion_summary or "",
             final_decision=fd or {},
             requires_human_review=requires_human_review,
-            run_status=run_status,
+            run_status=_run_status or run_status,
             degraded=degraded,
             is_first_round=False,  # 由调用方判定
         )
@@ -784,6 +791,7 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
     from backend.agent.collaboration.budget import ExecutionBudget
 
     async def agent_stream():
+        from backend.memory.coordinator import MemoryCoordinator
         from backend.agent.collaboration.event_parser import parse_content_to_event, build_current_event
         from backend.agent.collaboration.db_repository import load_previous_run_context
 
@@ -858,6 +866,68 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
         routing = route_agents(info)
         selected = routing["selectedAgents"][:4]  # Cap at 4 agents
 
+        # ===== Phase 10 M3: Memory Recall Pipeline =====
+        import copy as _copy
+        _current_event_before_recall = _copy.deepcopy(info)
+
+        yield sse_event("memory_recall_started", {
+            "runId": run_id, "sessionId": sid, "timestamp": datetime.now().isoformat(),
+        })
+
+        _mem_coordinator = MemoryCoordinator()
+        _recall_result = _mem_coordinator.recall_and_inject(
+            session_id=sid, run_id=run_id,
+            user_input=query_text or content_text or "",
+            current_event=info,
+            agent_targets=selected,
+            context_policy=context_policy,
+        )
+
+        yield sse_event("memory_recall_completed", {
+            "runId": run_id, "sessionId": sid,
+            "eventThreadId": _recall_result.get("eventThreadId", ""),
+            "intent": _recall_result.get("intent", ""),
+            "candidateCount": _recall_result.get("candidateCount", 0),
+            "selectedCount": _recall_result.get("selectedCount", 0),
+            "rejectedCount": _recall_result.get("rejectedCount", 0),
+            "latencyMs": _recall_result.get("latencyMs", 0),
+            "tokenEstimate": _recall_result.get("tokenEstimate", 0),
+        })
+
+        # Verify currentEvent immutability
+        assert _current_event_before_recall == info, (
+            "currentEvent was mutated during recall — CRITICAL BUG"
+        )
+
+        # Build routingContext from recall result
+        _routing_ctx = _recall_result.get("routingContext", {})
+        if _routing_ctx:
+            # Use routing-enhanced info for route_agents if available
+            _routing_info = dict(info)
+            for k, v in _routing_ctx.items():
+                if k not in ("fieldSources",):
+                    if _routing_info.get(k) in (None, "", False) and v is not None:
+                        _routing_info[k] = v
+            routing = route_agents(_routing_info)
+            selected = routing["selectedAgents"][:4]
+
+        # Build agent injection map stats for SSE
+        _agent_map = _recall_result.get("agentInjectionMap", {})
+        yield sse_event("memory_injection_ready", {
+            "runId": run_id,
+            "agentTargets": selected,
+            "injectedItemCountByAgent": {
+                a: m.get("itemCount", 0) for a, m in _agent_map.items()
+            },
+        })
+
+        if _recall_result.get("error"):
+            yield sse_event("memory_recall_failed", {
+                "runId": run_id, "sessionId": sid,
+                "errorCode": "recall_error",
+                "safeMessage": "Memory recall encountered an error, continuing with empty context",
+            })
+
         degraded = False
         fallback_reason = ""
         fusion_summary = ""
@@ -909,6 +979,10 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
 
         # ===== Phase 10 Memory V2: 写入侧 =====
         if run_status != "failed":
+            yield sse_event("memory_write_started", {
+                "runId": run_id, "sessionId": sid,
+                "timestamp": datetime.now().isoformat(),
+            })
             _mem_result = await _run_memory_extraction(
                 sid, run_id, um_id, am_id,
                 query_text, info, selected,

@@ -219,7 +219,7 @@ class TestDynamicFieldRejection:
             degraded=False, is_first_round=False,
         )
         rejected = [r for r in result.rejected_dynamic_facts
-                    if r["fieldName"] == "avgSpeed"]
+                    if r.get("fieldName") == "avgSpeed"]
         assert len(rejected) == 1
         assert rejected[0]["reason"] == "dynamic_field_blocked"
 
@@ -236,7 +236,7 @@ class TestDynamicFieldRejection:
             degraded=False, is_first_round=False,
         )
         rejected = [r for r in result.rejected_dynamic_facts
-                    if r["fieldName"] == "queueLength"]
+                    if r.get("fieldName") == "queueLength"]
         assert len(rejected) == 1
 
     def test_weather_rejected(self):
@@ -252,7 +252,7 @@ class TestDynamicFieldRejection:
             degraded=False, is_first_round=False,
         )
         rejected = [r for r in result.rejected_dynamic_facts
-                    if r["fieldName"] == "weather"]
+                    if r.get("fieldName") == "weather"]
         assert len(rejected) == 1
 
 

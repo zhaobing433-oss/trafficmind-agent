@@ -452,6 +452,7 @@ class MemoryExtractor:
         """用户明确确认时才创建 confirmed_decision。
 
         含糊表达不形成确认。
+        必须能唯一匹配 active proposal，否则不确认。
         """
         has_confirmation = any(kw in user_input for kw in CONFIRMATION_KEYWORDS)
 
@@ -468,14 +469,45 @@ class MemoryExtractor:
         # 提取被确认的内容
         confirmed_content = user_input[:300]
 
+        # Try to match a specific proposal
+        matched_proposal_id = None
+        matched_proposal_run_id = None
+        agent_name_match = re.search(
+            r'(CongestionAgent|SignalAgent|PublicSafetyAgent|DispatchAgent|AccidentAgent)',
+            user_input,
+        )
+        has_ambiguous_ref = bool(re.search(r'这个方案|那个方案|第一种|第二种', user_input))
+
+        if has_ambiguous_ref and not agent_name_match:
+            # Ambiguous reference without specific agent → reject, don't confirm
+            result.rejected_dynamic_facts.append({
+                "action": "rejected",
+                "reason": "ambiguous_proposal_reference",
+                "memoryType": "confirmed_decision",
+                "sourceRunId": run_id,
+                "text": confirmed_content,
+            })
+            return
+
+        if agent_name_match:
+            matched_agent = agent_name_match.group(1)
+            # Look through extracted proposals for a match
+            for p in result.proposals:
+                p_agent = p.value.get("agentName", "")
+                if p_agent == matched_agent:
+                    matched_proposal_run_id = p.source_run_id
+                    break
+
         candidate = MemoryWriteCandidate(
             memory_type=MemoryType.CONFIRMED_DECISION.value,
             memory_key=f"decision.confirmed.{run_id}",
             value={
                 "decision": confirmed_content,
+                "confirmedProposalId": matched_proposal_id or "",
+                "proposalSourceRunId": matched_proposal_run_id or "",
+                "confirmationMessageId": user_message_id,
+                "confirmationText": confirmed_content,
                 "confirmedAt": "",  # filled by writer
-                "sourceRunId": run_id,
-                "sourceMessageId": user_message_id,
             },
             text_content=confirmed_content,
             status=MemoryStatus.CONFIRMED.value,
@@ -736,4 +768,11 @@ class MemoryExtractor:
             result.temporary_facts.append(candidate)
             return
 
-        # No valid TTL found — don't write, don't reject (just skip silently)
+        # No valid TTL found — explicitly reject
+        result.rejected_dynamic_facts.append({
+            "action": "rejected",
+            "reason": "temporary_fact_missing_ttl",
+            "memoryType": "temporary_fact",
+            "memoryKey": "temporary.restriction",
+            "sourceRunId": run_id,
+        })

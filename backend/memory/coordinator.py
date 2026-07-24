@@ -431,6 +431,185 @@ class MemoryCoordinator:
 
         return result
 
+    def recall_and_inject(
+        self,
+        session_id: str,
+        run_id: str,
+        user_input: str,
+        current_event: Dict[str, Any],
+        agent_targets: List[str],
+        context_policy: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """执行完整的 Recall 流程。
+
+        classify → resolve thread → plan → retrieve → filter → rerank → inject
+        """
+        import copy
+        start_time = time.time()
+
+        # Save immutable copy of current_event
+        event_before = copy.deepcopy(current_event)
+
+        try:
+            from backend.memory.recall_classifier import RecallClassifier
+            from backend.memory.recall_planner import RecallPlanner
+            from backend.memory.retriever import MemoryRetriever
+            from backend.memory.reranker import MemoryReranker
+            from backend.memory.injector import MemoryInjector
+
+            # --- Step 1: Get session state ---
+            session_state = self.repo.get_session_memory_state(session_id)
+            active_thread_id = ""
+            active_thread = None
+            if session_state:
+                active_thread_id = session_state.active_event_thread_id
+            if active_thread_id:
+                active_thread = self.repo.get_event_thread(active_thread_id)
+
+            # --- Step 2: Classify ---
+            classifier = RecallClassifier()
+            decision = classifier.classify(
+                user_input=user_input,
+                current_event=current_event,
+                session_state=session_state.to_dict() if session_state else None,
+                active_thread=active_thread.to_dict() if active_thread else None,
+                context_policy=context_policy,
+            )
+
+            # --- Step 3: Resolve Event Thread ---
+            if decision.starts_new_event or decision.primary_intent == "fresh_event":
+                if active_thread:
+                    self.repo.close_event_thread(active_thread_id)
+                from backend.memory.event_thread import build_thread_title
+                title = build_thread_title(user_input, current_event)
+                new_thread = self.repo.create_event_thread(
+                    session_id=session_id, title=title, started_run_id=run_id,
+                )
+                active_thread_id = new_thread.id
+            elif not active_thread_id:
+                # First round — create thread
+                from backend.memory.event_thread import build_thread_title
+                title = build_thread_title(user_input, current_event)
+                new_thread = self.repo.create_event_thread(
+                    session_id=session_id, title=title, started_run_id=run_id,
+                )
+                active_thread_id = new_thread.id
+            else:
+                # Continue using current thread
+                self.repo.update_event_thread_last_run(active_thread_id, run_id)
+
+            decision.current_event_thread_id = active_thread_id
+
+            # --- Step 4: Build plan ---
+            planner = RecallPlanner()
+            plan = planner.build_plan(decision, session_id, active_thread_id, agent_targets)
+
+            # --- Step 5: Retrieve ---
+            retriever = MemoryRetriever(self.repo)
+            retrieval_result = retriever.retrieve(plan, current_event, session_id)
+
+            # --- Step 6: Rerank ---
+            reranker = MemoryReranker()
+            selected = reranker.rerank(retrieval_result["selected"], plan, current_event)
+
+            # --- Step 7: Inject ---
+            injector = MemoryInjector()
+            injection = injector.build_injection_context(
+                selected, agent_targets, current_event, run_id, session_id,
+            )
+
+            # --- Step 8: Build routing context ---
+            routing_context = self._build_routing_context(
+                current_event, injection.get("injectionContext", {})
+            )
+
+            # --- Step 9: Verify currentEvent immutability ---
+            assert event_before == current_event, \
+                "currentEvent was mutated during recall — CRITICAL BUG"
+
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            # Estimate tokens
+            token_estimate = sum(
+                len(str(fi.item.value)) + len(fi.item.text_content)
+                for fi in selected
+            )
+
+            return {
+                "runId": run_id,
+                "sessionId": session_id,
+                "eventThreadId": active_thread_id,
+                "intent": decision.primary_intent,
+                "recallDecision": decision.to_dict(),
+                "recallPlan": plan.to_dict(),
+                "candidateCount": retrieval_result["total_candidates"],
+                "selectedCount": retrieval_result["selected_count"],
+                "rejectedCount": retrieval_result["rejected_count"],
+                "selected": selected,
+                "injectionContext": injection["injectionContext"],
+                "agentInjectionMap": injection["agentInjectionMap"],
+                "routingContext": routing_context,
+                "latencyMs": latency_ms,
+                "tokenEstimate": token_estimate,
+                "error": None,
+            }
+
+        except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.error(f"Memory recall failed for run {run_id}: {e}", exc_info=True)
+            return {
+                "runId": run_id,
+                "sessionId": session_id,
+                "eventThreadId": "",
+                "intent": "failed",
+                "recallDecision": {},
+                "candidateCount": 0,
+                "selectedCount": 0,
+                "rejectedCount": 0,
+                "selected": [],
+                "injectionContext": {},
+                "agentInjectionMap": {},
+                "routingContext": {},
+                "latencyMs": latency_ms,
+                "tokenEstimate": 0,
+                "error": str(e),
+            }
+
+    def _build_routing_context(
+        self,
+        current_event: Dict[str, Any],
+        injection_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """构建安全的 routingContext（不修改 currentEvent）。"""
+        routing = {}
+        routing["fieldSources"] = {}
+
+        safe_fields = {
+            "road.name": "roadName",
+            "school.nearby": "nearbySchool",
+            "hospital.nearby": "nearbyHospital",
+            "road.is_main": "isMainRoad",
+            "road.direction": "direction",
+        }
+
+        for fact in injection_context.get("stableFacts", []):
+            mk = fact.get("memoryKey", "")
+            if mk in safe_fields:
+                event_key = safe_fields[mk]
+                val = fact.get("value", {}).get("value")
+                if val is not None and event_key not in routing:
+                    routing[event_key] = val
+                    routing["fieldSources"][event_key] = "memory_session"
+
+        # Current event values always override
+        for key in current_event:
+            if key not in routing and key not in ("fieldSources", "memoryInjectedFields"):
+                val = current_event[key]
+                if val is not None:
+                    routing[key] = val
+
+        return routing
+
     @staticmethod
     def _empty_result(
         run_id: str, session_id: str, trace_id: str, latency_ms: int,

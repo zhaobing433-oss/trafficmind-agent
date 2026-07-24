@@ -91,6 +91,7 @@ class MemoryItem:
     valid_until: Optional[str] = None
     supersedes_id: str = ""
     dedup_key: str = ""
+    event_thread_id: str = ""
     created_at: str = ""
     updated_at: str = ""
     last_accessed_at: Optional[str] = None
@@ -118,6 +119,7 @@ class MemoryItem:
             "valid_until": self.valid_until,
             "supersedes_id": self.supersedes_id,
             "dedup_key": self.dedup_key,
+            "event_thread_id": self.event_thread_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_accessed_at": self.last_accessed_at,
@@ -160,6 +162,7 @@ class MemoryItem:
             valid_until=row.get("valid_until") or None,
             supersedes_id=row.get("supersedes_id", ""),
             dedup_key=row.get("dedup_key", ""),
+            event_thread_id=row.get("event_thread_id", ""),
             created_at=row.get("created_at", ""),
             updated_at=row.get("updated_at", ""),
             last_accessed_at=row.get("last_accessed_at") or None,
