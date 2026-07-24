@@ -109,7 +109,18 @@ def delete_session(session_id: str) -> bool:
     # Also init collaboration tables if they exist
     from backend.agent.collaboration.db_repository import init_collaboration_tables
     init_collaboration_tables()
+    # Phase 10: init memory tables for cascade delete (idempotent)
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
     conn = get_conn()
+
+    # 0. Delete Phase 10 memory data (memory_items + memory_traces)
+    #    如果表尚未创建（例如旧测试数据库），安全跳过
+    try:
+        conn.execute("DELETE FROM memory_items WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM memory_traces WHERE session_id = ?", (session_id,))
+    except sqlite3.OperationalError:
+        pass  # 表不存在，跳过
 
     # 1. Delete collaboration data (child tables first)
     run_ids = [r[0] for r in conn.execute(

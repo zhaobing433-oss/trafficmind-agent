@@ -38,6 +38,15 @@ from backend.config import EVENT_STATUSES, LLM_ENABLED
 async def lifespan(app: FastAPI):
     """应用启动时初始化数据库。"""
     init_db()
+    # Phase 6: Chat tables
+    from backend.chat.chat_db import init_chat_tables
+    init_chat_tables()
+    # Phase 9: Collaboration tables (idempotent)
+    from backend.agent.collaboration.db_repository import init_collaboration_tables
+    init_collaboration_tables()
+    # Phase 10: Memory V2 tables (idempotent)
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
     llm_status = "已启用 (DeepSeek)" if LLM_ENABLED else "未配置，将使用本地模板"
     print(f"TrafficMind Agent 启动完成")
     print(f"  LLM 状态: {llm_status}")
@@ -886,6 +895,8 @@ async def health():
         "collaborationProtocolVersion": "1.0",
         "collaborationRepositoryType": "sqlite",
         "collaborationFallbackEnabled": True,
+        "memoryV2Enabled": True,
+        "memoryV2RepositoryType": "sqlite",
     }
 
 
