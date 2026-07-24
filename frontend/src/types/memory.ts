@@ -118,7 +118,7 @@ export interface MemoryTraceResponse {
   sessionId?: string;
   eventThreadId?: string;
   recallIntent?: RecallIntent;
-  recallDecision?: Record<string, unknown>;
+  recallDecision?: MemoryRecallDecision;
   recallPlan?: Record<string, unknown>;
   candidates?: unknown[];
   selected?: MemorySelectedItem[];

@@ -261,6 +261,7 @@ class MemoryTrace:
     run_id: str = ""
     session_id: str = ""
     recall_intent: str = ""
+    recall_decision_json: str = "{}"
     recall_plan_json: str = "{}"
     candidates_json: str = "[]"
     selected_json: str = "[]"
@@ -271,6 +272,7 @@ class MemoryTrace:
     token_estimate: int = 0
     recall_latency_ms: int = 0
     write_latency_ms: int = 0
+    event_thread_id: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -280,6 +282,7 @@ class MemoryTrace:
             "run_id": self.run_id,
             "session_id": self.session_id,
             "recall_intent": self.recall_intent,
+            "recall_decision_json": self.recall_decision_json,
             "recall_plan_json": self.recall_plan_json,
             "candidates_json": self.candidates_json,
             "selected_json": self.selected_json,
@@ -290,6 +293,7 @@ class MemoryTrace:
             "token_estimate": self.token_estimate,
             "recall_latency_ms": self.recall_latency_ms,
             "write_latency_ms": self.write_latency_ms,
+            "event_thread_id": self.event_thread_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -301,6 +305,7 @@ class MemoryTrace:
         trace.run_id = row.get("run_id", "")
         trace.session_id = row.get("session_id", "")
         trace.recall_intent = row.get("recall_intent", "")
+        trace.recall_decision_json = row.get("recall_decision_json", "{}")
         trace.recall_plan_json = row.get("recall_plan_json", "{}")
         trace.candidates_json = row.get("candidates_json", "[]")
         trace.selected_json = row.get("selected_json", "[]")
@@ -311,6 +316,7 @@ class MemoryTrace:
         trace.token_estimate = int(row.get("token_estimate", 0))
         trace.recall_latency_ms = int(row.get("recall_latency_ms", 0))
         trace.write_latency_ms = int(row.get("write_latency_ms", 0))
+        trace.event_thread_id = row.get("event_thread_id", "")
         trace.created_at = row.get("created_at", "")
         trace.updated_at = row.get("updated_at", "")
         return trace

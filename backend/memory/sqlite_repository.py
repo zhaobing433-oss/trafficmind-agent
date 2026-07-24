@@ -691,6 +691,8 @@ class SQLiteMemoryRepository(MemoryStore):
                 # Keep recall fields from existing
                 if not trace.recall_intent and existing.recall_intent:
                     trace.recall_intent = existing.recall_intent
+                if trace.recall_decision_json in ("", "{}") and existing.recall_decision_json not in ("", "{}"):
+                    trace.recall_decision_json = existing.recall_decision_json
                 if trace.recall_plan_json in ("", "{}") and existing.recall_plan_json not in ("", "{}"):
                     trace.recall_plan_json = existing.recall_plan_json
                 if trace.candidates_json in ("", "[]") and existing.candidates_json not in ("", "[]"):
@@ -735,21 +737,25 @@ class SQLiteMemoryRepository(MemoryStore):
             result = conn.execute(
                 """UPDATE memory_traces
                    SET session_id = ?, recall_intent = ?,
+                       recall_decision_json = ?,
                        recall_plan_json = ?, candidates_json = ?,
                        selected_json = ?, rejected_json = ?,
                        injection_map_json = ?,
                        write_candidates_json = ?, write_results_json = ?,
                        token_estimate = ?, recall_latency_ms = ?,
-                       write_latency_ms = ?, updated_at = ?
+                       write_latency_ms = ?, event_thread_id = ?,
+                       updated_at = ?
                    WHERE run_id = ?""",
                 (
                     trace.session_id, trace.recall_intent,
+                    trace.recall_decision_json,
                     trace.recall_plan_json, trace.candidates_json,
                     trace.selected_json, trace.rejected_json,
                     trace.injection_map_json,
                     trace.write_candidates_json, trace.write_results_json,
                     trace.token_estimate, trace.recall_latency_ms,
-                    trace.write_latency_ms, trace.updated_at,
+                    trace.write_latency_ms, trace.event_thread_id,
+                    trace.updated_at,
                     trace.run_id,
                 ),
             )
@@ -757,22 +763,24 @@ class SQLiteMemoryRepository(MemoryStore):
                 conn.execute(
                     """INSERT INTO memory_traces (
                         trace_id, run_id, session_id, recall_intent,
-                        recall_plan_json, candidates_json, selected_json,
+                        recall_decision_json, recall_plan_json,
+                        candidates_json, selected_json,
                         rejected_json, injection_map_json,
                         write_candidates_json, write_results_json,
                         token_estimate, recall_latency_ms, write_latency_ms,
-                        created_at, updated_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        event_thread_id, created_at, updated_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         trace.trace_id, trace.run_id, trace.session_id,
                         trace.recall_intent,
+                        trace.recall_decision_json,
                         trace.recall_plan_json, trace.candidates_json,
                         trace.selected_json,
                         trace.rejected_json, trace.injection_map_json,
                         trace.write_candidates_json, trace.write_results_json,
                         trace.token_estimate, trace.recall_latency_ms,
-                        trace.write_latency_ms,
+                        trace.write_latency_ms, trace.event_thread_id,
                         trace.created_at, trace.updated_at,
                     ),
                 )
@@ -823,8 +831,15 @@ class SQLiteMemoryRepository(MemoryStore):
     # ----- Session 清理 -----
 
     def delete_session_memory(self, session_id: str) -> int:
+        """删除 Session 的所有记忆相关数据。
+
+        使用事务保证原子性。异常时全部 rollback。
+        """
+        import logging
+        logger = logging.getLogger(__name__)
         conn = _get_raw_conn()
         try:
+            conn.execute("BEGIN IMMEDIATE")
             c1 = conn.execute(
                 "DELETE FROM memory_items WHERE session_id = ?",
                 (session_id,),
@@ -841,8 +856,14 @@ class SQLiteMemoryRepository(MemoryStore):
                 "DELETE FROM memory_session_states WHERE session_id = ?",
                 (session_id,),
             ).rowcount
-            _tx_safe_commit(conn)
-            return c1 + c2 + c3 + c4
+            conn.commit()
+            total = c1 + c2 + c3 + c4
+            logger.info("Deleted %d memory rows for session %s", total, session_id)
+            return total
+        except Exception:
+            conn.rollback()
+            logger.error("Failed to delete memory for session %s", session_id, exc_info=True)
+            raise
         finally:
             _tx_safe_close(conn)
 
@@ -952,3 +973,95 @@ class SQLiteMemoryRepository(MemoryStore):
         if not row:
             return None
         return MemorySessionState.from_row(dict(row))
+
+    def list_event_threads(self, session_id: str) -> List[MemoryEventThread]:
+        conn = _get_raw_conn()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM memory_event_threads WHERE session_id=? "
+                "ORDER BY created_at DESC",
+                (session_id,),
+            ).fetchall()
+        finally:
+            _tx_safe_close(conn)
+        return [MemoryEventThread.from_row(dict(r)) for r in rows]
+
+    def count_event_thread_items(self, session_id: str, thread_id: str) -> int:
+        conn = _get_raw_conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) as c FROM memory_items "
+                "WHERE session_id=? AND event_thread_id=?",
+                (session_id, thread_id),
+            ).fetchone()
+            return row["c"] if row else 0
+        finally:
+            _tx_safe_close(conn)
+
+    def count_event_thread_runs(self, session_id: str, thread_id: str) -> int:
+        conn = _get_raw_conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT run_id) as c FROM memory_traces "
+                "WHERE session_id=? AND event_thread_id=?",
+                (session_id, thread_id),
+            ).fetchone()
+            return row["c"] if row else 0
+        finally:
+            _tx_safe_close(conn)
+
+    def get_session_memory_view(self, session_id: str) -> Dict[str, Any]:
+        """获取 Session 的完整 Memory 视图。仅通过 MemoryStore 方法，零 SQL。"""
+        state = self.get_session_memory_state(session_id)
+        active_thread_id = state.active_event_thread_id if state else ""
+
+        threads = self.list_event_threads(session_id)
+        thread_dicts = []
+        for t in threads:
+            td = t.to_dict()
+            td["itemCount"] = self.count_event_thread_items(session_id, t.id)
+            td["runCount"] = self.count_event_thread_runs(session_id, t.id)
+            thread_dicts.append(td)
+
+        current_thread_items: Dict[str, List[Dict]] = {}
+        if active_thread_id:
+            items = self.list_session_items(session_id, limit=500, include_inactive=True)
+            for item in items:
+                if item.event_thread_id == active_thread_id:
+                    mt = item.memory_type
+                    if mt not in current_thread_items:
+                        current_thread_items[mt] = []
+                    current_thread_items[mt].append(item.to_dict())
+
+        historical = [t for t in thread_dicts if t["id"] != active_thread_id]
+        stats = self.count_session_items(session_id)
+
+        return {
+            "sessionId": session_id,
+            "activeEventThreadId": active_thread_id,
+            "eventThreads": thread_dicts,
+            "summary": {
+                "totalItems": stats.get("total_items", 0),
+                "activeItems": stats.get("active_items", 0),
+                "confirmedItems": stats.get("confirmed_items", 0),
+                "candidateItems": stats.get("candidate_items", 0),
+                "supersededItems": stats.get("superseded_items", 0),
+                "expiredItems": stats.get("expired_items", 0),
+                "rejectedItems": stats.get("rejected_items", 0),
+            },
+            "currentThread": current_thread_items,
+            "historicalThreads": historical,
+        }
+
+    def get_item_superseded_by(self, memory_id: str) -> Optional[MemoryItem]:
+        conn = _get_raw_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM memory_items WHERE supersedes_id=? LIMIT 1",
+                (memory_id,),
+            ).fetchone()
+        finally:
+            _tx_safe_close(conn)
+        if not row:
+            return None
+        return MemoryItem.from_row(dict(row))

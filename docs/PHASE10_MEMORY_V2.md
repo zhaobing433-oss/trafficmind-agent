@@ -239,11 +239,14 @@ MemoryTracePanel：4 Tab（召回记忆 / 按Agent注入 / 写入结果 / 过滤
 
 ## 26. Session 删除级联
 
-DELETE /chat/sessions/{id} 清理 12 张表：
-chat_messages, chat_memory_summaries, rag_evidence_logs,
-collaboration_tasks, collaboration_messages, collaboration_conflicts,
-collaboration_events, collaboration_runs,
-memory_items, memory_traces, memory_event_threads, memory_session_states
+DELETE /chat/sessions/{id} 清理 13 张表（同一事务）：
+1. chat_sessions, 2. chat_messages, 3. chat_memory_summaries, 4. rag_evidence_logs,
+5. collaboration_runs, 6. collaboration_tasks, 7. collaboration_messages,
+8. collaboration_conflicts, 9. collaboration_events,
+10. memory_items, 11. memory_traces,
+12. memory_event_threads, 13. memory_session_states
+
+任一步骤异常 → 全部 rollback。其他 Session 不受影响。
 
 ## 27. 五个真实验收场景
 
@@ -261,7 +264,7 @@ memory_items, memory_traces, memory_event_threads, memory_session_states
 | test_phase10_memory_write | 41 | 抽取 + Gate + Correction |
 | test_phase10_memory_recall | 58 | Intent + Thread + Filter + Inject |
 | Phase 1-9 | 283 | 完整回归 |
-| **总计** | **469** | **全部通过** |
+| **总计** | **470** | **全部通过** |
 | TypeScript | 0 errors | 类型安全 |
 
 ## 29. 已知限制

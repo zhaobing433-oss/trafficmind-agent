@@ -146,12 +146,11 @@ class MemoryCoordinator:
                     if action in counts:
                         counts[action] += 1
 
-                # Save trace
+                # Save trace (write phase — merge with recall fields)
                 trace = MemoryTrace(
                     trace_id=trace_id,
                     run_id=run_id,
                     session_id=session_id,
-                    recall_intent="write_phase",
                     candidates_json="[]",  # JSON handled at repo boundary
                     selected_json="[]",
                     rejected_json="[]",
@@ -162,7 +161,7 @@ class MemoryCoordinator:
                     recall_latency_ms=0,
                     write_latency_ms=0,
                 )
-                self.repo.save_trace(trace)
+                self.repo.merge_trace(trace, phase="write")
 
                 tx.commit()
 
@@ -419,7 +418,7 @@ class MemoryCoordinator:
                     session_id=session_id,
                     recall_intent=f"user_correction: {old_value} → {new_value}",
                 )
-                self.repo.save_trace(trace)
+                self.repo.merge_trace(trace, phase="write")
 
                 tx.commit()
                 result["success"] = True
@@ -528,6 +527,36 @@ class MemoryCoordinator:
                 "currentEvent was mutated during recall — CRITICAL BUG"
 
             latency_ms = int((time.time() - start_time) * 1000)
+
+            # --- Save recall-phase trace ---
+            import json as _json
+            _trace = MemoryTrace(
+                trace_id=f"memtrace_{run_id}",
+                run_id=run_id,
+                session_id=session_id,
+                recall_intent=decision.primary_intent,
+                recall_decision_json=_json.dumps(decision.to_dict(), ensure_ascii=False),
+                recall_plan_json=_json.dumps(plan.to_dict(), ensure_ascii=False),
+                selected_json=_json.dumps([fi.item.id for fi in selected], ensure_ascii=False),
+                rejected_json=_json.dumps(
+                    [{"memoryType": fi.item.memory_type, "memoryKey": fi.item.memory_key,
+                      "reason": fi.rejection_reason, "sourceRunId": fi.item.source_run_id}
+                     for fi in retrieval_result.get("rejected", [])],
+                    ensure_ascii=False,
+                ),
+                injection_map_json=_json.dumps({
+                    a: {"itemCount": m.get("itemCount", 0), "allowedTypes": m.get("allowedTypes", [])}
+                    for a, m in injection.get("agentInjectionMap", {}).items()
+                }, ensure_ascii=False),
+                token_estimate=0,
+                recall_latency_ms=latency_ms,
+                event_thread_id=active_thread_id,
+            )
+            _trace.token_estimate = sum(
+                len(str(fi.item.value)) + len(fi.item.text_content)
+                for fi in selected
+            )
+            self.repo.merge_trace(_trace, phase="recall")
 
             # Estimate tokens
             token_estimate = sum(

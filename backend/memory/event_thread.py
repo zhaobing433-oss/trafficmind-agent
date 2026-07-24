@@ -122,6 +122,7 @@ EVENT_THREAD_DDL = """
 EVENT_THREAD_MIGRATION = [
     "ALTER TABLE memory_items ADD COLUMN event_thread_id TEXT DEFAULT ''",
     "ALTER TABLE memory_traces ADD COLUMN event_thread_id TEXT DEFAULT ''",
+    "ALTER TABLE memory_traces ADD COLUMN recall_decision_json TEXT DEFAULT '{}'",
 ]
 
 # ================================================================

@@ -213,10 +213,70 @@ class MemoryStore(ABC):
         ...
 
     # ================================================================
+    # Event Thread (Phase 10 M3)
+    # ================================================================
+
+    @abstractmethod
+    def create_event_thread(self, session_id: str, title: str = "",
+                            started_run_id: str = "") -> Any:
+        """创建 Event Thread。"""
+        ...
+
+    @abstractmethod
+    def get_event_thread(self, thread_id: str) -> Optional[Any]:
+        """查询 Event Thread。"""
+        ...
+
+    @abstractmethod
+    def get_active_event_thread(self, session_id: str) -> Optional[Any]:
+        """查询活跃 Thread。"""
+        ...
+
+    @abstractmethod
+    def close_event_thread(self, thread_id: str) -> bool:
+        """关闭 Thread。"""
+        ...
+
+    @abstractmethod
+    def update_event_thread_last_run(self, thread_id: str, run_id: str):
+        """更新 Thread 最近的 Run。"""
+        ...
+
+    @abstractmethod
+    def get_session_memory_state(self, session_id: str) -> Optional[Any]:
+        """查询 Session Memory 状态。"""
+        ...
+
+    @abstractmethod
+    def list_event_threads(self, session_id: str) -> List[Any]:
+        """查询 Session 的所有 Event Thread。"""
+        ...
+
+    @abstractmethod
+    def count_event_thread_items(self, session_id: str, thread_id: str) -> int:
+        """统计 Thread 的记忆数量。"""
+        ...
+
+    @abstractmethod
+    def count_event_thread_runs(self, session_id: str, thread_id: str) -> int:
+        """统计 Thread 的独立 Run 数量。"""
+        ...
+
+    @abstractmethod
+    def get_session_memory_view(self, session_id: str) -> Dict[str, Any]:
+        """获取 Session 的完整 Memory 视图（供 API 使用）。"""
+        ...
+
+    @abstractmethod
+    def get_item_superseded_by(self, memory_id: str) -> Optional[Any]:
+        """查询取代了该记忆的新记忆。"""
+        ...
+
+    # ================================================================
     # Session 清理
     # ================================================================
 
     @abstractmethod
     def delete_session_memory(self, session_id: str) -> int:
-        """删除 Session 的所有记忆和追踪。"""
+        """删除 Session 的所有记忆和追踪（含 Event Thread）。"""
         ...
