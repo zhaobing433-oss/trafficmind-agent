@@ -13,6 +13,7 @@ from backend.memory.models import (
     MemoryInjectionContext,
     MemoryWriteCandidate,
     MemoryWriteResult,
+    compute_dedup_key,
 )
 from backend.memory.schemas import (
     MemoryItemSchema,
@@ -22,8 +23,12 @@ from backend.memory.schemas import (
     MemoryItemsBySessionRequest,
     MemoryStatsResponse,
 )
-from backend.memory.store import MemoryRepository
+from backend.memory.store import MemoryRepository, init_memory_tables
+from backend.memory.sqlite_repository import SQLiteMemoryRepository
+from backend.memory.repository import MemoryStore, MemoryTransaction
+from backend.memory.factory import create_memory_repository
 from backend.memory.policy import MemoryPolicy, DEFAULT_POLICY
+from backend.memory.time_utils import utc_now, to_iso_utc, parse_iso_datetime, is_expired
 
 __all__ = [
     # Models
@@ -33,6 +38,7 @@ __all__ = [
     "MemoryInjectionContext",
     "MemoryWriteCandidate",
     "MemoryWriteResult",
+    "compute_dedup_key",
     # Schemas
     "MemoryItemSchema",
     "MemoryItemCreateRequest",
@@ -40,9 +46,20 @@ __all__ = [
     "MemoryTraceResponse",
     "MemoryItemsBySessionRequest",
     "MemoryStatsResponse",
-    # Store
+    # Store (compatibility)
     "MemoryRepository",
+    "init_memory_tables",
+    # New portability layer
+    "MemoryStore",
+    "MemoryTransaction",
+    "SQLiteMemoryRepository",
+    "create_memory_repository",
     # Policy
     "MemoryPolicy",
     "DEFAULT_POLICY",
+    # Time
+    "utc_now",
+    "to_iso_utc",
+    "parse_iso_datetime",
+    "is_expired",
 ]

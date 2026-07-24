@@ -5,9 +5,42 @@ MemoryItem: 一条结构化记忆
 MemoryTrace: 一次记忆召回+注入+写入的完整追踪
 """
 
+import hashlib
+import json as _json_lib
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+
+def compute_dedup_key(
+    session_id: str,
+    memory_type: str,
+    memory_key: str,
+    value: Dict[str, Any],
+    source_run_id: str = "",
+    source_message_id: str = "",
+) -> str:
+    """计算幂等去重键（SHA-256）。
+
+    组成: sessionId + memoryType + memoryKey + canonical JSON value
+          + sourceRunId + sourceMessageId
+
+    canonical JSON: sort_keys=True, ensure_ascii=False, separators 紧凑。
+    相同逻辑数据（dict key 顺序不同）产生相同 dedupKey。
+
+    Returns:
+        SHA-256 hex digest (64 chars)，空字段返回空字符串。
+    """
+    if not session_id:
+        return ""
+    canonical = _json_lib.dumps(
+        value or {}, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    raw = (
+        f"{session_id}|{memory_type}|{memory_key}|"
+        f"{canonical}|{source_run_id}|{source_message_id}"
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -21,7 +54,7 @@ class MemoryItem:
         scope_id: 作用域 ID (= session_id 本阶段)
         session_id: 所属会话 ID
         memory_key: 记忆键名 (如 "road.name", "constraint.speed_limit")
-        value: 记忆值 (JSON)
+        value: 记忆值 (JSON dict)
         text_content: 自然语言描述
         status: 状态 (candidate, active, confirmed, rejected, superseded, expired)
         confidence: 置信度 0.0-1.0
@@ -30,12 +63,13 @@ class MemoryItem:
         source_id: 来源标识
         source_run_id: 来源 Run ID
         source_message_id: 来源消息 ID
-        valid_from: 生效时间 (ISO)
-        valid_until: 失效时间 (ISO)
+        valid_from: 生效时间 (ISO UTC)
+        valid_until: 失效时间 (ISO UTC)
         supersedes_id: 取代的记忆 ID
-        created_at: 创建时间 (ISO)
-        updated_at: 更新时间 (ISO)
-        last_accessed_at: 最后访问时间 (ISO)
+        dedup_key: 幂等去重键 (SHA-256)
+        created_at: 创建时间 (ISO UTC)
+        updated_at: 更新时间 (ISO UTC)
+        last_accessed_at: 最后访问时间 (ISO UTC)
         access_count: 访问计数
     """
     id: str
@@ -56,13 +90,14 @@ class MemoryItem:
     valid_from: Optional[str] = None
     valid_until: Optional[str] = None
     supersedes_id: str = ""
+    dedup_key: str = ""
     created_at: str = ""
     updated_at: str = ""
     last_accessed_at: Optional[str] = None
     access_count: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
-        """转为字典。"""
+        """转为字典（Python dict/list，不含 JSON 字符串）。"""
         return {
             "id": self.id,
             "memory_type": self.memory_type,
@@ -82,6 +117,7 @@ class MemoryItem:
             "valid_from": self.valid_from,
             "valid_until": self.valid_until,
             "supersedes_id": self.supersedes_id,
+            "dedup_key": self.dedup_key,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_accessed_at": self.last_accessed_at,
@@ -90,13 +126,16 @@ class MemoryItem:
 
     @classmethod
     def from_row(cls, row: Dict[str, Any]) -> "MemoryItem":
-        """从 SQLite 行创建。"""
-        import json as _json
+        """从数据库行（dict）创建 MemoryItem。
+
+        此方法处理 JSON 字符串 → Python dict 转换（边界层）。
+        适用于任何提供 dict 的数据源（SQLite Row、PostgreSQL dict、测试数据）。
+        """
         value = {}
         try:
             raw = row.get("value_json", "{}")
             if isinstance(raw, str):
-                value = _json.loads(raw)
+                value = _json_lib.loads(raw)
             elif isinstance(raw, dict):
                 value = raw
         except Exception:
@@ -120,6 +159,7 @@ class MemoryItem:
             valid_from=row.get("valid_from") or None,
             valid_until=row.get("valid_until") or None,
             supersedes_id=row.get("supersedes_id", ""),
+            dedup_key=row.get("dedup_key", ""),
             created_at=row.get("created_at", ""),
             updated_at=row.get("updated_at", ""),
             last_accessed_at=row.get("last_accessed_at") or None,
@@ -127,11 +167,16 @@ class MemoryItem:
         )
 
     def is_valid(self, now: Optional[str] = None) -> bool:
-        """判断当前是否有效（未过期）。"""
+        """判断当前是否有效（未过期）。
+
+        使用 UTC 比较。
+        """
         if self.status in ("rejected", "superseded", "expired"):
             return False
         if self.valid_until:
-            ref = now or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            ref = now or datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S+00:00"
+            )
             if self.valid_until < ref:
                 return False
         return True
