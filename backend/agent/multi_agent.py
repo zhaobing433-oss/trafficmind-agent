@@ -11,18 +11,27 @@ from datetime import datetime
 
 def _get_event_info(event: Dict[str, Any]) -> Dict[str, Any]:
     se = event.get("standardEvent", event)
+    def _safe_float(key, default=0.0):
+        v = se.get(key)
+        if v is None:
+            return None
+        try: return float(v)
+        except (ValueError, TypeError): return default
     return {
         "eventType": se.get("eventTypeCn", se.get("eventType", "")),
         "roadName": se.get("roadName", ""),
         "direction": se.get("direction", ""),
-        "avgSpeed": float(se.get("avgSpeed", 0)),
-        "queueLength": float(se.get("queueLength", 0)),
-        "duration": float(se.get("duration", 0)),
+        "avgSpeed": _safe_float("avgSpeed"),
+        "queueLength": _safe_float("queueLength"),
+        "duration": _safe_float("duration", 0),
         "weather": se.get("weather", "clear"),
         "timePeriod": se.get("timePeriod", "off_peak"),
         "isMainRoad": bool(se.get("isMainRoad", False)),
         "nearbySchool": bool(se.get("nearbySchool", False)),
         "nearbyHospital": bool(se.get("nearbyHospital", False)),
+        "pedestrianRisk": se.get("pedestrianRisk", "low"),
+        "signalOptimizationRequested": se.get("signalOptimizationRequested", False),
+        "conflictIntent": se.get("conflictIntent", False),
         "riskLevel": se.get("riskLevel", event.get("riskLevel", "")),
         "riskScore": se.get("riskScore", event.get("riskScore", 0)),
     }
@@ -32,19 +41,30 @@ class CongestionAgent:
     """拥堵研判 Agent"""
     def analyze(self, info: Dict[str, Any]) -> Dict[str, Any]:
         findings = []; urgency = "low"
-        if info["avgSpeed"] < 10:
-            findings.append(f"平均车速仅 {info['avgSpeed']} km/h，严重拥堵"); urgency = "high"
-        elif info["avgSpeed"] < 20:
-            findings.append(f"平均车速 {info['avgSpeed']} km/h，缓行状态")
-        if info["queueLength"] > 200:
-            findings.append(f"排队 {info['queueLength']}m，建议上游分流"); urgency = "high"
-        elif info["queueLength"] > 100:
-            findings.append(f"排队 {info['queueLength']}m，关注蔓延趋势")
+        spd = info["avgSpeed"]
+        qlen = info["queueLength"]
+
+        if spd is not None and spd < 10:
+            findings.append(f"平均车速仅 {spd} km/h，严重拥堵"); urgency = "high"
+        elif spd is not None and spd < 20:
+            findings.append(f"平均车速 {spd} km/h，缓行状态")
+        elif spd is None:
+            findings.append("未提供具体车速数据，无法精确评估拥堵程度")
+
+        if qlen is not None and qlen > 200:
+            findings.append(f"排队 {qlen}m，建议上游分流"); urgency = "high"
+        elif qlen is not None and qlen > 100:
+            findings.append(f"排队 {qlen}m，关注蔓延趋势")
+        elif qlen is None:
+            findings.append("未提供具体排队长度数据")
+
         if info["timePeriod"] in ("morning_peak", "evening_peak"):
             findings.append("高峰时段，建议调整信号配时")
         if info["isMainRoad"]: findings.append("主干道，影响范围广")
+        if info.get("nearbySchool"): findings.append("邻近学校，需关注行人安全")
+        if info.get("pedestrianRisk") == "high": findings.append("存在行人/学生横穿风险")
         return {"agentName": "CongestionAgent",
-                "relevant": info["eventType"] in ("拥堵", "congestion") or info["avgSpeed"] < 15,
+                "relevant": info["eventType"] in ("拥堵", "congestion") or (spd is not None and spd < 15),
                 "findings": findings, "urgency": urgency,
                 "suggestion": "通知交警+信号中心，上游分流" if findings else "正常监控"}
 
@@ -70,11 +90,17 @@ class SignalAgent:
         findings = []; urgency = "low"
         if info["eventType"] in ("信号灯异常", "signal_fault"):
             findings.append("信号灯异常，通知运维单位检修"); urgency = "high"
-        if info["eventType"] in ("拥堵", "congestion") and info["avgSpeed"] < 10 and info["isMainRoad"]:
+        spd = info["avgSpeed"]
+        if info["eventType"] in ("拥堵", "congestion") and spd is not None and spd < 10 and info["isMainRoad"]:
             findings.append(f"建议 {info['roadName']} 上游路口加大绿信比")
             if urgency != "high": urgency = "medium"
+        if info.get("signalOptimizationRequested"):
+            findings.append("检测到信号优化需求，建议分析信号周期资源分配")
+            if urgency != "high": urgency = "high"
+        if info.get("conflictIntent"):
+            findings.append("存在信号资源竞争，需与其他Agent协调")
         return {"agentName": "SignalAgent",
-                "relevant": info["eventType"] in ("信号灯异常", "signal_fault", "拥堵", "congestion"),
+                "relevant": info["eventType"] in ("信号灯异常", "signal_fault", "拥堵", "congestion") or info.get("signalOptimizationRequested"),
                 "findings": findings if findings else ["信号系统正常"],
                 "urgency": urgency,
                 "suggestion": "通知信号运维单位" if findings else "无需干预"}

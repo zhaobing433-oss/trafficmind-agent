@@ -10,6 +10,7 @@ TrafficMind Agent - FastAPI 主应用
 
 import sys
 import os
+import json
 from datetime import datetime
 from contextlib import asynccontextmanager
 
@@ -219,6 +220,9 @@ from backend.rag.vector_store import get_collection_stats
 from backend.agent.react_agent import controlled_react_diagnose
 from backend.agent.chat_stream import chat_stream_generator
 from backend.agent.streaming import sse_event, sse_error
+
+COLLABORATION_ORCHESTRATOR_ENABLED = os.getenv("COLLABORATION_ORCHESTRATOR_ENABLED", "true").lower() == "true"
+
 from backend.agent.router import route_agents
 from backend.agent.conflict_resolver import detect_conflicts, resolve_conflicts
 from backend.agent.event_chain import build_event_chain
@@ -637,89 +641,220 @@ async def chat_stream(body: StreamRequest):
 
 class RoutedStreamRequest(BaseModel):
     sessionId: Optional[str] = None
+    content: Optional[str] = None  # NL content for parsing
     eventId: Optional[str] = None
     eventType: str = "congestion"
     roadName: str = "未知路段"
     direction: Optional[str] = ""
-    avgSpeed: float = 0
-    queueLength: float = 0
-    duration: float = 0
+    avgSpeed: Optional[float] = None
+    queueLength: Optional[float] = None
+    duration: Optional[float] = None
     weather: Optional[str] = "clear"
     timePeriod: Optional[str] = "off_peak"
     isMainRoad: Optional[bool] = False
     nearbySchool: Optional[bool] = False
     nearbyHospital: Optional[bool] = False
     confidence: Optional[float] = 0.9
+    contextPolicy: Optional[str] = "fresh_event"
     model_config = ConfigDict(extra="allow")
 
 
 @app.post("/agent/routed_analyze/stream", summary="协同分析 SSE 流式")
 async def routed_analyze_stream(body: RoutedStreamRequest):
-    """多 Agent 协同分析 SSE 流式，支持 sessionId 持久化。"""
+    """多 Agent 协同分析 SSE 流式。
+
+    COLLABORATION_ORCHESTRATOR_ENABLED=true → Orchestrator 执行
+    COLLABORATION_ORCHESTRATOR_ENABLED=false → 旧实现
+    """
+    if COLLABORATION_ORCHESTRATOR_ENABLED:
+        return await _orchestrated_analyze_stream(body)
+    return await _legacy_analyze_stream(body)
+
+
+async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
+    """使用 CollaborationOrchestrator 执行协同分析。"""
     import asyncio as _asyncio
+    from backend.agent.multi_agent import _get_event_info
+    from backend.agent.router import route_agents
+    from backend.agent.collaboration.orchestrator import CollaborationOrchestrator, AgentExecutionResult
+    from backend.agent.collaboration.budget import ExecutionBudget
+
     async def agent_stream():
-        # Session handling
+        from backend.agent.collaboration.event_parser import parse_content_to_event, build_current_event
+        from backend.agent.collaboration.db_repository import load_previous_run_context
+
+        # ===== Step 1: Parse CURRENT message ONLY =====
+        content_text = body.content or (body.model_dump().get("content", ""))
+        context_policy = body.contextPolicy or "fresh_event"
+
+        nl_parsed = {}
+        if content_text:
+            nl_parsed = parse_content_to_event(content_text)
+
+        # ===== Step 2: Build currentEvent — STRICTLY from current message =====
+        # NEVER merge previous run data into currentEvent
+        explicit = body.model_dump()
+        current_event = build_current_event(nl_parsed, explicit, context_policy)
+        field_sources = current_event.get("fieldSources", {})
+
+        # ===== Step 3: Load previous run context — SEPARATE object =====
         sid = body.sessionId
         if not sid:
             sess = create_session(f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{id(datetime.now()) % 100000}", "collaboration")
             sid = sess["sessionId"]
             yield sse_event("session_created", {"sessionId": sid})
+
+        previous_run_context = load_previous_run_context(sid) if sid else None
+
+        # ===== Step 4: Build info from currentEvent only =====
+        raw = current_event
+        raw["originalInput"] = content_text or ""
+        raw["contextPolicy"] = context_policy
+        raw["fieldSources"] = field_sources
+        info = _get_event_info(raw)
+        info["fieldSources"] = field_sources
+        info["contextPolicy"] = context_policy
+        info["originalInput"] = content_text or ""
+
+        run_id = f"run_{int(datetime.now().timestamp() * 1000)}"
+        trace_id = f"trace_{run_id}"
+
+        # Generate title from user query content — not from default roadName
+        query_text = content_text or ""
+        if info.get("nearbySchool") and "冲突" in query_text:
+            title = "学校门口信号冲突研判"
+        elif info.get("nearbySchool"):
+            title = "学校周边交通研判"
+        elif info.get("conflictIntent"):
+            title = "交通冲突协同研判"
+        elif any(w in query_text for w in ["信号", "绿灯", "配时"]):
+            title = "信号灯协同研判"
+        elif any(w in query_text for w in ["事故", "碰撞", "追尾"]):
+            title = "交通事故协同研判"
+        elif any(w in query_text for w in ["拥堵", "堵车", "排队"]):
+            title = "拥堵路段协同研判"
+        elif info.get("roadName") and "未命名" not in str(info.get("roadName", "")):
+            title = f"{str(info.get('roadName', ''))[:12]}协同研判"
+        else:
+            # Fallback: first 16 chars of user query
+            title = (query_text[:16] or "协同分析") + "协同研判"
+        # Ensure 8-16 chars
+        title = title[:20]
+
         # Save user message
-        user_content = f"协同分析: {body.eventType} {body.roadName} {body.direction or ''}"
-        title = f"{body.roadName}协同研判" if body.roadName != "未知路段" else "协同分析"
-        update_session_title(sid, title[:20])
+        user_content = query_text[:100] or "协同分析请求"
         um_id = f"um_{int(datetime.now().timestamp() * 1000)}"
         add_message(um_id, sid, "user", user_content, "collaboration")
+        # Generate title on first round only — never overwrite on subsequent rounds
+        from backend.chat.chat_db import get_session
+        sess_check = get_session(sid)
+        if sess_check and (not sess_check.get("title") or sess_check.get("title") == "新对话"):
+            update_session_title(sid, title[:20])
 
-        info = _get_event_info(body.model_dump())
-
-        from backend.agent.router import route_agents
         routing = route_agents(info)
-        # Use dynamic agent selection — only selected agents participate
-        agents_order = [a for a in routing["selectedAgents"] if a != "ReportAgent"]
+        selected = routing["selectedAgents"][:4]  # Cap at 4 agents
 
-        yield sse_event("event_parse_start", {"text": "正在解析事件信息..."})
-        await _asyncio.sleep(0.3)
-        yield sse_event("event_parse_done", {"eventType": info.get("eventType"), "roadName": info.get("roadName")})
+        degraded = False
+        fallback_reason = ""
+        fusion_summary = ""
+        try:
+            orchestrator = CollaborationOrchestrator()
+            budget = ExecutionBudget(max_agents=4, max_agent_calls=2, max_retries=1, max_total_seconds=90)
+            async for event_str in orchestrator.execute(
+                run_id, sid, info, selected,
+                routing.get("skippedAgents", []),
+                routing.get("routingReasons", []), budget,
+                previous_run_context=previous_run_context,
+            ):
+                # Capture fusionSummary from fusion_done event
+                if 'event: fusion_done' in event_str:
+                    import re as _re
+                    match = _re.search(r'\"fusionSummary\":\s*\"([^\"]+)\"', event_str)
+                    if match: fusion_summary = match.group(1)
+                yield event_str
+            # Orchestrator handles its own done event — wrapper does NOT send duplicate
+        except Exception as e:
+            # Non-retryable: don't silently fallback
+            if any(kw in str(e) for kw in ["ValidationError", "缺少", "未注册", "非法"]):
+                yield sse_error(str(e))
+                return
+            # System error: degraded fallback
+            degraded = True; fallback_reason = str(e)
+            yield sse_event("fallback_started", {"reason": fallback_reason, "fallbackFrom": "orchestrator"})
+            async for ev in _legacy_analyze_stream_inner(body, sid):
+                yield ev
 
-        from backend.agent.router import route_agents
-        routing = route_agents(info)
-        yield sse_event("agent_route_done", {"selectedAgents": routing["selectedAgents"], "routingReasons": routing["routingReasons"]})
-
-        from backend.agent.multi_agent import CongestionAgent, SignalAgent, DispatchAgent
-        agent_map = {"CongestionAgent": CongestionAgent, "SignalAgent": SignalAgent, "DispatchAgent": DispatchAgent}
-        all_results = []
-        for name in agents_order:
-            yield sse_event("agent_start", {"agentName": name, "text": f"{name} 正在分析..."})
-            await _asyncio.sleep(0.3)
-            cls = agent_map.get(name)
-            if cls:
-                result = cls().analyze(info)
-                all_results.append(result)
-                yield sse_event("agent_result", result)
-
-        yield sse_event("conflict_check_start", {"text": "正在检测 Agent 建议冲突..."})
-        from backend.agent.conflict_resolver import detect_conflicts
-        conflicts = detect_conflicts(all_results)
-        yield sse_event("conflict_check_done", {"conflicts": conflicts, "conflictCount": len(conflicts)})
-
-        yield sse_event("fusion_start", {"text": "正在融合各 Agent 结论..."})
-        fusion = f"综合 {len(all_results)} 个 Agent 的分析，核心风险为{'高' if routing['riskTriggers'] else '待评估'}。紧急度评估为{'高' if len(routing['riskTriggers']) >= 2 else '中'}。"
-        if conflicts: fusion += f"检测到 {len(conflicts)} 个建议冲突，已按安全优先和急救通道优先原则融合处理。"
-        for r in all_results:
-            if r.get("suggestion"): fusion += f"[{r['agentName']}] {r['suggestion']}。"
-        for chunk in _text_chunks(fusion):
-            yield sse_event("fusion_delta", {"text": chunk})
-            await _asyncio.sleep(0.03)
-        yield sse_event("fusion_done", {"fusionSummary": fusion})
-
+        # Save assistant message with REAL fusion summary (not placeholder)
+        assistant_content = fusion_summary or "协同分析已完成，请查看运行详情获取融合决策。"
         am_id = f"am_{int(datetime.now().timestamp() * 1000)}"
-        add_message(am_id, sid, "assistant", fusion, "collaboration",
-                    {"selectedAgents": routing["selectedAgents"], "conflictCount": len(conflicts)})
-        yield sse_event("done", {"sessionId": sid, "assistantMessageId": am_id, "title": title[:20], "agentResults": all_results, "fusionSummary": fusion})
+        add_message(am_id, sid, "assistant", assistant_content, "collaboration",
+                    {"runId": run_id, "executionEngine": "orchestrator", "degraded": degraded, "fusionSummary": assistant_content})
 
     return StreamingResponse(agent_stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+async def _legacy_analyze_stream(body: RoutedStreamRequest):
+    """旧协同分析实现。"""
+    import asyncio as _asyncio
+    async def agent_stream():
+        async for ev in _legacy_analyze_stream_inner(body, body.sessionId):
+            yield ev
+    return StreamingResponse(agent_stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+async def _legacy_analyze_stream_inner(body: RoutedStreamRequest, sid: str):
+    import asyncio as _asyncio
+    if not sid:
+        sess = create_session(f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{id(datetime.now()) % 100000}", "collaboration")
+        sid = sess["sessionId"]
+        yield sse_event("session_created", {"sessionId": sid})
+    user_content = f"协同分析: {body.eventType} {body.roadName} {body.direction or ''}"
+    title = f"{body.roadName}协同研判" if body.roadName != "未知路段" else "协同分析"
+    update_session_title(sid, title[:20])
+    um_id = f"um_{int(datetime.now().timestamp() * 1000)}"
+    add_message(um_id, sid, "user", user_content, "collaboration")
+
+    info = _get_event_info(body.model_dump())
+    routing = route_agents(info)
+    agents_order = [a for a in routing["selectedAgents"] if a != "ReportAgent"]
+
+    yield sse_event("event_parse_start", {"text": "正在解析事件信息..."})
+    await _asyncio.sleep(0.3)
+    yield sse_event("event_parse_done", {"eventType": info.get("eventType"), "roadName": info.get("roadName")})
+    yield sse_event("agent_route_done", {"selectedAgents": routing["selectedAgents"], "routingReasons": routing["routingReasons"]})
+
+    from backend.agent.multi_agent import CongestionAgent, SignalAgent, DispatchAgent
+    agent_map = {"CongestionAgent": CongestionAgent, "SignalAgent": SignalAgent, "DispatchAgent": DispatchAgent}
+    all_results = []
+    for name in agents_order:
+        yield sse_event("agent_start", {"agentName": name, "text": f"{name} 正在分析..."})
+        await _asyncio.sleep(0.3)
+        cls = agent_map.get(name)
+        if cls:
+            result = cls().analyze(info)
+            all_results.append(result)
+            yield sse_event("agent_result", result)
+
+    yield sse_event("conflict_check_start", {"text": "正在检测 Agent 建议冲突..."})
+    conflicts = detect_conflicts(all_results)
+    yield sse_event("conflict_check_done", {"conflicts": conflicts, "conflictCount": len(conflicts)})
+
+    yield sse_event("fusion_start", {"text": "正在融合各 Agent 结论..."})
+    fusion = f"综合 {len(all_results)} 个 Agent 的分析，核心风险为{'高' if routing['riskTriggers'] else '待评估'}。紧急度评估为{'高' if len(routing['riskTriggers']) >= 2 else '中'}。"
+    if conflicts: fusion += f"检测到 {len(conflicts)} 个建议冲突，已按安全优先和急救通道优先原则融合处理。"
+    for r in all_results:
+        if r.get("suggestion"): fusion += f"[{r['agentName']}] {r['suggestion']}。"
+    for chunk in _text_chunks(fusion):
+        yield sse_event("fusion_delta", {"text": chunk})
+        await _asyncio.sleep(0.03)
+    yield sse_event("fusion_done", {"fusionSummary": fusion})
+
+    am_id = f"am_{int(datetime.now().timestamp() * 1000)}"
+    add_message(am_id, sid, "assistant", fusion, "collaboration",
+                {"selectedAgents": routing["selectedAgents"], "conflictCount": len(conflicts)})
+    yield sse_event("done", {"sessionId": sid, "assistantMessageId": am_id, "title": title[:20], "agentResults": all_results, "fusionSummary": fusion})
 
 
 def _text_chunks(text: str, size: int = 6) -> list:
@@ -747,6 +882,10 @@ async def health():
         "llmModel": DEEPSEEK_MODEL if LLM_ENABLED else None,
         "llmMode": "llm" if LLM_ENABLED else "template_fallback",
         "chromaAvailable": _CHROMA_AVAILABLE,
+        "collaborationOrchestratorEnabled": COLLABORATION_ORCHESTRATOR_ENABLED,
+        "collaborationProtocolVersion": "1.0",
+        "collaborationRepositoryType": "sqlite",
+        "collaborationFallbackEnabled": True,
     }
 
 
@@ -761,3 +900,61 @@ async def stats():
       - 近 7 天每日事件趋势
     """
     return get_stats()
+
+
+# -------------------- Phase 9.3: 协作审计 API --------------------
+
+@app.get("/collaboration/runs/{run_id}", summary="查询协作运行详情")
+async def get_collaboration_run(run_id: str):
+    """返回某次协作运行的完整审计记录。"""
+    from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+    repo = SQLiteCollaborationRepository()
+    run = repo.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} 不存在")
+    return {
+        "run": _safe_parse_json_fields(run),
+        "tasks": [_safe_parse_json_fields(t) for t in _list_collab_tasks(run_id)],
+        "messages": repo.list_messages(run_id),
+        "conflicts": repo.list_conflicts(run_id),
+        "events": repo.list_events(run_id),
+    }
+
+
+def _safe_parse_json_fields(d: dict) -> dict:
+    """将 SQLite 中的 JSON 字符串字段解析为对象。"""
+    json_fields = ["selected_agents", "skipped_agents", "failed_agents", "normalized_event",
+                   "budget_usage", "final_decision", "depends_on", "input_snapshot",
+                   "output_snapshot", "payload", "proposals"]
+    for key in json_fields:
+        if key in d and isinstance(d[key], str):
+            try: d[key] = json.loads(d[key])
+            except: pass
+    return d
+
+
+def _list_collab_tasks(run_id: str):
+    from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+    repo = SQLiteCollaborationRepository()
+    init_collab = __import__('backend.agent.collaboration.db_repository', fromlist=['init_collaboration_tables']).init_collaboration_tables
+    init_collab()
+    import sqlite3
+    from backend.config import DB_PATH
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM collaboration_tasks WHERE run_id=?", (run_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/collaboration/sessions/{session_id}/runs", summary="查询会话的协作运行列表")
+async def get_session_collaboration_runs(session_id: str):
+    from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+    repo = SQLiteCollaborationRepository()
+    init_collab = __import__('backend.agent.collaboration.db_repository', fromlist=['init_collaboration_tables']).init_collaboration_tables
+    init_collab()
+    import sqlite3
+    from backend.config import DB_PATH
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM collaboration_runs WHERE session_id=? ORDER BY started_at ASC, run_id ASC", (session_id,)).fetchall()
+    conn.close()
+    return {"runs": [dict(r) for r in rows]}

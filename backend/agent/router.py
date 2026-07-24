@@ -9,15 +9,17 @@
 from typing import Dict, Any, List
 
 
-# Agent 注册表
+# Agent 注册表 — ReportAgent 已统一映射为 FusionAgent
 ALL_AGENTS = [
     "CongestionAgent",
     "AccidentAgent",
     "SignalAgent",
     "DispatchAgent",
     "PublicSafetyAgent",
-    "ReportAgent",
+    "FusionAgent",
 ]
+# Backward compat: ReportAgent → FusionAgent
+AGENT_ALIASES = {"ReportAgent": "FusionAgent"}
 
 
 def route_agents(event_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -46,9 +48,15 @@ def route_agents(event_info: Dict[str, Any]) -> Dict[str, Any]:
 
     # ---- 规则 1: 按事件类型路由 ----
     if event_type in ("拥堵", "congestion"):
-        selected.extend(["CongestionAgent", "SignalAgent"])
-        reasons.append(f"事件类型为「{event_type}」，触发 CongestionAgent 和 SignalAgent")
+        selected.append("CongestionAgent")
+        reasons.append(f"事件类型为「{event_type}」，触发 CongestionAgent")
         skipped.append("AccidentAgent")
+        # SignalAgent: signal keywords or parsed signalOptimizationRequested
+        signal_keywords = ["信号", "配时", "绿信比", "相位", "红绿灯", "灯控", "绿灯", "放行", "cycle", "signal", "intersection"]
+        content = str(event_info.get("originalInput", event_info.get("content", ""))).lower()
+        if any(kw in content for kw in signal_keywords) or event_info.get("signalOptimizationRequested"):
+            selected.append("SignalAgent")
+            reasons.append("存在信号/绿灯/配时相关需求，附加 SignalAgent")
 
     elif event_type in ("事故", "accident"):
         selected.extend(["AccidentAgent", "CongestionAgent"])
@@ -84,17 +92,21 @@ def route_agents(event_info: Dict[str, Any]) -> Dict[str, Any]:
         risk_triggers.append(f"riskLevel={risk_level}")
 
     # ---- 规则 3: 环境因素附加 ----
-    if nearby_hospital:
+    if nearby_hospital or nearby_school:
         if "PublicSafetyAgent" not in selected:
             selected.append("PublicSafetyAgent")
-        reasons.append("邻近医院，附加 PublicSafetyAgent（保障急救通道）")
-        risk_triggers.append("nearbyHospital=true")
+        if nearby_hospital:
+            reasons.append("邻近医院，附加 PublicSafetyAgent（保障急救通道）")
+            risk_triggers.append("nearbyHospital=true")
+        if nearby_school:
+            reasons.append("邻近学校，附加 PublicSafetyAgent（保障学生安全）")
+            risk_triggers.append("nearbySchool=true")
 
-    if nearby_school:
-        if "PublicSafetyAgent" not in selected:
-            selected.append("PublicSafetyAgent")
-        reasons.append("邻近学校，附加 PublicSafetyAgent（保障行人安全）")
-        risk_triggers.append("nearbySchool=true")
+    # Pedestrian risk triggers safety agent
+    if event_info.get("pedestrianRisk") == "high" and "PublicSafetyAgent" not in selected:
+        selected.append("PublicSafetyAgent")
+        reasons.append("存在行人/学生横穿风险，附加 PublicSafetyAgent")
+        risk_triggers.append("pedestrianRisk=high")
 
     if weather in ("rain", "snow", "fog"):
         reasons.append(f"天气为「{weather}」，建议所有 Agent 关注路面安全")
@@ -110,11 +122,11 @@ def route_agents(event_info: Dict[str, Any]) -> Dict[str, Any]:
         reasons.append("主干道事件，影响范围广，需优先处置")
         risk_triggers.append("isMainRoad=true")
 
-    # ---- 规则 4: 始终包含 DispatchAgent 和 ReportAgent ----
+    # ---- 规则 4: 始终包含 DispatchAgent 和 FusionAgent ----
     if "DispatchAgent" not in selected:
         selected.append("DispatchAgent")
-    if "ReportAgent" not in selected:
-        selected.append("ReportAgent")
+    if "FusionAgent" not in selected:
+        selected.append("FusionAgent")
 
     # 去重保证顺序
     seen = set()

@@ -2,8 +2,8 @@
  * Sidebar — Phase 7: 新对话置顶 + 最近分析大占比 + 工作区折叠紧凑
  */
 import { useState } from 'react';
-import { MenuFoldOutlined, MenuUnfoldOutlined, PlusOutlined, EditOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
-import { Tag, Input } from 'antd';
+import { MenuFoldOutlined, MenuUnfoldOutlined, PlusOutlined, EditOutlined, DeleteOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
+import { Tag, Input, Modal } from 'antd';
 
 const NAV_ITEMS = [
   { key: 'multi', label: '协同分析', icon: '🤝' },
@@ -36,17 +36,32 @@ interface Props {
   collapsed: boolean; onToggle: () => void;
   onNavigate: (view: string) => void; onRecentClick: (id: string) => void;
   onNewConversation: () => void; onRenameSession: (id: string, newTitle: string) => void;
+  onDeleteSession: (id: string) => void;
   activeView: string; activeConvId?: string; recentList: RecentItem[];
 }
 
-export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick, onNewConversation, onRenameSession, activeView, activeConvId, recentList }: Props) {
+export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeView, activeConvId, recentList }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const groups = groupByTime(recentList);
 
   const startRename = (e: React.MouseEvent, item: RecentItem) => { e.stopPropagation(); setEditingId(item.id); setEditTitle(item.title); };
   const confirmRename = (id: string) => { if (editTitle.trim()) onRenameSession(id, editTitle.trim()); setEditingId(null); };
+
+  const handleDelete = (e: React.MouseEvent, item: RecentItem) => {
+    e.stopPropagation();
+    Modal.confirm({
+      title: '删除分析记录',
+      content: '删除后该分析记录及所有历史轮次都会永久删除，是否继续？',
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      centered: true,
+      onOk: () => onDeleteSession(item.id),
+    });
+  };
 
   return (
     <div style={{ position: 'fixed', left: 0, top: 0, bottom: 0, width: collapsed ? 72 : 240, background: '#FFFFFF', borderRight: '1px solid #E5E7EB', display: 'flex', flexDirection: 'column', transition: 'width 0.2s ease', zIndex: 100, overflow: 'hidden' }}>
@@ -76,16 +91,37 @@ export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick
               <div key={group.label} style={{ marginBottom: 2 }}>
                 <div style={{ fontSize: 10, color: '#D1D5DB', padding: '1px 4px' }}>{group.label}</div>
                 {group.items.map(s => (
-                  <div key={s.id} onClick={() => onRecentClick(s.id)}
+                  <div key={s.id}
+                    onClick={() => onRecentClick(s.id)}
+                    onMouseEnter={() => setHoveredId(s.id)}
+                    onMouseLeave={() => setHoveredId(null)}
                     style={{ padding: '5px 6px', borderRadius: 7, cursor: 'pointer', background: activeConvId === s.id ? '#F0FDFA' : 'transparent', border: activeConvId === s.id ? '1px solid #0F766E20' : '1px solid transparent', marginBottom: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {editingId === s.id ? (
                         <Input size="small" value={editTitle} onChange={e => setEditTitle(e.target.value)} onPressEnter={() => confirmRename(s.id)} onBlur={() => confirmRename(s.id)} onClick={e => e.stopPropagation()} style={{ fontSize: 11 }} autoFocus />
                       ) : (
-                        <div style={{ fontSize: 11, color: activeConvId === s.id ? '#0F766E' : '#374151', fontWeight: activeConvId === s.id ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '未命名交通分析'}</div>
+                        <>
+                          <div style={{ fontSize: 11, color: activeConvId === s.id ? '#0F766E' : '#374151', fontWeight: activeConvId === s.id ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.title || '未命名交通分析'}</div>
+                          {MODE_LABELS[s.mode] && (
+                            <Tag style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0, border: 'none', background: '#F3F4F6', color: '#6B7280', borderRadius: 4, flexShrink: 0 }}>
+                              {MODE_LABELS[s.mode]}
+                            </Tag>
+                          )}
+                        </>
                       )}
                     </div>
-                    {!editingId && <span onClick={(e) => startRename(e as React.MouseEvent, s)} style={{ color: '#D1D5DB', cursor: 'pointer', fontSize: 11, padding: 2, flexShrink: 0 }}><EditOutlined /></span>}
+                    {!editingId && (
+                      <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                        {hoveredId === s.id && (
+                          <span onClick={(e) => handleDelete(e, s)} style={{ color: '#EF4444', cursor: 'pointer', fontSize: 11, padding: 2 }} title="删除">
+                            <DeleteOutlined />
+                          </span>
+                        )}
+                        <span onClick={(e) => startRename(e as React.MouseEvent, s)} style={{ color: '#D1D5DB', cursor: 'pointer', fontSize: 11, padding: 2 }} title="重命名">
+                          <EditOutlined />
+                        </span>
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

@@ -13,11 +13,12 @@ interface Props {
   onRecentClick: (id: string) => void;
   onNewConversation: () => void;
   onRenameSession: (id: string, newTitle: string) => void;
+  onDeleteSession: (id: string) => void;
   activeConvId?: string;
   recentList: RecentItem[];
 }
 
-export default function LayoutShell({ children, activeView, onNavigate, onRecentClick, onNewConversation, onRenameSession, activeConvId, recentList }: Props) {
+export default function LayoutShell({ children, activeView, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeConvId, recentList }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -29,6 +30,7 @@ export default function LayoutShell({ children, activeView, onNavigate, onRecent
         onRecentClick={onRecentClick}
         onNewConversation={onNewConversation}
         onRenameSession={onRenameSession}
+        onDeleteSession={onDeleteSession}
         activeView={activeView}
         activeConvId={activeConvId}
         recentList={recentList}

@@ -1,10 +1,13 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import LayoutShell from './components/LayoutShell';
 import HomeHero from './components/HomeHero';
 import ScenarioGrid from './components/ScenarioGrid';
 import ChatWorkspace from './components/ChatWorkspace';
 import { chatApi, type SessionItem } from './api/chatApi';
-import { streamRoutedAnalyze } from './api/streamApi';
+import { reduceCollaborationEvent } from './utils/collaborationEventReducer';
+import { collabApi } from './api/collaborationApi';
+import type { CollaborationRun, CollaborationTask, CollaborationAgentResult } from './types/collaboration';
+import CollaborationRunView from './components/collaboration/CollaborationRunView';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
@@ -24,12 +27,16 @@ export default function App() {
   // Stable key: only change when we WANT to reset the workspace (new conv / recent click)
   const [workspaceKey, setWorkspaceKey] = useState(0);
 
+  // Stable session ID ref — prevents stale closure in callbacks
+  const sessionIdRef = useRef<string | null>(null);
+  useEffect(() => { sessionIdRef.current = activeSessionId; }, [activeSessionId]);
+
   useEffect(() => { chatApi.listSessions(30).then(setSessions).catch(() => {}); }, [recentRefresh]);
   const refreshSessions = useCallback(() => setRecentRefresh(Date.now()), []);
   // CRITICAL: session created via first send — do NOT reset the component (key stays same)
-  const handleSessionCreated = useCallback((id: string) => { setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); }, []);
-  const handleNewConversation = () => { setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); };
-  const handleScenario = (prompt: string, mode: string, targetView: string) => { setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); };
+  const handleSessionCreated = useCallback((id: string) => { sessionIdRef.current = id; setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); }, []);
+  const handleNewConversation = () => { sessionIdRef.current = null; setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); };
+  const handleScenario = (prompt: string, mode: string, targetView: string) => { sessionIdRef.current = null; setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); };
   const handleNavigate = (v: string) => { setView(v); };
   const handleRecentClick = async (id: string) => {
     // Fetch session to determine its mode, then route to correct workspace
@@ -47,17 +54,33 @@ export default function App() {
     setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1);
   };
   const handleRenameSession = async (id: string, t: string) => { try { await fetch(`/api/chat/sessions/${id}/title`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t }) }); refreshSessions(); } catch { /* ignore */ } };
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
+      if (activeSessionId === sessionId) {
+        sessionIdRef.current = null;
+        setActiveSessionId(null);
+        setPendingCreate(true);
+        setView('home');
+        setWorkspaceKey(k => k + 1);
+      }
+      refreshSessions();
+    } catch { /* ignore */ }
+  };
   const info = WORKSPACE_INFO[view] || WORKSPACE_INFO.home;
-  const recentItems = sessions.map(s => ({ id: s.id, title: s.title || '未命名交通分析', mode: s.mode, updatedAt: new Date(s.updated_at).getTime() }));
+  // Dedup by session ID — same sessionId = 1 sidebar entry
+  const recentItems = Array.from(
+    new Map(sessions.map(s => [s.id, { id: s.id, title: s.title || '未命名交通分析', mode: s.mode, updatedAt: new Date(s.updated_at).getTime() }])).values()
+  );
 
   return (
-    <LayoutShell activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
+    <LayoutShell activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
       <div style={{ maxWidth: 960, margin: '0 auto', width: '100%', padding: '0 24px 32px' }}>
         {view === 'alert' ? <AlertDashboard /> :
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard /> :
          view === 'qa' ? <QaDashboard onRefresh={refreshSessions} /> :
-         view === 'multi' ? <MultiAgentWorkspace onRefresh={refreshSessions} /> : (
+         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> : (
           <>
             <HomeHero />
             <ScenarioGrid onSelect={handleScenario} />
@@ -100,120 +123,356 @@ function buildFusionSummary(results: Record<string,unknown>): string {
 type Step = { id: string; agentName: string; status: 'pending' | 'thinking' | 'done'; message: string; result?: Record<string,unknown> };
 const AGENT_STEPS = ['CongestionAgent', 'SignalAgent', 'PublicSafetyAgent', 'DispatchAgent', 'ReportAgent'];
 
-function MultiAgentWorkspace({ onRefresh }: { onRefresh: () => void }) {
-  const [steps, setSteps] = useState<Step[]>([]);
-  const [loading, setLoading] = useState(false);
+function CollaborationWorkspace({ activeSessionId, onRefresh, onSessionCreated }: { activeSessionId: string | null; onRefresh: () => void; onSessionCreated: (id: string) => void }) {
+  return <CollaborationWorkspaceInner activeSessionId={activeSessionId} onRefresh={onRefresh} onSessionCreated={onSessionCreated} />;
+}
+
+function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCreated }: { activeSessionId: string | null; onRefresh: () => void; onSessionCreated: (id: string) => void }) {
+  // Core multi-run state
+  const [activeRunId, setActiveRunId] = useState<string>('');
+  const [runsById, setRunsById] = useState<Record<string, CollaborationRun>>({});
+  const [runList, setRunList] = useState<{ run_id: string; status: string }[]>([]);
   const [input, setInput] = useState('');
-  const [summary, setSummary] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<Record<string, unknown>[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
+  const isSubmitting = useRef(false);
+  // Stable session ID — ONLY writes happen via session_created or explicit history click.
+  // NEVER reset to null except via handleNewConversation.
+  const sessionIdRef = useRef<string | null>(null);
+  // Sync from prop ONLY when prop changes to a different non-null value (e.g. history click)
+  useEffect(() => {
+    if (activeSessionId && activeSessionId !== sessionIdRef.current) {
+      console.log('[COLLAB] sessionIdRef sync from prop:', activeSessionId);
+      sessionIdRef.current = activeSessionId;
+    }
+  }, [activeSessionId]);
+
+  // Mount/unmount tracking
+  const mountRef = useRef(0);
+  useEffect(() => {
+    mountRef.current += 1;
+    console.log('[COLLAB] CollaborationWorkspaceInner mounted #', mountRef.current, 'activeSessionId=', activeSessionId);
+    return () => { console.log('[COLLAB] CollaborationWorkspaceInner unmounting #', mountRef.current); };
+  }, []);
+
+  // Derived: active run
+  const activeRun = activeRunId ? runsById[activeRunId] || null : null;
+
+  // Unified deserializer — single source of truth for API → CollaborationRun
+  const deserializeRunDetail = (detail: Record<string,unknown>, runId: string): CollaborationRun => {
+    const run = (detail.run || detail) as Record<string,unknown>;
+    const rawTasks = (detail.tasks || []) as Record<string,unknown>[];
+    const tasks: CollaborationTask[] = rawTasks.map((t: Record<string,unknown>) => ({
+      taskId: String(t.taskId ?? t.task_id ?? ''), agentName: String(t.agentName ?? t.agent_name ?? ''),
+      taskType: String(t.taskType ?? t.task_type ?? 'analyze'),
+      status: (t.status as CollaborationTask['status']) || 'succeeded',
+      dependsOn: parseJson<string[]>(t.dependsOn ?? t.depends_on, []),
+      priority: Number(t.priority || 5), attempt: Number(t.attempt || 1),
+      maxRetries: Number(t.maxRetries ?? t.max_retries ?? 1),
+      timeoutSeconds: Number(t.timeoutSeconds ?? t.timeout_seconds ?? 30),
+      error: String(t.error ?? t.error_message ?? ''),
+    }));
+
+    const agentResults: Record<string, CollaborationAgentResult> = {};
+    for (const t of rawTasks) {
+      const os = parseJson<Record<string,unknown>>(t.output_snapshot ?? t.outputSnapshot, {});
+      const an = String(t.agentName ?? t.agent_name ?? '');
+      if (an && Object.keys(os).length > 0 && !['ConflictDetector', 'FusionAgent'].includes(an)) {
+        agentResults[an] = {
+          agentName: an, role: '', status: 'completed',
+          findings: (os.findings || []) as string[],
+          confidence: Number(os.confidence || 0),
+          suggestion: (os.suggestion || os.recommendation || '') as string,
+          urgency: (os.urgency || 'low') as string,
+          evidenceRefs: (os.evidenceRefs || []) as string[],
+          attempt: 1, duration: 0,
+        };
+      }
+    }
+
+    const fdRaw = run.final_decision ?? run.finalDecision;
+    const fd: Record<string,unknown> = typeof fdRaw === 'string' ? parseJson(fdRaw, {}) : (fdRaw as Record<string,unknown>) || {};
+    const budgetRaw = run.budget_usage ?? run.budgetUsage;
+    const budget: CollaborationRun['budgetUsage'] = typeof budgetRaw === 'string'
+      ? parseJson(budgetRaw, { maxAgents: 6, maxAgentCalls: 2, maxRetries: 2, maxTotalSeconds: 120, usedAgentCalls: {}, usedRetries: {}, startedAt: '' })
+      : (budgetRaw as unknown as CollaborationRun['budgetUsage']) || { maxAgents: 6, maxAgentCalls: 2, maxRetries: 2, maxTotalSeconds: 120, usedAgentCalls: {}, usedRetries: {}, startedAt: '' };
+
+    return {
+      runId: runId, traceId: String(run.trace_id ?? run.traceId ?? ''),
+      sessionId: String(run.session_id ?? run.sessionId ?? ''),
+      status: (run.status as CollaborationRun['status']) || 'completed',
+      executionEngine: 'orchestrator', protocolVersion: '1.0',
+      selectedAgents: parseJson<string[]>(run.selected_agents ?? run.selectedAgents, []),
+      skippedAgents: parseJson<string[]>(run.skipped_agents ?? run.skippedAgents, []),
+      routingReasons: [], tasks,
+      agentResults, conflicts: [], arbitrationResults: [],
+      failedAgents: parseJson<string[]>(run.failed_agents ?? run.failedAgents, []),
+      limitations: [], budgetUsage: budget,
+      finalDecision: String(run.final_decision ?? run.finalDecision ?? ''),
+      fusionSummary: fd.fusionSummary as string || fd.fusion_summary as string || '',
+      requiresHumanReview: Boolean(fd.requiresHumanReview ?? fd.requires_human_review),
+      degraded: false, fallbackReason: '',
+      startedAt: String(run.started_at ?? run.startedAt ?? ''),
+      completedAt: String(run.updated_at ?? run.updatedAt ?? ''),
+      isHydrated: true,
+      userQuery: String(run.userQuery ?? ''),
+      contextPolicy: String(run.contextPolicy ?? 'fresh_event'),
+      fieldSources: parseJson<Record<string,string>>(run.fieldSources ?? run.field_sources, {}),
+    };
+  };
+
+  // Hydrate run detail — works even when runsById is empty (history recovery)
+  const hydrateRun = (runId: string) => {
+    if (!runId) return;
+    const existing = runsById[runId];
+    if (existing?.isHydrated) return; // already fully loaded
+
+    collabApi.getRun(runId).then(detail => {
+      const r = deserializeRunDetail(detail, runId);
+      setRunsById(prev => {
+        const cur = prev[runId];
+        // Preserve SSE-derived fields if they exist; API data is authoritative for static fields
+        const merged: CollaborationRun = {
+          ...(cur || createEmptyRun(r.sessionId)),
+          ...r,
+          // NEVER overwrite live fusionSummary from SSE with empty API value
+          fusionSummary: r.fusionSummary || cur?.fusionSummary || '',
+          isHydrated: true,
+        };
+        return { ...prev, [runId]: merged };
+      });
+    }).catch(() => {});
+  };
+
+  // When activeRunId changes to a non-hydrated run, hydrate it
+  useEffect(() => {
+    if (activeRunId) hydrateRun(activeRunId);
+  }, [activeRunId]);
+
+  // Chronological sort: started_at ASC, run_id ASC fallback
+  const sortRunsChronologically = <T extends { run_id: string; started_at?: string; startedAt?: string }>(runs: T[]): T[] => {
+    return [...runs].sort((a, b) => {
+      const aTime = Date.parse(String((a as Record<string,unknown>).started_at ?? (a as Record<string,unknown>).startedAt ?? ''));
+      const bTime = Date.parse(String((b as Record<string,unknown>).started_at ?? (b as Record<string,unknown>).startedAt ?? ''));
+      if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+        return aTime - bTime;
+      }
+      return String(a.run_id).localeCompare(String(b.run_id));
+    });
+  };
+
+  // Load history if session exists (only on initial mount or session change)
+  useEffect(() => {
+    if (!activeSessionId) { setRunsById({}); setRunList([]); setActiveRunId(''); setMessages([]); return; }
+    fetch(`/api/chat/sessions/${activeSessionId}`).then(r => r.json()).then(d => setMessages(d.messages || [])).catch(() => {});
+    collabApi.listSessionRuns(activeSessionId).then(items => {
+      const ordered = sortRunsChronologically(items);
+      setRunList(ordered);
+      if (ordered.length > 0) {
+        const latestId = String(ordered[ordered.length - 1].run_id);
+        setActiveRunId(latestId);
+        // Immediately hydrate the latest run — works even with empty runsById
+        hydrateRun(latestId);
+      }
+    }).catch(() => {});
+  }, [activeSessionId]);
 
   const handleAnalyze = async () => {
-    if (!input.trim() || loading) return;
-    setLoading(true); setSummary('');
-    // Initialize steps immediately — before any await
-    const initSteps: Step[] = [
-      { id: 'parse', agentName: '系统', status: 'thinking', message: '正在解析事件信息...' },
-      { id: 'route', agentName: '系统', status: 'pending', message: '正在选择参与 Agent...' },
-      ...AGENT_STEPS.map(a => ({ id: a, agentName: a, status: 'pending' as const, message: `${a} 等待分析...` })),
-      { id: 'fusion', agentName: 'ReportAgent', status: 'pending', message: '等待融合各 Agent 结论...' },
-    ];
-    setSteps(initSteps);
+    if (!input.trim() || loading || isSubmitting.current) return;
+    isSubmitting.current = true;
+    setLoading(true);
+    // Abort previous
+    abortRef.current?.abort();
+    const controller = new AbortController(); abortRef.current = controller;
 
-    // Step animation: animate through steps regardless of API speed
-    const animate = async () => {
-      const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-      await delay(400);
-      setSteps(prev => prev.map(s => s.id === 'parse' ? { ...s, status: 'done', message: '事件信息解析完成' } : s.id === 'route' ? { ...s, status: 'thinking', message: '正在路由到相关 Agent...' } : s));
-      await delay(400);
-      setSteps(prev => prev.map(s => s.id === 'route' ? { ...s, status: 'done', message: `已选择 ${AGENT_STEPS.length} 个 Agent 参与研判` } : s));
+    // Save user message to UI
+    const userMsg = { id: 'um_' + Date.now(), role: 'user', content: input.trim(), mode: 'collaboration', timestamp: Date.now() };
+    setMessages(prev => [...prev, userMsg]);
+    const question = input.trim(); setInput('');
 
-      for (const agent of AGENT_STEPS) {
-        setSteps(prev => prev.map(s => s.id === agent ? { ...s, status: 'thinking', message: `${agent} 正在分析...` } : s));
-        await delay(500);
+    const submittedSessionId = sessionIdRef.current;
+    console.log('[COLLAB] handleAnalyze: sessionIdRef.current=', submittedSessionId, 'prop.activeSessionId=', activeSessionId);
+    let currentRun = createEmptyRun(submittedSessionId || '');
+
+    const clientRequestId = 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+
+    // Detect context policy: if the user mentions continuing or "上述", use continue_event
+    const followUpPattern = /(继续|基于上|上述|刚才|同一|沿用)/;
+    const explicitValuePattern = /(\d+\.?\d*)\s*(?:km\/h|公里|码|米|m|分钟|分)/;
+    const contextPolicy = followUpPattern.test(question) && !explicitValuePattern.test(question)
+      ? 'continue_event' : 'fresh_event';
+
+    // Only send NL content — backend parser extracts structured fields from text.
+    // Dynamic measurements (avgSpeed, queueLength, duration) are NEVER pre-filled.
+    await collabApi.streamCollaboration(
+      { sessionId: submittedSessionId, content: question, mode: 'collaboration', clientRequestId, contextPolicy },
+      {
+        onEvent: (event) => {
+          // session_created has NO runId — must be handled FIRST, before runId guard
+          if (event.eventType === 'session_created' && event.sessionId) {
+            const sid = event.sessionId as string;
+            console.log('[COLLAB] session_created:', sid);
+            sessionIdRef.current = sid;
+            onSessionCreated(sid);
+            onRefresh();
+            return;
+          }
+
+          const evRunId = (event.runId as string) || '';
+          if (!evRunId) return;
+
+          // Fallback: if run event carries sessionId not yet in ref, sync it
+          const eventSid = (event.sessionId as string) || '';
+          if (eventSid && eventSid !== sessionIdRef.current) {
+            sessionIdRef.current = eventSid;
+            onSessionCreated(eventSid);
+          }
+
+          setRunsById(prev => {
+            const existing = prev[evRunId] || createEmptyRun(sessionIdRef.current || '');
+            existing.runId = evRunId;
+            return { ...prev, [evRunId]: reduceCollaborationEvent(existing, event) };
+          });
+          if (event.eventType === 'run_created') {
+            console.log('[COLLAB] run_created:', evRunId, 'sessionIdRef.current=', sessionIdRef.current);
+            setRunList(prev => {
+              if (prev.some(r => r.run_id === evRunId)) return prev;
+              const merged = [...prev, { run_id: evRunId, status: 'running' as const, started_at: new Date().toISOString() } as { run_id: string; status: string; started_at?: string }];
+              return sortRunsChronologically(merged);
+            });
+            setActiveRunId(evRunId);
+          }
+          // Update runList status on completion
+          if (event.eventType === 'done' || event.eventType === 'run_completed') {
+            console.log('[COLLAB] done/run_completed:', evRunId, 'sessionIdRef.current=', sessionIdRef.current);
+            setRunList(prev => prev.map(r => r.run_id === evRunId ? { ...r, status: 'completed' } : r));
+            onRefresh();
+            // Hydrate detail from backend to fill in any gaps
+            collabApi.getRun(evRunId).then(detail => {
+              setRunsById(prev => {
+                const existing = prev[evRunId];
+                if (!existing) return prev;
+                const rawTasks = (detail.tasks || []) as Record<string,unknown>[];
+                const tasks = rawTasks.map((t: Record<string,unknown>) => ({
+                  taskId: String(t.taskId ?? t.task_id ?? ''), agentName: String(t.agentName ?? t.agent_name ?? ''),
+                  taskType: String(t.taskType ?? t.task_type ?? 'analyze'),
+                  status: (t.status as CollaborationTask['status']) || 'succeeded',
+                  dependsOn: (t.dependsOn ?? t.depends_on ?? []) as string[],
+                  priority: Number(t.priority || 5), attempt: Number(t.attempt || 1),
+                  maxRetries: Number(t.maxRetries ?? t.max_retries ?? 1),
+                  timeoutSeconds: Number(t.timeoutSeconds ?? t.timeout_seconds ?? 30),
+                  error: String(t.error ?? t.error_message ?? ''),
+                } as CollaborationTask));
+                const agentResults: Record<string, CollaborationAgentResult> = {};
+                for (const t of rawTasks) {
+                  const os = (t.output_snapshot || t.outputSnapshot || {}) as Record<string,unknown>;
+                  const an = String(t.agentName ?? t.agent_name ?? '');
+                  if (an && Object.keys(os).length > 0 && !['ConflictDetector','FusionAgent'].includes(an)) {
+                    agentResults[an] = {
+                      agentName: an, role: '', status: 'completed',
+                      findings: (os.findings || []) as string[],
+                      confidence: Number(os.confidence || 0),
+                      suggestion: (os.suggestion || '') as string,
+                      urgency: (os.urgency || 'low') as string,
+                      evidenceRefs: [], attempt: 1, duration: 0,
+                    };
+                  }
+                }
+                return { ...prev, [evRunId]: { ...existing, tasks: tasks.length > 0 ? tasks : existing.tasks, agentResults, isHydrated: Boolean(tasks.length > 0 && Object.keys(agentResults).length > 0) } };
+              });
+            }).catch(() => {});
+          }
+          if (event.eventType === 'run_partial_success') {
+            setRunList(prev => prev.map(r => r.run_id === evRunId ? { ...r, status: 'partial_success' } : r));
+          }
+          if (event.eventType === 'run_failed') {
+            setRunList(prev => prev.map(r => r.run_id === evRunId ? { ...r, status: 'failed' } : r));
+          }
+        },
+        onError: () => { setActiveRunId(prev => prev); },
+        signal: controller.signal,
       }
-    };
-
-    // Phase 8: Try SSE stream, fallback to REST
-    const body = { eventId: 'E_' + Date.now(), eventType: 'congestion', roadName: '人民路', direction: '东向西', avgSpeed: 8.0, queueLength: 300, duration: 900, weather: 'rain', timePeriod: 'morning_peak', isMainRoad: true, nearbyHospital: true };
-    let streamFailed = false;
-
-    const animatePromise = animate();
-    const streamPromise = streamRoutedAnalyze(body, {
-      onStep: (_stage, text) => {
-        setSteps(prev => prev.map(s => s.status === 'thinking' ? { ...s, message: text } : s));
-      },
-      onAgentStart: (agentName) => {
-        setSteps(prev => prev.map(s => s.id === agentName || s.id === 'fusion' ? { ...s, status: 'thinking', message: `${agentName} 正在分析...` } : s));
-      },
-      onAgentResult: (result) => {
-        setSteps(prev => prev.map(s => s.agentName === result.agentName ? { ...s, status: 'done', message: `${s.agentName} 分析完成`, result } : s));
-      },
-      onConflictDone: (conflicts) => {
-        setSteps(prev => prev.map(s => s.id === 'fusion' ? { ...s, message: `检测到 ${(conflicts as unknown[]).length} 个冲突` } : s));
-      },
-      onFusionDelta: (text) => { setSummary(prev => prev + text); },
-      onFusionDone: () => { setSteps(prev => prev.map(s => s.id === 'fusion' ? { ...s, status: 'done', message: '融合决策生成完毕' } : s)); },
-      onDone: () => { setSteps(prev => prev.map(s => ({ ...s, status: 'done' as const }))); },
-      onError: () => { streamFailed = true; },
-    });
-
-    try { await Promise.all([streamPromise, animatePromise]); } catch { streamFailed = true; }
-
-    // Fallback to REST if SSE failed
-    if (streamFailed) {
-      try {
-        const r = await fetch('/api/agent/routed_analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const results = await r.json();
-        const agentResults = (results.agentResults as Record<string,unknown>[]) || [];
-        setSteps(prev => prev.map(s => {
-          const ar = agentResults.find((a: Record<string,unknown>) => a.agentName === s.agentName);
-          if (ar && AGENT_STEPS.includes(s.id)) return { ...s, status: 'done', message: `${s.agentName} 分析完成`, result: ar };
-          if (s.id === 'fusion') return { ...s, status: 'done', message: '融合决策生成完毕', result: results };
-          return { ...s, status: 'done' };
-        }));
-        setSummary(buildFusionSummary(results));
-      } catch { /* both SSE and REST failed */ }
-    }
+    );
     setLoading(false);
+    isSubmitting.current = false;
+  };
+
+  const handleSelectRun = (runId: string) => {
+    setActiveRunId(runId);
+    // If not yet hydrated, load from API; otherwise cached data is used
+    if (!runsById[runId]?.isHydrated) {
+      hydrateRun(runId);
+    }
   };
 
   return (
     <div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>协同分析</h2>
-      <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 8px' }}>多Agent各自独立研判 → 逐步流式展示 → 冲突检测 → 融合处置建议</p>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <textarea value={input} onChange={e => setInput(e.target.value)} placeholder="输入事件描述..." rows={2} style={{ flex: 1, border: '1px solid #E5E7EB', borderRadius: 12, padding: '8px 12px', fontSize: 13, resize: 'none', fontFamily: 'inherit' }} />
-        <button onClick={handleAnalyze} disabled={loading || !input.trim()} style={{ padding: '8px 16px', borderRadius: 12, border: 'none', background: loading ? '#E5E7EB' : '#0F766E', color: '#FFF', cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>{loading ? '分析中...' : '启动协同'}</button>
-      </div>
-      {steps.length > 0 && (
-        <div style={{ display: 'grid', gap: 8 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 4 }}>分析过程</div>
-          {steps.map((s, i) => (
-            <div key={s.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 12px', borderRadius: 10, background: s.status === 'thinking' ? '#FFF7E6' : s.status === 'done' ? '#F0FDFA' : '#F9FAFB', border: '1px solid #E5E7EB', opacity: s.status === 'pending' ? 0.5 : 1, transition: 'all 0.3s' }}>
-              <div style={{ fontSize: 16, flexShrink: 0, width: 24, textAlign: 'center' }}>
-                {s.status === 'thinking' ? '⏳' : s.status === 'done' ? '✅' : '○'}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: s.status === 'done' ? '#0F766E' : '#374151' }}>{s.agentName}</div>
-                <div style={{ fontSize: 11, color: '#6B7280' }}>{s.message}</div>
-                {s.result && s.id !== 'fusion' && AGENT_STEPS.includes(s.id) && (
-                  <div style={{ marginTop: 4, fontSize: 11, color: '#374151' }}>
-                    {(s.result.findings as string[] || []).map((f, j) => <div key={j} style={{ padding: '1px 0' }}>- {f}</div>)}
-                    {String(s.result.suggestion || '') && <div style={{ color: '#0F766E', fontWeight: 600 }}>→ {String(s.result.suggestion || '')}</div>}
-                  </div>
-                )}
-              </div>
-            </div>
+      <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 8px' }}>多Agent DAG 编排 · 冲突检测 · 融合决策</p>
+
+      {/* Run selector */}
+      {runList.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          {runList.map((rr, i: number) => (
+            <button key={String(rr.run_id)} onClick={() => setActiveRunId(String(rr.run_id))}
+              style={{ padding: '4px 10px', borderRadius: 10, border: '1px solid #E5E7EB', background: activeRunId === rr.run_id ? '#F0FDFA' : '#FFF', cursor: 'pointer', fontSize: 12 }}>
+              第{i + 1}轮 · {String(rr.status || '')}
+            </button>
           ))}
-          {summary && (
-            <div style={{ background: '#FFF', borderRadius: 14, padding: 14, border: '1px solid #0F766E', borderLeft: '4px solid #0F766E', marginTop: 4 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 6 }}>融合决策</div>
-              <div style={{ fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{summary}</div>
-            </div>
-          )}
         </div>
       )}
+
+      {/* New analysis input */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <textarea value={input} onChange={e => setInput(e.target.value)}
+          placeholder="输入事件描述或追问..." rows={2}
+          style={{ flex: 1, border: '1px solid #E5E7EB', borderRadius: 12, padding: '8px 12px', fontSize: 13, resize: 'none', fontFamily: 'inherit' }} />
+        <button type="button" onClick={handleAnalyze} disabled={loading || !input.trim()}
+          style={{ padding: '8px 16px', borderRadius: 12, border: 'none', background: loading ? '#E5E7EB' : '#0F766E', color: '#FFF', cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
+          {loading ? '分析中...' : '启动协同'}
+        </button>
+      </div>
+
+      {/* Chat messages — only show when no runs exist (old data fallback) */}
+      {messages.length > 0 && runList.length === 0 && !activeRun && (
+        <div style={{ marginBottom: 12 }}>
+          {messages.map((m: Record<string,unknown>, i: number) => (
+            <div key={i} style={{ padding: '6px 0', fontSize: 12, color: '#374151' }}>
+              <strong>{m.role === 'user' ? '你' : 'TrafficMind'}:</strong> {String(m.content || '').slice(0, 200)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Loading skeleton while hydrating run detail */}
+      {runList.length > 0 && !activeRun && (
+        <div style={{ background: '#FFF', borderRadius: 14, padding: 20, border: '1px solid #E5E7EB', textAlign: 'center' }}>
+          <div style={{ fontSize: 13, color: '#9CA3AF' }}>正在恢复协同运行详情...</div>
+        </div>
+      )}
+
+      {/* Collaboration Run View */}
+      {activeRun && <CollaborationRunView run={activeRun} />}
     </div>
   );
+}
+
+function createEmptyRun(sessionId: string): CollaborationRun {
+  return {
+    runId: '', traceId: '', sessionId, status: 'created', executionEngine: 'orchestrator',
+    protocolVersion: '1.0', selectedAgents: [], skippedAgents: [], routingReasons: [],
+    tasks: [], agentResults: {}, conflicts: [], arbitrationResults: [],
+    failedAgents: [], limitations: [],
+    budgetUsage: { maxAgents: 6, maxAgentCalls: 2, maxRetries: 2, maxTotalSeconds: 120, usedAgentCalls: {}, usedRetries: {}, startedAt: '' },
+    finalDecision: '', fusionSummary: '', requiresHumanReview: false, degraded: false,
+    fallbackReason: '', startedAt: '', completedAt: '',
+  };
+}
+
+function parseJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw === 'string') { try { return JSON.parse(raw) as T; } catch { return fallback; } }
+  return (raw as T) || fallback;
 }
 
 // ========== Knowledge Base (QA) Dashboard ==========
