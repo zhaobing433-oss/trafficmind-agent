@@ -36,6 +36,12 @@ export interface CollaborationRun {
     };
     updatedAt: string;
   } | null;
+  // Phase 10 Memory V2 fields
+  memoryPhase?: 'recalling' | 'recalled' | 'injected' | 'writing' | 'written' | 'recall_failed' | 'write_failed';
+  memoryStats?: { candidateCount: number; selectedCount: number; rejectedCount: number; intent: string; eventThreadId: string; latencyMs: number; tokenEstimate: number };
+  memoryInjection?: { agentTargets: string[]; injectedItemCountByAgent: Record<string, number> };
+  memoryWriteStats?: { candidateCount: number; createdCount: number; deduplicatedCount: number; supersededCount: number; rejectedCount: number; confirmedCount: number; latencyMs: number };
+  memoryError?: { errorCode: string; safeMessage: string };
 }
 
 export interface CollaborationTask {

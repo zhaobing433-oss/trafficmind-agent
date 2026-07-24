@@ -9,7 +9,9 @@
 - **Pydantic 标准协议**：Agent 间通信基于 14 种消息类型的 Pydantic 模型，全局唯一 ID，完整审计追踪。
 - **DAG 编排 + 动态仲裁**：5 层 TaskGraph DAG，检测到冲突时动态插入仲裁层，安全优先原则。
 - **零依赖降级**：不配置任何外部 API Key 也能完整运行所有核心功能。
-- **当前阶段：Phase 9（多 Agent 协同编排与审计）已完成**，283 个 pytest 全部通过，TypeScript 0 errors。
+- **当前阶段：Phase 10（结构化 Memory V2）已完成**，469 个 pytest 全部通过，TypeScript 0 errors。
+  Memory V2 实现 Event Thread 隔离、确定性意图分类、结构化抽取写入、用户纠正 Supersede 链、
+  可解释过滤排序、按 Agent 最小权限注入、Memory Trace 追踪和前端可观测面板。
 
 ## 技术栈
 
@@ -302,26 +304,31 @@ backend\.venv\Scripts\python.exe -m pytest backend\tests -q
 ### Phase 8：真实 SSE 流式、统一会话历史
 - DeepSeek stream=true 真流式，统一 chat_sessions 写入
 
-### Phase 9：多 Agent 协同编排与审计（当前阶段）
+### Phase 9：多 Agent 协同编排与审计
 详见 [docs/PHASE9_MULTI_AGENT_COLLABORATION.md](docs/PHASE9_MULTI_AGENT_COLLABORATION.md)
 
+### Phase 10：结构化 Memory V2（当前阶段）
+详见 [docs/PHASE10_MEMORY_V2.md](docs/PHASE10_MEMORY_V2.md)
+
 核心能力：
-- **Pydantic 标准消息协议** — 14 种消息类型，全局唯一 ID，完整审计追踪
-- **Agent Role Registry** — 7 个注册 Agent，能力边界声明、输入输出约束
-- **5 层 DAG 任务图** — 拓扑排序 + DFS 循环检测 + 动态节点插入 + 失败传播
-- **ConflictArbiter 动态仲裁** — 检测到 high/critical 冲突时自动插入仲裁层
-- **11 状态运行状态机** — 合法转换校验，可中断/可恢复
-- **Context Projection** — 每个 Agent 只接收角色允许的字段子集（最小权限）
-- **currentEvent / previousRunContext 严格分离** — 永不合并，fieldSources 字段来源追踪
-- **SQLite 5 表持久化** — collaboration_runs / tasks / messages / conflicts / events 完整审计
-- **SSE 真流式** — 20+ 种事件类型实时推送到前端
-- **多 Run 隔离** — 一 Session 多 Run，前端 runsById + activeRunId 独立状态管理
-- **历史完整恢复** — 完整恢复 DAG、Agent 卡片、融合总结、仲裁结果
-- **Session 删除级联** — 删除 Session 时级联清理全部协作数据
+- **MemoryItem 数据模型** — 21 字段，9 种类型，6 种状态，7 种来源，UTC 时间，dedupKey 幂等
+- **MemoryStore 抽象** — ABC 接口 + SQLite 实现，PostgreSQL 预留，JSON 边界
+- **Event Thread** — Session 内多事件隔离，自动创建/关闭/切换
+- **结构化抽取** — 9 种抽取规则，全部确定性，动态字段黑名单
+- **Write Gate** — 来源权限矩阵，authority 冲突检测，Proposal 确认绑定
+- **User Correction** — 6 种纠正模式，Supersede 链，4 步原子事务
+- **Recall Decision** — 6 种 intent 分类，确定性优先级，entity conflict 检测
+- **过滤与排序** — 12 种过滤规则，5 维确定性评分
+- **Per-Agent 注入** — 7 个 Agent 白名单，currentEvent/routingContext/agentContext 严格隔离
+- **Memory Trace** — 完整 recall + write 追踪，merge 语义
+- **8 种 SSE 事件** — recall_started/planned/completed/injection_ready/write_started/completed/failed
+- **后端 Memory API** — 4 个端点（Session/Trace/Item/Threads）
+- **前端 MemoryTracePanel** — 4 Tab（召回/注入/写入/拒绝），旧 Run 兼容
+- **Session 删除级联** — 12 张表同步清理
 
 ### 测试覆盖
-- **283 passed** / TypeScript 0 errors
-- 测试文件：`test_sample_request.py` + `test_phase9_multi_run.py`
+- **469 passed** / TypeScript 0 errors
+- 测试文件：`test_sample_request.py` + `test_phase9_multi_run.py` + `test_phase10_memory_store.py` + `test_phase10_memory_write.py` + `test_phase10_memory_recall.py`
 
 ## 后续计划（Phase 10+）
 

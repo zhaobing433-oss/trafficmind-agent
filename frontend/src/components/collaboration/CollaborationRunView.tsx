@@ -8,6 +8,7 @@ import AgentExecutionCard from './AgentExecutionCard';
 import ConflictPanel from './ConflictPanel';
 import BudgetUsagePanel from './BudgetUsagePanel';
 import FusionDecisionView from './FusionDecisionView';
+import MemoryTracePanel from './MemoryTracePanel';
 
 function safeArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
@@ -112,6 +113,7 @@ export default function CollaborationRunView({ run }: { run: CollaborationRun })
       <BudgetUsagePanel budget={run.budgetUsage} failedAgents={safeArray<string>(run.failedAgents)} />
 
       {(run.fusionSummary || run.finalDecision) && <FusionDecisionView run={run} />}
+      <MemoryTracePanel runId={run.runId} visible={run.status === 'completed' || run.status === 'partial_success'} />
     </div>
   );
 }

@@ -669,19 +669,69 @@ class SQLiteMemoryRepository(MemoryStore):
 
     # ----- MemoryTrace -----
 
-    def save_trace(self, trace: MemoryTrace) -> MemoryTrace:
-        """保存或更新一条 MemoryTrace。
+    def merge_trace(self, trace: MemoryTrace, phase: str = "write") -> MemoryTrace:
+        """合并保存 MemoryTrace。只更新当前 phase 的字段，保留已有字段。
 
-        不使用 INSERT OR REPLACE：先 UPDATE，若无影响行再 INSERT。
+        phase='recall': 写入 recallDecision/Plan/candidates/selected/rejected/injectionMap
+        phase='write': 写入 writeCandidates/writeResults，保留 recall 字段
+
+        规则：
+        1. patch 中未提供的字段保留 existing 值
+        2. 空字符串不覆盖已有非空字符串
+        3. 空 JSON 数组/字典不覆盖已有非空数据
+        4. runId/sessionId 创建后不可修改
+        5. createdAt 保持不变，updatedAt 每次更新
         """
         now = to_iso_utc()
+        existing = self.get_trace_by_run(trace.run_id)
+
+        if existing:
+            # Merge: preserve existing values for fields not in this phase
+            if phase == "write":
+                # Keep recall fields from existing
+                if not trace.recall_intent and existing.recall_intent:
+                    trace.recall_intent = existing.recall_intent
+                if trace.recall_plan_json in ("", "{}") and existing.recall_plan_json not in ("", "{}"):
+                    trace.recall_plan_json = existing.recall_plan_json
+                if trace.candidates_json in ("", "[]") and existing.candidates_json not in ("", "[]"):
+                    trace.candidates_json = existing.candidates_json
+                if trace.selected_json in ("", "[]") and existing.selected_json not in ("", "[]"):
+                    trace.selected_json = existing.selected_json
+                if trace.rejected_json in ("", "[]") and existing.rejected_json not in ("", "[]"):
+                    trace.rejected_json = existing.rejected_json
+                if trace.injection_map_json in ("", "{}") and existing.injection_map_json not in ("", "{}"):
+                    trace.injection_map_json = existing.injection_map_json
+                if not trace.recall_latency_ms and existing.recall_latency_ms:
+                    trace.recall_latency_ms = existing.recall_latency_ms
+                if not trace.token_estimate and existing.token_estimate:
+                    trace.token_estimate = existing.token_estimate
+            elif phase == "recall":
+                # Keep write fields from existing
+                if trace.write_candidates_json in ("", "[]") and existing.write_candidates_json not in ("", "[]"):
+                    trace.write_candidates_json = existing.write_candidates_json
+                if trace.write_results_json in ("", "[]") and existing.write_results_json not in ("", "[]"):
+                    trace.write_results_json = existing.write_results_json
+                if not trace.write_latency_ms and existing.write_latency_ms:
+                    trace.write_latency_ms = existing.write_latency_ms
+
+            # Preserve immutable fields
+            if existing.session_id:
+                trace.session_id = existing.session_id
+            if existing.created_at:
+                trace.created_at = existing.created_at
+            trace.trace_id = existing.trace_id
+
         if not trace.created_at:
             trace.created_at = now
         trace.updated_at = now
 
+        # Use existing save_trace logic
+        return self._save_trace_internal(trace)
+
+    def _save_trace_internal(self, trace: MemoryTrace) -> MemoryTrace:
+        """内部 save_trace 实现（无合并逻辑）。由 save_trace 和 merge_trace 共用。"""
         conn = _get_raw_conn()
         try:
-            # 先尝试 UPDATE
             result = conn.execute(
                 """UPDATE memory_traces
                    SET session_id = ?, recall_intent = ?,
@@ -704,7 +754,6 @@ class SQLiteMemoryRepository(MemoryStore):
                 ),
             )
             if result.rowcount == 0:
-                # 不存在则 INSERT
                 conn.execute(
                     """INSERT INTO memory_traces (
                         trace_id, run_id, session_id, recall_intent,
@@ -731,6 +780,18 @@ class SQLiteMemoryRepository(MemoryStore):
         finally:
             _tx_safe_close(conn)
         return trace
+
+    def save_trace(self, trace: MemoryTrace) -> MemoryTrace:
+        """保存或更新一条 MemoryTrace。
+
+        不使用 INSERT OR REPLACE：先 UPDATE，若无影响行再 INSERT。
+        新代码应使用 merge_trace 以保留 phase 字段。
+        """
+        now = to_iso_utc()
+        if not trace.created_at:
+            trace.created_at = now
+        trace.updated_at = now
+        return self._save_trace_internal(trace)
 
     def get_trace_by_run(self, run_id: str) -> Optional[MemoryTrace]:
         conn = _get_raw_conn()

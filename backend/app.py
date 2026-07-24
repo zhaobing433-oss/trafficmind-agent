@@ -1174,3 +1174,210 @@ async def get_session_collaboration_runs(session_id: str):
     rows = conn.execute("SELECT * FROM collaboration_runs WHERE session_id=? ORDER BY started_at ASC, run_id ASC", (session_id,)).fetchall()
     conn.close()
     return {"runs": [dict(r) for r in rows]}
+
+
+# ==================== Phase 10 Memory V2 API ====================
+
+@app.get("/memory/sessions/{session_id}", summary="查询会话结构化记忆")
+async def get_session_memory(session_id: str):
+    """返回 Session 的结构化 Memory 视图。"""
+    from backend.memory.factory import create_memory_repository
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    repo = create_memory_repository()
+
+    # Check session exists
+    from backend.chat.chat_db import get_session
+    sess = get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail=f"会话 {session_id} 不存在")
+
+    state = repo.get_session_memory_state(session_id)
+    active_thread_id = state.active_event_thread_id if state else ""
+
+    # Get all threads
+    import sqlite3 as _sq
+    from backend.config import DB_PATH as _dbp
+    conn = _sq.connect(_dbp); conn.row_factory = _sq.Row
+    thread_rows = conn.execute(
+        "SELECT * FROM memory_event_threads WHERE session_id=? ORDER BY created_at DESC",
+        (session_id,),
+    ).fetchall()
+    conn.close()
+
+    threads = []
+    for tr in thread_rows:
+        td = dict(tr)
+        # Count items in thread
+        conn2 = _sq.connect(_dbp); conn2.row_factory = _sq.Row
+        cnt = conn2.execute(
+            "SELECT COUNT(*) as c FROM memory_items WHERE session_id=? AND event_thread_id=?",
+            (session_id, td["id"]),
+        ).fetchone()["c"]
+        conn2.close()
+        td["itemCount"] = cnt
+        threads.append(td)
+
+    # Get current thread items
+    current_thread_items = {}
+    if active_thread_id:
+        items = repo.list_session_items(session_id, limit=200, include_inactive=True)
+        thread_items = [i for i in items if i.event_thread_id == active_thread_id]
+        for item in thread_items:
+            mt = item.memory_type
+            if mt not in current_thread_items:
+                current_thread_items[mt] = []
+            current_thread_items[mt].append(item.to_dict())
+
+    # Historical threads
+    historical = [t for t in threads if t["id"] != active_thread_id]
+
+    # Stats
+    stats = repo.count_session_items(session_id)
+
+    return {
+        "sessionId": session_id,
+        "activeEventThreadId": active_thread_id,
+        "eventThreads": threads,
+        "summary": {
+            "totalItems": stats.get("total_items", 0),
+            "activeItems": stats.get("active_items", 0),
+            "confirmedItems": stats.get("confirmed_items", 0),
+            "candidateItems": stats.get("candidate_items", 0),
+            "supersededItems": stats.get("superseded_items", 0),
+            "expiredItems": stats.get("expired_items", 0),
+            "rejectedItems": stats.get("rejected_items", 0),
+        },
+        "currentThread": current_thread_items,
+        "historicalThreads": historical,
+    }
+
+
+@app.get("/memory/runs/{run_id}/trace", summary="查询 Run 的 Memory Trace")
+async def get_memory_trace(run_id: str):
+    """返回 Run 的 Memory Trace 完整记录。"""
+    from backend.memory.factory import create_memory_repository
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    repo = create_memory_repository()
+
+    trace = repo.get_trace_by_run(run_id)
+    if not trace:
+        # Check if run exists at all (could be pre-Phase-10)
+        from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+        collab = SQLiteCollaborationRepository()
+        run = collab.get_run(run_id)
+        if run:
+            return {
+                "runId": run_id,
+                "hasTrace": False,
+                "message": "该运行创建于 Memory V2 之前，无记忆追踪数据。",
+            }
+        raise HTTPException(status_code=404, detail=f"Run {run_id} 不存在")
+
+    return {
+        "runId": run_id,
+        "hasTrace": True,
+        "traceId": trace.trace_id,
+        "sessionId": trace.session_id,
+        "eventThreadId": getattr(trace, "event_thread_id", ""),
+        "recallIntent": trace.recall_intent,
+        "recallDecision": _safe_json(trace.recall_plan_json),
+        "recallPlan": _safe_json(trace.recall_plan_json),
+        "candidates": _safe_json(trace.candidates_json),
+        "selected": _safe_json(trace.selected_json),
+        "rejected": _safe_json(trace.rejected_json),
+        "injectionMap": _safe_json(trace.injection_map_json),
+        "writeCandidates": _safe_json(trace.write_candidates_json),
+        "writeResults": _safe_json(trace.write_results_json),
+        "tokenEstimate": trace.token_estimate,
+        "recallLatencyMs": trace.recall_latency_ms,
+        "writeLatencyMs": trace.write_latency_ms,
+        "createdAt": trace.created_at,
+        "updatedAt": trace.updated_at,
+    }
+
+
+@app.get("/memory/items/{memory_id}", summary="查询单条 Memory")
+async def get_memory_item(memory_id: str):
+    """返回单条 Memory 及来源链。"""
+    from backend.memory.factory import create_memory_repository
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    repo = create_memory_repository()
+
+    item = repo.get_item(memory_id)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Memory {memory_id} 不存在")
+
+    # Get supersedes chain
+    supersedes = None
+    if item.supersedes_id:
+        old = repo.get_item(item.supersedes_id)
+        if old:
+            supersedes = old.to_dict()
+
+    # Get event thread
+    thread = None
+    if item.event_thread_id:
+        thread = repo.get_event_thread(item.event_thread_id)
+        thread = thread.to_dict() if thread else None
+
+    return {
+        "item": item.to_dict(),
+        "supersedes": supersedes,
+        "sourceRunId": item.source_run_id,
+        "sourceMessageId": item.source_message_id,
+        "eventThread": thread,
+        "provenance": {
+            "sourceType": item.source_type,
+            "sourceRunId": item.source_run_id,
+            "authorityLevel": item.authority_level,
+            "confidence": item.confidence,
+        },
+    }
+
+
+@app.get("/memory/sessions/{session_id}/threads", summary="查询 Event Thread 列表")
+async def list_event_threads(session_id: str):
+    """返回 Session 的 Event Thread 列表。"""
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    import sqlite3 as _sq
+    from backend.config import DB_PATH as _dbp
+
+    conn = _sq.connect(_dbp); conn.row_factory = _sq.Row
+    rows = conn.execute(
+        "SELECT * FROM memory_event_threads WHERE session_id=? ORDER BY created_at DESC",
+        (session_id,),
+    ).fetchall()
+    conn.close()
+
+    threads = []
+    for r in rows:
+        td = dict(r)
+        # Count items and runs
+        conn2 = _sq.connect(_dbp); conn2.row_factory = _sq.Row
+        item_count = conn2.execute(
+            "SELECT COUNT(*) as c FROM memory_items "
+            "WHERE session_id=? AND event_thread_id=?",
+            (session_id, td["id"]),
+        ).fetchone()["c"]
+        conn2.close()
+        td["itemCount"] = item_count
+        td["runCount"] = 0  # Will be populated when run-thread mapping exists
+        threads.append(td)
+
+    return {"sessionId": session_id, "threads": threads}
+
+
+def _safe_json(s: str):
+    """安全解析 JSON 字符串。"""
+    if not s:
+        return {} if s == "{}" or s == "" else []
+    try:
+        import json as _j
+        return _j.loads(s)
+    except Exception:
+        return s
+

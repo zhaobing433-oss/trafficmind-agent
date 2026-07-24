@@ -1031,6 +1031,143 @@ class TestBlocklistContents:
 
 
 # ================================================================
+# Trace Merge (Phase 10 Final)
+# ================================================================
+class TestTraceMerge:
+    def test_recall_then_write_preserves_recall_fields(self):
+        repo = MemoryRepository()
+        sid, rid = "s_merge", "r_merge"
+        repo.create_event_thread(sid, "Test", rid)
+        # Phase 1: Recall writes
+        recall_trace = MemoryTrace(
+            trace_id="t_merge", run_id=rid, session_id=sid,
+            recall_intent="continue_event",
+            recall_plan_json='{"intent":"continue_event"}',
+            candidates_json='["c1"]', selected_json='["s1"]',
+            rejected_json='["r1"]', injection_map_json='{"a":{"items":[]}}',
+            token_estimate=100, recall_latency_ms=5,
+        )
+        repo.merge_trace(recall_trace, phase="recall")
+
+        # Phase 2: Write updates
+        write_trace = MemoryTrace(
+            trace_id="t_merge", run_id=rid, session_id=sid,
+            write_candidates_json='["wc1"]', write_results_json='["wr1"]',
+            write_latency_ms=10,
+        )
+        repo.merge_trace(write_trace, phase="write")
+
+        loaded = repo.get_trace_by_run(rid)
+        assert loaded is not None
+        assert loaded.recall_intent == "continue_event"
+        assert loaded.selected_json == '["s1"]'
+        assert loaded.rejected_json == '["r1"]'
+        assert loaded.write_results_json == '["wr1"]'
+        assert loaded.recall_latency_ms == 5
+        assert loaded.write_latency_ms == 10
+
+    def test_write_then_recall_preserves_write_fields(self):
+        repo = MemoryRepository()
+        sid, rid = "s_m2", "r_m2"
+        repo.create_event_thread(sid, "Test", rid)
+        # Write first
+        wt = MemoryTrace(trace_id="t_m2", run_id=rid, session_id=sid,
+                         write_results_json='["wr"]', write_latency_ms=8)
+        repo.merge_trace(wt, phase="write")
+        # Recall second
+        rt = MemoryTrace(trace_id="t_m2", run_id=rid, session_id=sid,
+                         recall_intent="correction", selected_json='["s"]')
+        repo.merge_trace(rt, phase="recall")
+
+        loaded = repo.get_trace_by_run(rid)
+        assert loaded.recall_intent == "correction"
+        assert loaded.selected_json == '["s"]'
+        assert loaded.write_results_json == '["wr"]'
+        assert loaded.write_latency_ms == 8
+
+    def test_double_save_trace_idempotent(self):
+        repo = MemoryRepository()
+        sid, rid = "s_idem", "r_idem"
+        repo.create_event_thread(sid, "Test", rid)
+        t = MemoryTrace(trace_id="t_idem", run_id=rid, session_id=sid,
+                        recall_intent="continue_event")
+        repo.save_trace(t)
+        repo.save_trace(t)
+        loaded = repo.get_trace_by_run(rid)
+        assert loaded.recall_intent == "continue_event"
+
+    def test_failed_write_does_not_clear_recall(self):
+        repo = MemoryRepository()
+        sid, rid = "s_fail", "r_fail"
+        repo.create_event_thread(sid, "Test", rid)
+        repo.merge_trace(
+            MemoryTrace(trace_id="t_fail", run_id=rid, session_id=sid,
+                        recall_intent="continue_event", selected_json='["s"]'),
+            phase="recall",
+        )
+        # Write with empty values (simulating failed write)
+        repo.merge_trace(
+            MemoryTrace(trace_id="t_fail", run_id=rid, session_id=sid,
+                        write_latency_ms=0),
+            phase="write",
+        )
+        loaded = repo.get_trace_by_run(rid)
+        assert loaded.recall_intent == "continue_event"
+        assert loaded.selected_json == '["s"]'
+
+    def test_different_run_ids_independent(self):
+        repo = MemoryRepository()
+        sid = "s_indep"
+        repo.create_event_thread(sid, "Test", "r_a")
+        repo.save_trace(MemoryTrace(trace_id="t_a", run_id="r_a", session_id=sid,
+                                    recall_intent="continue_event"))
+        repo.save_trace(MemoryTrace(trace_id="t_b", run_id="r_b", session_id=sid,
+                                    recall_intent="fresh_event"))
+        ta = repo.get_trace_by_run("r_a")
+        tb = repo.get_trace_by_run("r_b")
+        assert ta.recall_intent == "continue_event"
+        assert tb.recall_intent == "fresh_event"
+
+
+# ================================================================
+# Memory API (Phase 10 Final)
+# ================================================================
+class TestMemoryAPI:
+    def test_session_memory_empty_structure(self):
+        repo = MemoryRepository()
+        sid = "s_api_empty"
+        repo.create_event_thread(sid, "Test", "r1")
+        stats = repo.count_session_items(sid)
+        assert isinstance(stats, dict)
+        assert stats.get("total_items", -1) >= 0
+
+    def test_trace_has_trace_false_for_old_run(self):
+        repo = MemoryRepository()
+        t = repo.get_trace_by_run("nonexistent_run_old")
+        assert t is None
+
+    def test_session_delete_cleans_memory_items(self):
+        repo = MemoryRepository()
+        sid = "s_clean"
+        repo.create_event_thread(sid, "Test", "r1")
+        repo.create_item(memory_type="stable_fact", session_id=sid,
+                         memory_key="k", value={}, source_type="user_explicit")
+        assert repo.count_session_items(sid)["total_items"] > 0
+        deleted = repo.delete_session_memory(sid)
+        assert deleted > 0
+
+    def test_session_delete_cleans_event_threads(self):
+        repo = MemoryRepository()
+        sid = "s_clean2"
+        repo.create_event_thread(sid, "Test", "r1")
+        deleted = repo.delete_session_memory(sid)
+        assert deleted > 0
+        # Thread should be gone
+        active = repo.get_active_event_thread(sid)
+        assert active is None
+
+
+# ================================================================
 # Phase 10 可移植加固 — 15 个新增测试
 # ================================================================
 
