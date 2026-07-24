@@ -81,9 +81,18 @@ export const collabApi = {
     }
   ): Promise<void> => {
     const { onEvent, onError, onDone, signal } = callbacks;
+    // FORCE sessionId into payload: convert undefined → null so JSON.stringify includes it
+    const reqBody: Record<string, unknown> = {
+      sessionId: body.sessionId ?? null,
+      content: body.content ?? '',
+      mode: body.mode ?? 'collaboration',
+      contextPolicy: body.contextPolicy ?? 'fresh_event',
+      clientRequestId: body.clientRequestId ?? '',
+    };
+    console.log('[COLLAB_REQUEST]', { sessionId: reqBody.sessionId, content: String(reqBody.content).slice(0, 50) });
     return fetch(`${API}/agent/routed_analyze/stream`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body), signal,
+      body: JSON.stringify(reqBody), signal,
     }).then(async response => {
       if (!response.ok) { onError?.(`HTTP ${response.status}`); return; }
       const reader = response.body?.getReader();

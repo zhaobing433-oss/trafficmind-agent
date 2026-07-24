@@ -955,6 +955,6 @@ async def get_session_collaboration_runs(session_id: str):
     import sqlite3
     from backend.config import DB_PATH
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM collaboration_runs WHERE session_id=? ORDER BY updated_at DESC", (session_id,)).fetchall()
+    rows = conn.execute("SELECT * FROM collaboration_runs WHERE session_id=? ORDER BY started_at ASC, run_id ASC", (session_id,)).fetchall()
     conn.close()
     return {"runs": [dict(r) for r in rows]}

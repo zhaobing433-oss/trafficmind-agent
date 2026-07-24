@@ -106,11 +106,28 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
 
 def delete_session(session_id: str) -> bool:
     init_chat_tables()
+    # Also init collaboration tables if they exist
+    from backend.agent.collaboration.db_repository import init_collaboration_tables
+    init_collaboration_tables()
     conn = get_conn()
+
+    # 1. Delete collaboration data (child tables first)
+    run_ids = [r[0] for r in conn.execute(
+        "SELECT run_id FROM collaboration_runs WHERE session_id = ?", (session_id,)
+    ).fetchall()]
+    for run_id in run_ids:
+        conn.execute("DELETE FROM collaboration_tasks WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM collaboration_messages WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM collaboration_conflicts WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM collaboration_events WHERE run_id = ?", (run_id,))
+    conn.execute("DELETE FROM collaboration_runs WHERE session_id = ?", (session_id,))
+
+    # 2. Delete chat data
     conn.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
     conn.execute("DELETE FROM chat_memory_summaries WHERE session_id = ?", (session_id,))
     conn.execute("DELETE FROM rag_evidence_logs WHERE session_id = ?", (session_id,))
     conn.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
+
     affected = conn.total_changes
     conn.commit()
     conn.close()

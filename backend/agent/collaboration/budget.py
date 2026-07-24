@@ -42,6 +42,13 @@ class ExecutionBudget:
         return False
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"max_agents": self.max_agents, "max_total_tasks": self.max_total_tasks,
-                "used_agent_calls": self.used_agent_calls, "used_retries": self.used_retries,
-                "started_at": self.started_at}
+        return {
+            "max_agents": self.max_agents,
+            "max_agent_calls": self.max_agent_calls,
+            "max_retries": self.max_retries,
+            "max_total_seconds": self.max_total_seconds,
+            "max_total_tasks": self.max_total_tasks,
+            "used_agent_calls": self.used_agent_calls,
+            "used_retries": self.used_retries,
+            "started_at": self.started_at,
+        }

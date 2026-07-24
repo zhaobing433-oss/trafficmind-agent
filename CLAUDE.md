@@ -2,26 +2,28 @@
 
 ## 项目背景
 
-**TrafficMind Agent** 是一个面向智慧交通的事件研判与闭环处置 Agent。当摄像头和算法上报交通事件 JSON 后，Agent 自动完成事件解析、风险分级、预案匹配、调度话术生成、公众提示生成、事件报告生成，并通过大屏 Dashboard 实时展示指挥中心态势。
+**TrafficMind Agent** 是一个面向智慧交通的事件研判与多 Agent 协同处置工作台。支持从自然语言事件解析、风险评分、预案匹配，到多 Agent DAG 编排、冲突检测仲裁、SSE 流式融合，再到大屏 Dashboard 展示的完整链路。
 
 项目核心设计理念：
-- **确定性为主、智能增强为辅**：风险评分、规则匹配、状态流转全部由确定性规则保证可解释性；DeepSeek 大模型仅用于润色建议和报告，不可用时自动降级。
-- **LangGraph 流水线**：8 节点线性工作流，职责清晰，易于扩展和调试。
+- **确定性为主、智能增强为辅**：风险评分、规则匹配、状态流转全部由确定性规则保证可解释性；DeepSeek 大模型用于润色、融合和 RAG，不可用时自动降级。
+- **Pydantic 标准协议**：Agent 间通信基于 14 种消息类型的 Pydantic 模型，全局唯一 ID，完整审计追踪。
+- **DAG 编排 + 动态仲裁**：5 层 TaskGraph DAG，检测到冲突时动态插入仲裁层，安全优先原则。
 - **零依赖降级**：不配置任何外部 API Key 也能完整运行所有核心功能。
+- **当前阶段：Phase 9（多 Agent 协同编排与审计）已完成**，283 个 pytest 全部通过，TypeScript 0 errors。
 
 ## 技术栈
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| Web 框架 | FastAPI + Uvicorn | 异步高性能 API |
-| 工作流引擎 | LangGraph 0.2.x | 8 节点流水线编排 |
-| LLM（可选） | DeepSeek API | OpenAI-compatible，可选接入 |
-| 数据库 | SQLite | 轻量级，零配置 |
-| 规则库 | 本地 Markdown | 无需向量数据库 |
-| 前端 | React 18 + Ant Design 5 + ECharts 5 + Vite | 深色主题大屏 Dashboard（含 Phase 2 面板） |
-| 相似检索 | 规则相似度（9 维特征） | 预留 Chroma/FAISS 向量扩展接口 |
+| Web 框架 | FastAPI + Uvicorn | 异步高性能 API + SSE 流式 |
+| 工作流引擎 | LangGraph 0.2.x | 8 节点流水线 + 多 Agent 协同 |
+| LLM（可选） | DeepSeek API | OpenAI-compatible，stream=true |
+| 数据库 | SQLite | 9 张表（chat 4 + collaboration 5） |
+| 向量检索 | Chroma + DeepSeek Embedding | RAG 检索增强生成 |
+| 规则库 | 本地 Markdown | 无需外部数据库 |
+| 前端 | React 18 + TypeScript + Ant Design 5 + ECharts 5 + Vite | 浅色现代工作台 |
 | 消息推送 | 企业微信/钉钉 Webhook + SMTP 邮件 | 高风险事件自动告警 |
-| 测试 | pytest + httpx | 端到端测试 |
+| 测试 | pytest + FastAPI TestClient | 283 个用例 |
 
 ## 第一阶段目标（MVP）
 
@@ -45,66 +47,96 @@
 
 ```
 trafficmind-agent/
-├── CLAUDE.md                       # 本文件 — 项目文档
-├── README.md                       # 面向用户的项目说明
+├── CLAUDE.md                         # 本文件 — 项目文档
+├── README.md                         # 面向用户的项目说明
+├── .gitignore
 ├── backend/
-│   ├── app.py                      # FastAPI 主应用（12 个接口）
-│   ├── config.py                   # 集中配置（API、路径、评分、推送）
-│   ├── requirements.txt            # Python 依赖
-│   ├── .env.example                # 环境变量模板（含注释）
+│   ├── app.py                        # FastAPI 主应用（20+ 个接口）
+│   ├── config.py                     # 集中配置
+│   ├── requirements.txt              # Python 依赖
+│   ├── .env.example                  # 环境变量模板
 │   ├── agent/
-│   │   ├── __init__.py
-│   │   ├── graph.py                # LangGraph 工作流定义（8 节点）
-│   │   ├── nodes.py                # 工作流节点实现 + LLM 调用封装
-│   │   └── prompts.py              # LLM 提示词模板
+│   │   ├── graph.py                  # LangGraph 8 节点工作流
+│   │   ├── nodes.py                  # 节点实现 + LLM 调用封装
+│   │   ├── prompts.py                # LLM 提示词
+│   │   ├── multi_agent.py            # 多 Agent 分析（CongestionAgent 等）
+│   │   ├── router.py                 # 动态 Agent 路由
+│   │   ├── collaboration/            # [Phase 9] 协同编排引擎
+│   │   │   ├── protocol.py           # Pydantic 标准消息协议（14 种类型）
+│   │   │   ├── roles.py              # Agent 角色能力注册表
+│   │   │   ├── state.py              # 11 状态运行状态机
+│   │   │   ├── task_graph.py         # DAG 任务图（拓扑+循环检测+动态插入）
+│   │   │   ├── orchestrator.py       # 编排器（构建→执行→持久化→SSE）
+│   │   │   ├── executor.py           # 执行适配器（预算+裁剪+校验+重试）
+│   │   │   ├── budget.py             # 执行预算控制
+│   │   │   ├── context_projection.py # 上下文裁剪（最小权限）
+│   │   │   ├── event_bus.py          # 内存事件总线（幂等去重）
+│   │   │   ├── event_parser.py       # NL 事件解析 + currentEvent 构建
+│   │   │   ├── agents.py             # 系统 Agent（dispatch/conflict/arbiter/fusion）
+│   │   │   ├── db_repository.py      # SQLite 5 表持久化
+│   │   │   └── repository.py         # 内存存储（测试用）
 │   ├── tools/
-│   │   ├── __init__.py
-│   │   ├── event_tools.py          # 事件校验 + 标准化 + 中英类型映射
-│   │   ├── risk_tools.py           # 风险评分 + 等级判定（确定性规则）
-│   │   ├── rule_tools.py           # Markdown 规则库解析 + 检索
-│   │   ├── dispatch_tools.py       # 调度话术 + 公众提示生成
-│   │   ├── report_tools.py         # 八段式结构化报告生成
-│   │   ├── db_tools.py             # SQLite CRUD + 统计聚合
-│   │   ├── notify_tools.py         # 消息推送（企微/钉钉/邮件）
-│   │   ├── similarity_tools.py     # [Phase 2] 相似案例检索
-│   │   ├── report_summary_tools.py # [Phase 2] 日报/周报生成
-│   │   ├── alert_tools.py          # [Phase 2] 未闭环提醒
-│   │   └── stat_tools.py           # [Phase 2] 高风险路口 TopN
+│   │   ├── event_tools.py            # 事件校验与标准化
+│   │   ├── risk_tools.py             # 风险评分
+│   │   ├── rule_tools.py             # Markdown 规则库检索
+│   │   ├── dispatch_tools.py         # 调度话术
+│   │   ├── report_tools.py           # 八段式报告
+│   │   ├── db_tools.py               # SQLite CRUD + 统计聚合
+│   │   ├── notify_tools.py           # 消息推送（企微/钉钉/邮件）
+│   │   ├── similarity_tools.py       # [Phase 2] 相似案例检索
+│   │   ├── report_summary_tools.py   # [Phase 2] 日报/周报生成
+│   │   ├── alert_tools.py            # [Phase 2] 未闭环提醒
+│   │   └── stat_tools.py             # [Phase 2] 高风险路口 TopN
+│   ├── chat/
+│   │   ├── chat_db.py                # Chat 会话持久化（4 张表 + CRUD）
+│   │   └── memory_manager.py         # 上下文记忆管理
+│   ├── rag/                          # RAG 向量检索模块
 │   ├── data/
-│   │   ├── rules/
-│   │   │   └── traffic_rules.md    # 8 类事件的本地处置预案
-│   │   └── trafficmind.db          # SQLite 数据库（自动创建）
+│   │   ├── rules/traffic_rules.md    # 8 类事件处置预案
+│   │   └── trafficmind.db            # SQLite 数据库（自动创建）
 │   └── tests/
-│       └── test_sample_request.py  # pytest 测试用例（含全生命周期测试）
-├── frontend/                       # React 大屏 Dashboard
+│       ├── test_sample_request.py    # Phase 1-8 测试
+│       └── test_phase9_multi_run.py  # Phase 9 专项测试
+├── frontend/
 │   ├── package.json
 │   ├── vite.config.ts
 │   ├── index.html
 │   └── src/
-│       ├── main.tsx                # 入口 + AntD ConfigProvider 深色主题
-│       ├── App.tsx
-│       ├── types/index.ts          # TypeScript 类型定义
-│       ├── api/index.ts            # Axios API 封装（含 mock 降级）
-│       ├── utils/format.ts
-│       ├── hooks/useDashboardData.ts
+│       ├── main.tsx                  # 入口 + Ant Design 浅色主题
+│       ├── App.tsx                   # 主应用（路由/状态/SSE）
+│       ├── types/
+│       │   ├── index.ts              # 核心类型定义
+│       │   └── collaboration.ts      # [Phase 9] 协作类型定义
+│       ├── api/
+│       │   ├── index.ts              # REST API 封装
+│       │   ├── chatApi.ts            # Chat API
+│       │   ├── collaborationApi.ts   # [Phase 9] 协作 API
+│       │   └── streamApi.ts          # [Phase 9] SSE 流式 API
+│       ├── utils/
+│       │   ├── format.ts
+│       │   ├── stream.ts
+│       │   ├── conversation.ts
+│       │   ├── answerFormatter.ts
+│       │   └── collaborationEventReducer.ts  # [Phase 9] SSE 事件归约器
 │       └── components/
-│           ├── Dashboard.tsx       # 主布局（Grid 响应式）
-│           ├── Header.tsx          # 标题栏 + 实时时钟
-│           ├── StatisticsCards.tsx  # 4 个统计卡片
-│           ├── RiskPieChart.tsx    # 风险等级饼图
-│           ├── EventTypeBarChart.tsx # 事件类型柱状图
-│           ├── TrendLineChart.tsx  # 近 7 天趋势折线图
-│           ├── EventList.tsx       # 事件列表（可排序）
-│           ├── EventFeed.tsx       # 高风险推送面板
-│           ├── EventDetailModal.tsx # 事件详情弹窗
-│           ├── EventFormModal.tsx  # 新建事件弹窗
-│           ├── StatusBadge.tsx     # 状态标签组件
-│           ├── SimilarCasesPanel.tsx  # [Phase 2] 相似案例面板
-│           ├── UnclosedAlertsPanel.tsx # [Phase 2] 未闭环提醒面板
-│           ├── HighRiskRoadsPanel.tsx  # [Phase 2] 高风险路口面板
-│           └── ReportPanel.tsx        # [Phase 2] 报告生成面板
+│           ├── LayoutShell.tsx       # 布局壳
+│           ├── Sidebar.tsx           # 侧边栏（会话列表+mode标签）
+│           ├── Dashboard.tsx         # 大屏 Dashboard
+│           ├── HomeHero.tsx          # 首页 Heroes
+│           ├── ChatWorkspace.tsx     # 对话工作区
+│           ├── ChatInputBar.tsx      # 输入栏
+│           ├── CollaborationRunView.tsx  # [Phase 9] Run 详情视图
+│           └── collaboration/        # [Phase 9] 协同组件
+│               ├── CollaborationDagView.tsx
+│               ├── AgentExecutionCard.tsx
+│               ├── ConflictPanel.tsx
+│               ├── FusionDecisionView.tsx
+│               ├── BudgetUsagePanel.tsx
+│               └── ErrorBoundary.tsx
 └── docs/
-    └── api_examples.md             # API 调用示例（含完整生命周期测试流程）
+    ├── api_examples.md               # API 调用示例
+    ├── PHASE8_SSE_AGENT_STREAMING.md # Phase 8 文档
+    └── PHASE9_MULTI_AGENT_COLLABORATION.md  # Phase 9 技术文档
 ```
 
 ## 开发规范
@@ -171,10 +203,29 @@ npm run dev
 
 ```bash
 cd trafficmind-agent
-pytest backend/tests/test_sample_request.py -v
+backend\.venv\Scripts\python.exe -m pytest backend\tests -q
+# 预期：283 passed
 ```
 
 ## API 接口速览
+
+### Chat 接口（Phase 6-8）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/chat/stream` | SSE 流式对话（6 种 mode） |
+| GET | `/chat/sessions` | 会话列表 |
+| GET | `/chat/sessions/{id}` | 会话详情 + 消息 |
+| PATCH | `/chat/sessions/{id}/title` | 修改标题 |
+| DELETE | `/chat/sessions/{id}` | 删除会话（级联清理协作数据） |
+
+### Collaboration 接口（Phase 9）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/agent/routed_analyze/stream` | 多 Agent 协同分析 SSE 流式 |
+| GET | `/collaboration/sessions/{id}/runs` | 查询会话的 Run 列表 |
+| GET | `/collaboration/runs/{run_id}` | 查询 Run 完整审计记录 |
 
 ### 第一阶段（6 个）
 
@@ -184,18 +235,20 @@ pytest backend/tests/test_sample_request.py -v
 | GET | `/history?limit=50` | 查询历史记录 |
 | GET | `/event/{event_id}` | 查询单条事件详情 |
 | POST | `/event/{event_id}/status` | 更新事件状态 |
-| GET | `/health` | 健康检查 |
+| GET | `/health` | 健康检查（含 Phase 9 状态） |
 | GET | `/stats` | 仪表盘聚合统计 |
 
-### 第二阶段新增（5 个）
+### 第二/三/四阶段新增
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/similar_cases/{event_id}` | 历史相似案例检索（规则相似度） |
+| GET | `/similar_cases/{event_id}` | 历史相似案例检索 |
 | GET | `/reports/daily` | 交通事件日报 |
 | GET | `/reports/weekly` | 交通事件周报 |
 | GET | `/alerts/unclosed` | 未闭环事件提醒 |
-| GET | `/stats/high_risk_roads` | 高风险路口 TopN 统计 |
+| GET | `/stats/high_risk_roads` | 高风险路口 TopN |
+| POST | `/agent/react_diagnose` | 受控 ReAct 诊断 |
+| POST | `/agent/routed_analyze` | 动态路由协同研判（REST） |
 
 ## 事件类型与状态
 
@@ -223,76 +276,70 @@ pytest backend/tests/test_sample_request.py -v
 
 风险等级：0-30 低风险 / 31-60 中风险 / 61-80 高风险 / 81-100 重大风险
 
-## 第二阶段（已完成）
+## 已完成阶段总览
 
-### 新增功能
-- [x] 历史相似案例检索（规则相似度，预留向量检索扩展接口）
-- [x] 交通事件日报/周报生成（本地模板 + LLM 可选润色）
-- [x] 未闭环事件提醒（含提醒原因和处置建议）
-- [x] 高风险路口 TopN 统计（含管理建议）
-- [x] 前端大屏 Dashboard 增强（4 个新功能面板）
+### Phase 1：交通事件分析 MVP
+- 8 种事件类型、9 项加权风险评分规则、8 节点 LangGraph 流水线
 
-### 新增文件
-- [backend/tools/similarity_tools.py](backend/tools/similarity_tools.py) — 相似度计算 + 案例检索 + 向量检索预留接口
-- [backend/tools/report_summary_tools.py](backend/tools/report_summary_tools.py) — 日报/周报生成
-- [backend/tools/alert_tools.py](backend/tools/alert_tools.py) — 未闭环事件检测与提醒
-- [backend/tools/stat_tools.py](backend/tools/stat_tools.py) — 高风险路口 TopN 统计
-- 前端新增组件：SimilarCasesPanel / UnclosedAlertsPanel / HighRiskRoadsPanel / ReportPanel
+### Phase 2：相似案例、日报周报、未闭环提醒、高风险路口
+- 5 个新增 API，规则相似度检索，前端 Dashboard 增强
 
-### 新增 API 接口
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/similar_cases/{event_id}` | 历史相似案例检索 |
-| GET | `/reports/daily` | 交通事件日报 |
-| GET | `/reports/weekly` | 交通事件周报 |
-| GET | `/alerts/unclosed` | 未闭环事件提醒 |
-| GET | `/stats/high_risk_roads` | 高风险路口 TopN |
+### Phase 3：RAG 向量检索、混合检索、多 Agent 分析
+- Chroma 向量数据库，DeepSeek Embedding，语义级检索，多 Agent 分析框架
 
-### 数据库变更
-- event_records 表新增 8 个字段用于相似检索（avgSpeed / queueLength / duration / weather / timePeriod / isMainRoad / nearbySchool / nearbyHospital）
-- 通过 ALTER TABLE 兼容迁移，旧数据库不崩溃
+### Phase 4：受控 ReAct、动态路由、冲突检测、链式协同
+- ReAct 诊断 Agent，动态 Agent 路由，Agent 建议冲突检测
+
+### Phase 5：AI 对话式工作台
+- 浅色主题工作台，Sidebar 导航，ChatWorkspace，场景卡片入口
+
+### Phase 6：会话持久化、可信 RAG、上下文管理
+- SQLite 4 张表，5 个 Chat API，4 级置信度，长期摘要记忆
+
+### Phase 7：产品工作台、LLM 环境加载、标题与模式隔离
+- 标题自动生成，mode 标签，入口统一，模式隔离
+
+### Phase 8：真实 SSE 流式、统一会话历史
+- DeepSeek stream=true 真流式，统一 chat_sessions 写入
+
+### Phase 9：多 Agent 协同编排与审计（当前阶段）
+详见 [docs/PHASE9_MULTI_AGENT_COLLABORATION.md](docs/PHASE9_MULTI_AGENT_COLLABORATION.md)
+
+核心能力：
+- **Pydantic 标准消息协议** — 14 种消息类型，全局唯一 ID，完整审计追踪
+- **Agent Role Registry** — 7 个注册 Agent，能力边界声明、输入输出约束
+- **5 层 DAG 任务图** — 拓扑排序 + DFS 循环检测 + 动态节点插入 + 失败传播
+- **ConflictArbiter 动态仲裁** — 检测到 high/critical 冲突时自动插入仲裁层
+- **11 状态运行状态机** — 合法转换校验，可中断/可恢复
+- **Context Projection** — 每个 Agent 只接收角色允许的字段子集（最小权限）
+- **currentEvent / previousRunContext 严格分离** — 永不合并，fieldSources 字段来源追踪
+- **SQLite 5 表持久化** — collaboration_runs / tasks / messages / conflicts / events 完整审计
+- **SSE 真流式** — 20+ 种事件类型实时推送到前端
+- **多 Run 隔离** — 一 Session 多 Run，前端 runsById + activeRunId 独立状态管理
+- **历史完整恢复** — 完整恢复 DAG、Agent 卡片、融合总结、仲裁结果
+- **Session 删除级联** — 删除 Session 时级联清理全部协作数据
 
 ### 测试覆盖
-- 27 个测试用例全部通过（第一阶段 12 + 第二阶段 15）
+- **283 passed** / TypeScript 0 errors
+- 测试文件：`test_sample_request.py` + `test_phase9_multi_run.py`
 
-## 后续计划
+## 后续计划（Phase 10+）
 
-### 第三阶段：智能检索与协同
+### 近期
+- **Memory V2**：跨 Session 结构化长期摘要，渐进式知识积累
+- **Evaluation**：路由准确率、冲突召回率、RAG groundedness 评测集
+- **Observability**：OpenTelemetry trace、延迟分位统计、失败率监控
 
-1. **向量数据库 + RAG**
-   - 引入 Chroma 或 FAISS 向量数据库
-   - 实现 `vector_based_similarity()` — 对历史事件文本做 embedding 后向量化存储
-   - 语义级相似案例检索（比规则相似度更准确，能发现不同路段但特征相似的案例）
-   - RAG（检索增强生成）：检索出的相似案例上下文注入 LLM prompt，让 Agent 基于历史处置经验生成上下文化的建议
-   - 参考技术栈：Chroma / FAISS + text2vec 或 DeepSeek Embedding
+### 中期
+- **并行 Agent 执行**：同层 Agent 使用 `asyncio.gather` 并发
+- **Auth/RBAC**：JWT + 用户角色 + 数据隔离
+- **LLM 辅助仲裁**：关键词匹配漏检时调用 LLM
 
-2. **多 Agent 协同**
-   - 基于 LangGraph SubGraph 机制
-   - 拥堵 Agent + 事故 Agent + 信号 Agent 并行分析
-   - 协调 Agent 汇总决策，处理跨类型复合事件
-   - 每个子 Agent 有独立的工具集（拥堵 Agent 侧重信号配时，事故 Agent 侧重救援调度）
-
-3. **信号灯策略模拟**
-   - 对接 SUMO 交通仿真
-   - Agent 生成的信号配时调整方案先在仿真中验证
-   - 评估指标：排队长度变化、平均延误时间、通行量
-   - 仿真通过后推送给人工作为参考方案
-
-4. **外部系统对接**
-   - 接入公安交管平台、122 接处警系统
-   - 对接信号灯控制接口，实现配时自动调整
-
-### 第四阶段：预测与预防
-- 基于历史数据训练事件预测模型（时空预测）
-- 主动巡检：在高峰来临前预判高风险路段
-- 知识图谱：构建交通事件因果推理图谱
-
-### 工程化增强
-- 引入 Redis 做事件缓存和实时状态
-- PostgreSQL 替代 SQLite 支持高并发
-- Docker 容器化部署 + K8s 编排
-- CI/CD 流水线 + 自动化测试覆盖
-- 对接消息队列（Kafka）实现事件流式处理
+### 远期
+- **Production**：PostgreSQL + Redis + Docker Compose + Nginx
+- **Reliability**：取消/恢复/幂等/并发压力测试
+- **SUMO 仿真**：信号配时方案仿真验证
+- **WebSocket 大屏推送**：实时指挥中心态势更新
 
 ---
 

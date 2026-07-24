@@ -30,7 +30,15 @@ export async function streamRoutedAnalyze(
   body: Record<string, unknown>,
   callbacks: StreamCallbacks
 ): Promise<void> {
-  await consumeSSE(`${API}/agent/routed_analyze/stream`, body, callbacks);
+  // Force sessionId: convert undefined → null so JSON.stringify includes it
+  const reqBody = {
+    sessionId: body.sessionId ?? null,
+    content: body.content ?? '',
+    mode: body.mode ?? 'collaboration',
+    contextPolicy: body.contextPolicy ?? 'fresh_event',
+  };
+  console.log('[STREAMAPI_REQUEST]', { sessionId: reqBody.sessionId, content: String(reqBody.content).slice(0, 50) });
+  await consumeSSE(`${API}/agent/routed_analyze/stream`, reqBody, callbacks);
 }
 
 async function consumeSSE(

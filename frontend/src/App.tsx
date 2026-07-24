@@ -54,11 +54,27 @@ export default function App() {
     setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1);
   };
   const handleRenameSession = async (id: string, t: string) => { try { await fetch(`/api/chat/sessions/${id}/title`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t }) }); refreshSessions(); } catch { /* ignore */ } };
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
+      if (activeSessionId === sessionId) {
+        sessionIdRef.current = null;
+        setActiveSessionId(null);
+        setPendingCreate(true);
+        setView('home');
+        setWorkspaceKey(k => k + 1);
+      }
+      refreshSessions();
+    } catch { /* ignore */ }
+  };
   const info = WORKSPACE_INFO[view] || WORKSPACE_INFO.home;
-  const recentItems = sessions.map(s => ({ id: s.id, title: s.title || '未命名交通分析', mode: s.mode, updatedAt: new Date(s.updated_at).getTime() }));
+  // Dedup by session ID — same sessionId = 1 sidebar entry
+  const recentItems = Array.from(
+    new Map(sessions.map(s => [s.id, { id: s.id, title: s.title || '未命名交通分析', mode: s.mode, updatedAt: new Date(s.updated_at).getTime() }])).values()
+  );
 
   return (
-    <LayoutShell activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
+    <LayoutShell activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
       <div style={{ maxWidth: 960, margin: '0 auto', width: '100%', padding: '0 24px 32px' }}>
         {view === 'alert' ? <AlertDashboard /> :
          view === 'guide' ? <GuidePage /> :
@@ -121,50 +137,110 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCrea
   const [messages, setMessages] = useState<Record<string, unknown>[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const isSubmitting = useRef(false);
-  // Stable session ID — synced from parent, updated on session_created
-  const sessionIdRef = useRef<string | null>(activeSessionId);
-  useEffect(() => { sessionIdRef.current = activeSessionId; }, [activeSessionId]);
+  // Stable session ID — ONLY writes happen via session_created or explicit history click.
+  // NEVER reset to null except via handleNewConversation.
+  const sessionIdRef = useRef<string | null>(null);
+  // Sync from prop ONLY when prop changes to a different non-null value (e.g. history click)
+  useEffect(() => {
+    if (activeSessionId && activeSessionId !== sessionIdRef.current) {
+      console.log('[COLLAB] sessionIdRef sync from prop:', activeSessionId);
+      sessionIdRef.current = activeSessionId;
+    }
+  }, [activeSessionId]);
+
+  // Mount/unmount tracking
+  const mountRef = useRef(0);
+  useEffect(() => {
+    mountRef.current += 1;
+    console.log('[COLLAB] CollaborationWorkspaceInner mounted #', mountRef.current, 'activeSessionId=', activeSessionId);
+    return () => { console.log('[COLLAB] CollaborationWorkspaceInner unmounting #', mountRef.current); };
+  }, []);
 
   // Derived: active run
   const activeRun = activeRunId ? runsById[activeRunId] || null : null;
 
-  // Hydrate run detail when switching to a non-hydrated run
+  // Unified deserializer — single source of truth for API → CollaborationRun
+  const deserializeRunDetail = (detail: Record<string,unknown>, runId: string): CollaborationRun => {
+    const run = (detail.run || detail) as Record<string,unknown>;
+    const rawTasks = (detail.tasks || []) as Record<string,unknown>[];
+    const tasks: CollaborationTask[] = rawTasks.map((t: Record<string,unknown>) => ({
+      taskId: String(t.taskId ?? t.task_id ?? ''), agentName: String(t.agentName ?? t.agent_name ?? ''),
+      taskType: String(t.taskType ?? t.task_type ?? 'analyze'),
+      status: (t.status as CollaborationTask['status']) || 'succeeded',
+      dependsOn: parseJson<string[]>(t.dependsOn ?? t.depends_on, []),
+      priority: Number(t.priority || 5), attempt: Number(t.attempt || 1),
+      maxRetries: Number(t.maxRetries ?? t.max_retries ?? 1),
+      timeoutSeconds: Number(t.timeoutSeconds ?? t.timeout_seconds ?? 30),
+      error: String(t.error ?? t.error_message ?? ''),
+    }));
+
+    const agentResults: Record<string, CollaborationAgentResult> = {};
+    for (const t of rawTasks) {
+      const os = parseJson<Record<string,unknown>>(t.output_snapshot ?? t.outputSnapshot, {});
+      const an = String(t.agentName ?? t.agent_name ?? '');
+      if (an && Object.keys(os).length > 0 && !['ConflictDetector', 'FusionAgent'].includes(an)) {
+        agentResults[an] = {
+          agentName: an, role: '', status: 'completed',
+          findings: (os.findings || []) as string[],
+          confidence: Number(os.confidence || 0),
+          suggestion: (os.suggestion || os.recommendation || '') as string,
+          urgency: (os.urgency || 'low') as string,
+          evidenceRefs: (os.evidenceRefs || []) as string[],
+          attempt: 1, duration: 0,
+        };
+      }
+    }
+
+    const fdRaw = run.final_decision ?? run.finalDecision;
+    const fd: Record<string,unknown> = typeof fdRaw === 'string' ? parseJson(fdRaw, {}) : (fdRaw as Record<string,unknown>) || {};
+    const budgetRaw = run.budget_usage ?? run.budgetUsage;
+    const budget: CollaborationRun['budgetUsage'] = typeof budgetRaw === 'string'
+      ? parseJson(budgetRaw, { maxAgents: 6, maxAgentCalls: 2, maxRetries: 2, maxTotalSeconds: 120, usedAgentCalls: {}, usedRetries: {}, startedAt: '' })
+      : (budgetRaw as unknown as CollaborationRun['budgetUsage']) || { maxAgents: 6, maxAgentCalls: 2, maxRetries: 2, maxTotalSeconds: 120, usedAgentCalls: {}, usedRetries: {}, startedAt: '' };
+
+    return {
+      runId: runId, traceId: String(run.trace_id ?? run.traceId ?? ''),
+      sessionId: String(run.session_id ?? run.sessionId ?? ''),
+      status: (run.status as CollaborationRun['status']) || 'completed',
+      executionEngine: 'orchestrator', protocolVersion: '1.0',
+      selectedAgents: parseJson<string[]>(run.selected_agents ?? run.selectedAgents, []),
+      skippedAgents: parseJson<string[]>(run.skipped_agents ?? run.skippedAgents, []),
+      routingReasons: [], tasks,
+      agentResults, conflicts: [], arbitrationResults: [],
+      failedAgents: parseJson<string[]>(run.failed_agents ?? run.failedAgents, []),
+      limitations: [], budgetUsage: budget,
+      finalDecision: String(run.final_decision ?? run.finalDecision ?? ''),
+      fusionSummary: fd.fusionSummary as string || fd.fusion_summary as string || '',
+      requiresHumanReview: Boolean(fd.requiresHumanReview ?? fd.requires_human_review),
+      degraded: false, fallbackReason: '',
+      startedAt: String(run.started_at ?? run.startedAt ?? ''),
+      completedAt: String(run.updated_at ?? run.updatedAt ?? ''),
+      isHydrated: true,
+      userQuery: String(run.userQuery ?? ''),
+      contextPolicy: String(run.contextPolicy ?? 'fresh_event'),
+      fieldSources: parseJson<Record<string,string>>(run.fieldSources ?? run.field_sources, {}),
+    };
+  };
+
+  // Hydrate run detail — works even when runsById is empty (history recovery)
   const hydrateRun = (runId: string) => {
+    if (!runId) return;
     const existing = runsById[runId];
-    if (!existing || existing.isHydrated) return;
+    if (existing?.isHydrated) return; // already fully loaded
+
     collabApi.getRun(runId).then(detail => {
+      const r = deserializeRunDetail(detail, runId);
       setRunsById(prev => {
         const cur = prev[runId];
-        if (!cur) return prev;
-        const rawTasks = (detail.tasks || []) as Record<string,unknown>[];
-        const tasks = rawTasks.map((t: Record<string,unknown>) => ({
-          taskId: String(t.taskId ?? t.task_id ?? ''), agentName: String(t.agentName ?? t.agent_name ?? ''),
-          taskType: String(t.taskType ?? t.task_type ?? 'analyze'),
-          status: (t.status as CollaborationTask['status']) || 'succeeded',
-          dependsOn: (t.dependsOn ?? t.depends_on ?? []) as string[],
-          priority: Number(t.priority || 5), attempt: Number(t.attempt || 1),
-          maxRetries: Number(t.maxRetries ?? t.max_retries ?? 1),
-          timeoutSeconds: Number(t.timeoutSeconds ?? t.timeout_seconds ?? 30),
-          error: String(t.error ?? t.error_message ?? ''),
-        } as CollaborationTask));
-        // Extract agentResults from output_snapshot
-        const agentResults: Record<string, CollaborationAgentResult> = {};
-        for (const t of rawTasks) {
-          const os = (t.output_snapshot || t.outputSnapshot || {}) as Record<string,unknown>;
-          const an = String(t.agentName ?? t.agent_name ?? '');
-          if (an && Object.keys(os).length > 0 && !['ConflictDetector','FusionAgent'].includes(an)) {
-            agentResults[an] = {
-              agentName: an, role: '', status: 'completed',
-              findings: (os.findings || []) as string[],
-              confidence: Number(os.confidence || 0),
-              suggestion: (os.suggestion || '') as string,
-              urgency: (os.urgency || 'low') as string,
-              evidenceRefs: (os.evidenceRefs || []) as string[],
-              attempt: 1, duration: 0,
-            };
-          }
-        }
-        return { ...prev, [runId]: { ...cur, tasks: tasks.length > 0 ? tasks : cur.tasks, agentResults, isHydrated: Boolean(tasks.length > 0 && Object.keys(agentResults).length > 0) } };
+        // Preserve SSE-derived fields if they exist; API data is authoritative for static fields
+        const merged: CollaborationRun = {
+          ...(cur || createEmptyRun(r.sessionId)),
+          ...r,
+          // NEVER overwrite live fusionSummary from SSE with empty API value
+          fusionSummary: r.fusionSummary || cur?.fusionSummary || '',
+          isHydrated: true,
+        };
+        return { ...prev, [runId]: merged };
       });
     }).catch(() => {});
   };
@@ -174,15 +250,30 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCrea
     if (activeRunId) hydrateRun(activeRunId);
   }, [activeRunId]);
 
+  // Chronological sort: started_at ASC, run_id ASC fallback
+  const sortRunsChronologically = <T extends { run_id: string; started_at?: string; startedAt?: string }>(runs: T[]): T[] => {
+    return [...runs].sort((a, b) => {
+      const aTime = Date.parse(String((a as Record<string,unknown>).started_at ?? (a as Record<string,unknown>).startedAt ?? ''));
+      const bTime = Date.parse(String((b as Record<string,unknown>).started_at ?? (b as Record<string,unknown>).startedAt ?? ''));
+      if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+        return aTime - bTime;
+      }
+      return String(a.run_id).localeCompare(String(b.run_id));
+    });
+  };
+
   // Load history if session exists (only on initial mount or session change)
   useEffect(() => {
     if (!activeSessionId) { setRunsById({}); setRunList([]); setActiveRunId(''); setMessages([]); return; }
     fetch(`/api/chat/sessions/${activeSessionId}`).then(r => r.json()).then(d => setMessages(d.messages || [])).catch(() => {});
     collabApi.listSessionRuns(activeSessionId).then(items => {
-      setRunList(items);
-      // If we don't have an active run, default to latest
-      if (!activeRunId && items.length > 0) {
-        setActiveRunId(items[items.length - 1].run_id); // last = newest
+      const ordered = sortRunsChronologically(items);
+      setRunList(ordered);
+      if (ordered.length > 0) {
+        const latestId = String(ordered[ordered.length - 1].run_id);
+        setActiveRunId(latestId);
+        // Immediately hydrate the latest run — works even with empty runsById
+        hydrateRun(latestId);
       }
     }).catch(() => {});
   }, [activeSessionId]);
@@ -200,8 +291,9 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCrea
     setMessages(prev => [...prev, userMsg]);
     const question = input.trim(); setInput('');
 
-    const sessionId = sessionIdRef.current || undefined;
-    let currentRun = createEmptyRun(sessionId || '');
+    const submittedSessionId = sessionIdRef.current;
+    console.log('[COLLAB] handleAnalyze: sessionIdRef.current=', submittedSessionId, 'prop.activeSessionId=', activeSessionId);
+    let currentRun = createEmptyRun(submittedSessionId || '');
 
     const clientRequestId = 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
 
@@ -214,32 +306,46 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCrea
     // Only send NL content — backend parser extracts structured fields from text.
     // Dynamic measurements (avgSpeed, queueLength, duration) are NEVER pre-filled.
     await collabApi.streamCollaboration(
-      { sessionId, content: question, mode: 'collaboration', clientRequestId, contextPolicy },
+      { sessionId: submittedSessionId, content: question, mode: 'collaboration', clientRequestId, contextPolicy },
       {
         onEvent: (event) => {
-          const evRunId = (event.runId as string) || '';
-          if (!evRunId) return; // ignore events without runId
-
-          // Update the specific run by runId — never a temp/global run
-          setRunsById(prev => {
-            const existing = prev[evRunId] || createEmptyRun(sessionId || '');
-            existing.runId = evRunId;
-            return { ...prev, [evRunId]: reduceCollaborationEvent(existing, event) };
-          });
-
+          // session_created has NO runId — must be handled FIRST, before runId guard
           if (event.eventType === 'session_created' && event.sessionId) {
             const sid = event.sessionId as string;
+            console.log('[COLLAB] session_created:', sid);
             sessionIdRef.current = sid;
             onSessionCreated(sid);
             onRefresh();
+            return;
           }
+
+          const evRunId = (event.runId as string) || '';
+          if (!evRunId) return;
+
+          // Fallback: if run event carries sessionId not yet in ref, sync it
+          const eventSid = (event.sessionId as string) || '';
+          if (eventSid && eventSid !== sessionIdRef.current) {
+            sessionIdRef.current = eventSid;
+            onSessionCreated(eventSid);
+          }
+
+          setRunsById(prev => {
+            const existing = prev[evRunId] || createEmptyRun(sessionIdRef.current || '');
+            existing.runId = evRunId;
+            return { ...prev, [evRunId]: reduceCollaborationEvent(existing, event) };
+          });
           if (event.eventType === 'run_created') {
-            // Only add to runList if not already present (dedup by run_id)
-            setRunList(prev => prev.some(r => r.run_id === evRunId) ? prev : [...prev, { run_id: evRunId, status: 'running' }]);
+            console.log('[COLLAB] run_created:', evRunId, 'sessionIdRef.current=', sessionIdRef.current);
+            setRunList(prev => {
+              if (prev.some(r => r.run_id === evRunId)) return prev;
+              const merged = [...prev, { run_id: evRunId, status: 'running' as const, started_at: new Date().toISOString() } as { run_id: string; status: string; started_at?: string }];
+              return sortRunsChronologically(merged);
+            });
             setActiveRunId(evRunId);
           }
           // Update runList status on completion
           if (event.eventType === 'done' || event.eventType === 'run_completed') {
+            console.log('[COLLAB] done/run_completed:', evRunId, 'sessionIdRef.current=', sessionIdRef.current);
             setRunList(prev => prev.map(r => r.run_id === evRunId ? { ...r, status: 'completed' } : r));
             onRefresh();
             // Hydrate detail from backend to fill in any gaps
@@ -292,35 +398,12 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCrea
     isSubmitting.current = false;
   };
 
-  const handleSelectRun = async (runId: string) => {
-    try {
-      const detail = await collabApi.getRun(runId);
-      // Build CollaborationRun from audit data
-      const r: CollaborationRun = {
-        runId: detail.run.run_id as string, traceId: detail.run.trace_id as string,
-        sessionId: detail.run.session_id as string, status: detail.run.status as CollaborationRun['status'],
-        executionEngine: 'orchestrator', protocolVersion: '1.0',
-        selectedAgents: parseJson(detail.run.selected_agents, []),
-        skippedAgents: parseJson(detail.run.skipped_agents, []),
-        routingReasons: [], tasks: (detail.tasks as []).map((t: Record<string,unknown>) => ({
-          taskId: String(t.task_id || ''), agentName: String(t.agent_name || ''),
-          taskType: String(t.task_type || 'analyze'), status: String(t.status || 'pending') as CollaborationTask['status'],
-          dependsOn: parseJson(t.depends_on, []), priority: Number(t.priority || 5),
-          attempt: Number(t.attempt || 0), maxRetries: Number(t.max_retries || 1),
-          timeoutSeconds: Number(t.timeout_seconds || 30), error: String(t.error_message || ''),
-        }) as CollaborationTask),
-        agentResults: {}, conflicts: [], arbitrationResults: [],
-        failedAgents: parseJson(detail.run.failed_agents, []),
-        limitations: [], budgetUsage: parseJson(detail.run.budget_usage, { maxAgents: 6, maxAgentCalls: 2, maxRetries: 2, maxTotalSeconds: 120, usedAgentCalls: {}, usedRetries: {}, startedAt: '' }) as CollaborationRun['budgetUsage'],
-        finalDecision: String(detail.run.final_decision || ''),
-        fusionSummary: String(detail.run.final_decision || ''),
-        requiresHumanReview: false, degraded: false, fallbackReason: '',
-        startedAt: String(detail.run.started_at || ''), completedAt: String(detail.run.updated_at || ''),
-      };
-      setMessages([]);
-      setRunsById(prev => ({ ...prev, [String(r.runId)]: r }));
-      setActiveRunId(String(r.runId));
-    } catch { /* fallback to chat messages */ }
+  const handleSelectRun = (runId: string) => {
+    setActiveRunId(runId);
+    // If not yet hydrated, load from API; otherwise cached data is used
+    if (!runsById[runId]?.isHydrated) {
+      hydrateRun(runId);
+    }
   };
 
   return (
@@ -351,14 +434,21 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCrea
         </button>
       </div>
 
-      {/* Chat messages */}
-      {messages.length > 0 && !activeRun && (
+      {/* Chat messages — only show when no runs exist (old data fallback) */}
+      {messages.length > 0 && runList.length === 0 && !activeRun && (
         <div style={{ marginBottom: 12 }}>
           {messages.map((m: Record<string,unknown>, i: number) => (
             <div key={i} style={{ padding: '6px 0', fontSize: 12, color: '#374151' }}>
               <strong>{m.role === 'user' ? '你' : 'TrafficMind'}:</strong> {String(m.content || '').slice(0, 200)}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Loading skeleton while hydrating run detail */}
+      {runList.length > 0 && !activeRun && (
+        <div style={{ background: '#FFF', borderRadius: 14, padding: 20, border: '1px solid #E5E7EB', textAlign: 'center' }}>
+          <div style={{ fontSize: 13, color: '#9CA3AF' }}>正在恢复协同运行详情...</div>
         </div>
       )}
 

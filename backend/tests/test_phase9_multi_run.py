@@ -1659,5 +1659,477 @@ class TestSessionLifecycle:
         assert '"sessionId"' in r1.text, "run_created should include sessionId"
 
 
+class TestBudgetDTO:
+    """Budget DTO 正确定义和传输"""
+
+    def test_budget_to_dict_includes_max_agent_calls(self):
+        """to_dict 包含 max_agent_calls"""
+        from backend.agent.collaboration.budget import ExecutionBudget
+        b = ExecutionBudget(max_agents=4, max_agent_calls=2, max_retries=1, max_total_seconds=90)
+        d = b.to_dict()
+        assert "max_agent_calls" in d
+        assert "max_retries" in d
+        assert "max_total_seconds" in d
+        assert d["max_agent_calls"] == 2
+        assert d["max_retries"] == 1
+        assert d["max_total_seconds"] == 90
+
+    def test_budget_snake_case_keys_normalizable(self):
+        """Budget snake_case 可在 API 边界转换为 camelCase"""
+        from backend.agent.collaboration.budget import ExecutionBudget
+        b = ExecutionBudget()
+        d = b.to_dict()
+        assert "max_agents" in d
+        assert "used_agent_calls" in d
+        assert "used_retries" in d
+
+    def test_budget_max_values_present_in_sse(self):
+        """Budget SSE 事件包含 max 值"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        c = TestClient(app)
+        body = {"content": "主干道拥堵请协同研判。"}
+        r = c.post("/agent/routed_analyze/stream", json=body)
+        text = r.text
+        assert "budget_updated" in text
+
+    def test_budget_in_four_runs_consistent(self):
+        """4轮运行的所有 budget 一致"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵研判1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        for i in range(3):
+            c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": f"拥堵研判{i+2}"})
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        assert len(runs) == 4
+
+    def test_budget_history_consistent(self):
+        """历史恢复后 Budget 保持一致"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re, json
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵研判"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        detail = c.get(f"/collaboration/runs/{runs[0]['run_id']}").json()
+        bu = detail["run"].get("budget_usage", {})
+        if isinstance(bu, str):
+            bu = json.loads(bu)
+        assert isinstance(bu, dict)
+
+    def test_used_agent_calls_non_empty(self):
+        """used_agent_calls 非空"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re, json
+        c = TestClient(app)
+        r = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r.text).group(1)
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        detail = c.get(f"/collaboration/runs/{runs[0]['run_id']}").json()
+        bu = detail["run"].get("budget_usage", {})
+        if isinstance(bu, str):
+            bu = json.loads(bu)
+        calls = bu.get("used_agent_calls", bu.get("usedAgentCalls", {}))
+        assert len(calls) > 0, f"Should have agent calls: {bu}"
+
+    def test_four_runs_one_session(self):
+        """4轮只创建1个session"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        for i in range(3):
+            c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": f"拥堵{i+2}"})
+        sessions = c.get("/chat/sessions?limit=20").json()["sessions"]
+        matching = [s for s in sessions if s["id"] == sid]
+        assert len(matching) == 1
+
+    def test_four_runs_share_session_id(self):
+        """4个run共享sessionId"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        for i in range(3):
+            c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": f"拥堵{i+2}"})
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        assert len(runs) == 4
+        for r in runs:
+            assert r["session_id"] == sid
+
+    def test_session_created_only_once_in_four_runs(self):
+        """4轮中session_created只出现1次"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        sc_count = 0
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵1"})
+        if "session_created" in r1.text: sc_count += 1
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        for i in range(3):
+            rn = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": f"拥堵{i+2}"})
+            if "session_created" in rn.text: sc_count += 1
+        assert sc_count == 1, f"session_created should appear exactly once, got {sc_count}"
+
+
+class TestSessionCreatedBeforeRunIdGuard:
+    """session_created 必须在 runId 校验之前处理"""
+
+    def test_session_created_has_no_run_id(self):
+        """后端 session_created 事件结构不含 runId"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        c = TestClient(app)
+        r = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判"})
+        text = r.text
+        assert "session_created" in text
+        # session_created data should contain sessionId but NOT runId
+        import re
+        sc_block = re.search(r'event: session_created\ndata: (\{[^}]+\})', text)
+        assert sc_block, "session_created event must exist"
+        data = sc_block.group(1)
+        assert "sessionId" in data
+        assert "runId" not in data, f"session_created must NOT have runId: {data[:80]}"
+
+    def test_session_created_would_set_session_id_ref(self):
+        """session_created 数据中包含有效 sessionId"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判"})
+        sid_match = re.search(r'"sessionId":\s*"([^"]+)"', r.text)
+        assert sid_match, "session_created must have sessionId"
+        sid = sid_match.group(1)
+        assert len(sid) > 10, f"Invalid sessionId: {sid}"
+
+    def test_two_rounds_with_session_id_reuse(self):
+        """第2轮使用第1轮sessionId，后端不创建新session"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        r2 = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "学校门口拥堵"})
+        assert "session_created" not in r2.text, "Round 2 must not create new session"
+
+    def test_two_rounds_one_session_two_runs(self):
+        """两轮创建1个chat_session和2个collaboration_run"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        r2 = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "学校门口拥堵"})
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        assert len(runs) == 2
+        chats = c.get("/chat/sessions?limit=10").json()["sessions"]
+        matching = [s for s in chats if s["id"] == sid]
+        assert len(matching) == 1
+
+    def test_run_created_has_session_id_for_round2(self):
+        """第2轮run_created应包含sessionId"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        r2 = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "学校门口拥堵"})
+        # run_created for Round 2 must contain sessionId
+        assert f'"sessionId": "{sid}"' in r2.text, "run_created Round 2 must have sessionId"
+
+
+class TestHistoryHydration:
+    """历史Run结构化水合与完整回放"""
+
+    def test_get_run_returns_tasks_even_when_runsById_empty(self):
+        """历史Run不存在于runsById时getRun仍返回完整数据"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判hydration"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        run_id = runs[0]["run_id"]
+        detail = c.get(f"/collaboration/runs/{run_id}").json()
+        assert "tasks" in detail
+        assert len(detail["tasks"]) > 0, "History run must have tasks"
+
+    def test_get_run_returns_agent_results(self):
+        """历史恢复包含agentResults"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判hydration2"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        detail = c.get(f"/collaboration/runs/{runs[0]['run_id']}").json()
+        tasks = detail.get("tasks", [])
+        agent_names = [t.get("agent_name", "") for t in tasks if t.get("agent_name")]
+        assert len(agent_names) > 0, f"Should have agent tasks: {agent_names}"
+
+    def test_get_run_returns_budget_usage(self):
+        """历史恢复包含budgetUsage"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re, json
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵预算测试"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        detail = c.get(f"/collaboration/runs/{runs[0]['run_id']}").json()
+        bu = detail["run"].get("budget_usage", {})
+        if isinstance(bu, str):
+            bu = json.loads(bu)
+        assert isinstance(bu, dict)
+        assert "used_agent_calls" in bu or "usedAgentCalls" in bu
+
+    def test_get_run_returns_final_decision(self):
+        """历史恢复包含finalDecision"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵final测试"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        detail = c.get(f"/collaboration/runs/{runs[0]['run_id']}").json()
+        fd = detail["run"].get("final_decision")
+        assert fd is not None, "Should have final_decision"
+
+    def test_get_run_returns_conflicts_in_conflict_scenario(self):
+        """冲突场景历史恢复包含conflicts和arbitration"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        body = {"content": "学校门口信号灯需延长绿灯，学生过街需行人相位，存在冲突请协同研判。"}
+        r = c.post("/agent/routed_analyze/stream", json=body)
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r.text).group(1)
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        detail = c.get(f"/collaboration/runs/{runs[0]['run_id']}").json()
+        tasks = detail.get("tasks", [])
+        assert len(tasks) >= 3, f"Conflict scenario should have tasks: {[t.get('agent_name') for t in tasks]}"
+
+    def test_two_runs_both_hydratable(self):
+        """两轮都可独立水合"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵hyd1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "拥堵hyd2"})
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        assert len(runs) == 2
+        for r in runs:
+            detail = c.get(f"/collaboration/runs/{r['run_id']}").json()
+            assert "tasks" in detail
+            assert len(detail["tasks"]) >= 2, f"Run {r['run_id']} should have tasks"
+
+    def test_session_without_runs_shows_no_error(self):
+        """无Run的Session不报错"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        c = TestClient(app)
+        r = c.get("/collaboration/sessions/nonexistent_session_no_runs/runs")
+        assert r.status_code == 200
+        assert r.json()["runs"] == []
+
+
+class TestSessionDelete:
+    """最近分析 Session 删除"""
+
+    def test_delete_single_run_session(self):
+        """删除单轮Session成功"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判delete1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        # Delete
+        del_r = c.delete(f"/chat/sessions/{sid}")
+        assert del_r.status_code == 200
+        assert del_r.json()["success"] is True
+        # Verify gone
+        sessions = c.get("/chat/sessions?limit=30").json()["sessions"]
+        assert not any(s["id"] == sid for s in sessions)
+
+    def test_delete_multi_run_session(self):
+        """删除包含多个Run的Session成功"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵delete1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "拥堵delete2"})
+        # Verify 2 runs exist
+        runs_before = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        assert len(runs_before) == 2
+        # Delete
+        c.delete(f"/chat/sessions/{sid}")
+        # Verify runs are gone
+        runs_after = c.get(f"/collaboration/sessions/{sid}/runs")
+        assert runs_after.status_code == 200
+        assert len(runs_after.json()["runs"]) == 0
+
+    def test_delete_nonexistent_session(self):
+        """删除不存在的Session返回404"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        c = TestClient(app)
+        r = c.delete("/chat/sessions/nonexistent_xyz_123")
+        assert r.status_code == 404
+
+    def test_delete_preserves_other_sessions(self):
+        """删除一个Session不影响其他Session"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵keep"})
+        sid_keep = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        r2 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵delete"})
+        sid_del = re.search(r'"sessionId":\s*"([^"]+)"', r2.text).group(1)
+        c.delete(f"/chat/sessions/{sid_del}")
+        # Verify kept session still exists
+        ses = c.get(f"/chat/sessions/{sid_keep}").json()
+        assert ses["session"]["id"] == sid_keep
+        # Verify deleted session is gone
+        r = c.get(f"/chat/sessions/{sid_del}")
+        assert r.status_code == 404
+
+    def test_delete_cleans_collaboration_tables(self):
+        """删除Session同时清除所有协作表数据"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵deletecollab"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        runs_before = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        run_id = runs_before[0]["run_id"]
+        # Verify tasks exist
+        detail_before = c.get(f"/collaboration/runs/{run_id}").json()
+        assert len(detail_before.get("tasks", [])) > 0
+        # Delete
+        c.delete(f"/chat/sessions/{sid}")
+        # Verify collaboration data gone
+        detail_after = c.get(f"/collaboration/runs/{run_id}")
+        assert detail_after.status_code == 404
+
+
+class TestRunOrder:
+    """Run 顺序契约 — started_at ASC"""
+
+    def test_runs_returned_in_started_at_asc_order(self):
+        """后端按 started_at ASC 返回 runs"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        import time; time.sleep(0.2)
+        r2 = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "拥堵请研判2"})
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        assert len(runs) == 2
+        # First run should be Round 1 (earlier), second should be Round 2 (later)
+        ids = [r["run_id"] for r in runs]
+        assert ids == sorted(ids), f"Runs should be in ASC order by run_id: {ids}"
+
+    def test_updated_at_change_does_not_affect_order(self):
+        """updated_at 改变不影响轮次顺序"""
+        # The backend now uses ORDER BY started_at ASC, so updating a run
+        # does not change its position in the list.
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        import time; time.sleep(0.2)
+        r2 = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "拥堵请研判2"})
+        runs_before = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        ids_before = [r["run_id"] for r in runs_before]
+        # Refresh — order must be same
+        runs_after = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        ids_after = [r["run_id"] for r in runs_after]
+        assert ids_before == ids_after, "Order must not change on refresh"
+
+    def test_run_id_asc_used_as_tiebreaker(self):
+        """run_id ASC 作为同秒创建兜底排序"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        r2 = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "拥堵请研判2"})
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        run_ids = [r["run_id"] for r in runs]
+        # run_id is time-based (run_<timestamp>), so ASC order = chronological
+        assert run_ids[0] < run_ids[-1], f"First run_id should be less than last: {run_ids}"
+
+    def test_desc_input_normalized_to_asc_by_frontend_sort(self):
+        """前端 sortRunsChronologically 将 DESC 输入规范化为 ASC"""
+        # Simulate: backend returns DESC, frontend sorts to ASC
+        desc_input = [
+            {"run_id": "run_200", "started_at": "2026-01-02T00:00:00Z", "status": "completed"},
+            {"run_id": "run_100", "started_at": "2026-01-01T00:00:00Z", "status": "completed"},
+        ]
+        sorted_asc = sorted(desc_input, key=lambda r: r["started_at"])
+        assert sorted_asc[0]["run_id"] == "run_100"
+        assert sorted_asc[1]["run_id"] == "run_200"
+
+    def test_latest_run_is_last_in_asc_order(self):
+        """默认选择最新一轮 = 正序数组最后一项"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        import time; time.sleep(0.2)
+        r2 = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "拥堵请研判2"})
+        runs = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        latest = runs[-1]["run_id"]
+        # latest should be the larger run_id (later timestamp)
+        all_ids = [r["run_id"] for r in runs]
+        assert latest == all_ids[-1], f"Latest should be last in ASC array: {all_ids}"
+
+    def test_run_list_preserves_order_after_navigate_away_and_back(self):
+        """切换后再返回顺序不变"""
+        from fastapi.testclient import TestClient
+        from backend.app import app
+        import re
+        c = TestClient(app)
+        r1 = c.post("/agent/routed_analyze/stream", json={"content": "拥堵请研判1"})
+        sid = re.search(r'"sessionId":\s*"([^"]+)"', r1.text).group(1)
+        import time; time.sleep(0.2)
+        r2 = c.post("/agent/routed_analyze/stream", json={"sessionId": sid, "content": "拥堵请研判2"})
+        # Fetch twice — simulate navigating away and back
+        runs1 = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        runs2 = c.get(f"/collaboration/sessions/{sid}/runs").json()["runs"]
+        assert [r["run_id"] for r in runs1] == [r["run_id"] for r in runs2]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -473,3 +473,172 @@ curl "http://localhost:8000/stats/high_risk_roads?limit=5&days=30&min_risk=%E4%B
   ]
 }
 ```
+
+---
+
+## Phase 9 新增 API
+
+### 10. POST /agent/routed_analyze/stream — 多 Agent 协同分析 SSE 流式
+
+使用自然语言描述交通事件，系统自动解析、路由 Agent、构建 DAG、执行协同分析，SSE 实时推送全生命周期事件。
+
+```bash
+# 普通拥堵协同分析
+curl -X POST http://localhost:8000/agent/routed_analyze/stream \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "content": "主干道平均车速8km/h，排队400米，请协同研判。",
+    "contextPolicy": "fresh_event"
+  }'
+
+# 学校冲突协同分析（第二/三轮追加 sessionId 和 contextPolicy）
+curl -X POST http://localhost:8000/agent/routed_analyze/stream \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "content": "人民路小学门口早高峰严重拥堵，机动车需绿灯，学生需过街相位。",
+    "contextPolicy": "fresh_event",
+    "sessionId": "sess_20260724..."
+  }'
+
+# 继续上一轮研判
+curl -X POST http://localhost:8000/agent/routed_analyze/stream \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "content": "继续上述分析，考虑增加公交优先策略。",
+    "contextPolicy": "continue_event",
+    "sessionId": "sess_20260724..."
+  }'
+```
+
+**SSE 事件流示例：**
+
+```
+data: {"eventType":"session_created","sessionId":"sess_20260724..."}
+
+data: {"eventType":"run_created","runId":"run_1710000000000","sessionId":"sess_...","userQuery":"...","contextPolicy":"fresh_event","fieldSources":{"avgSpeed":"current_message","queueLength":"current_message",...},"selectedAgents":["CongestionAgent","SignalAgent","PublicSafetyAgent"]}
+
+data: {"eventType":"agent_route_done","selectedAgents":["CongestionAgent","SignalAgent","PublicSafetyAgent","DispatchAgent","ConflictDetector","FusionAgent"],"routingReasons":["学校周边触发公共安全Agent","拥堵触发CongestionAgent"]}
+
+data: {"eventType":"task_graph_created","tasks":[...]}
+
+data: {"eventType":"task_ready","taskId":"task_0_CongestionAgent",...}
+
+data: {"eventType":"task_started","taskId":"task_0_CongestionAgent","agentName":"CongestionAgent",...}
+
+data: {"eventType":"agent_result","agentName":"CongestionAgent","result":{"findings":["平均车速仅 8.0 km/h，严重拥堵"，"排队 400m，建议上游分流"],"urgency":"high","recommendation":"通知交警+信号中心，上游分流","confidence":0.7,...}}
+
+data: {"eventType":"task_succeeded","taskId":"task_0_CongestionAgent",...}
+
+... (SignalAgent, PublicSafetyAgent, DispatchAgent)
+
+data: {"eventType":"conflict_check_done","conflicts":[{"type":"strategy_conflict","severity":"high","agents":["SignalAgent","PublicSafetyAgent"],...}],"conflictCount":3}
+
+data: {"eventType":"task_ready","taskId":"task_arbiter","agentName":"ConflictArbiter",...}
+
+data: {"eventType":"task_started","taskId":"task_arbiter","agentName":"ConflictArbiter",...}
+
+data: {"eventType":"arbitration_result","conflictId":"arb_0","requiresHumanReview":true,"safetyFirstRule":"在学生过街安全与机动车通行效率冲突时...","resolution":"高风险冲突需要人工研判",...}
+
+data: {"eventType":"task_succeeded","taskId":"task_arbiter",...}
+
+data: {"eventType":"fusion_start","runId":"run_...",...}
+
+data: {"eventType":"fusion_delta","text":"综合","executionMode":"llm"}
+data: {"eventType":"fusion_delta","text":" 3 个 Agent 的分析",...}
+... (多次 fusion_delta)
+
+data: {"eventType":"fusion_done","fusionSummary":"综合 3 个 Agent 的分析结果，检测到 3 个建议冲突...","generationMode":"llm"}
+
+data: {"eventType":"run_completed","runId":"run_...","sessionId":"sess_...","status":"completed"}
+
+data: [DONE]
+```
+
+### 11. GET /collaboration/sessions/{session_id}/runs — 查询会话的 Run 列表
+
+```bash
+curl "http://localhost:8000/collaboration/sessions/sess_20260724.../runs"
+```
+
+**响应示例：**
+
+```json
+{
+  "runs": [
+    {
+      "run_id": "run_1710000001000",
+      "session_id": "sess_20260724...",
+      "status": "completed",
+      "started_at": "2026-07-24T10:00:00",
+      "updated_at": "2026-07-24T10:00:15"
+    },
+    {
+      "run_id": "run_1710000002000",
+      "session_id": "sess_20260724...",
+      "status": "completed",
+      "started_at": "2026-07-24T10:05:00",
+      "updated_at": "2026-07-24T10:05:18"
+    }
+  ]
+}
+```
+
+### 12. GET /collaboration/runs/{run_id} — 查询 Run 完整审计记录
+
+```bash
+curl "http://localhost:8000/collaboration/runs/run_1710000001000"
+```
+
+**响应示例：**
+
+```json
+{
+  "run": {
+    "run_id": "run_1710000001000",
+    "session_id": "sess_20260724...",
+    "status": "completed",
+    "normalized_event": {
+      "avgSpeed": 8.0, "queueLength": 400,
+      "roadName": "人民路", "nearbySchool": true,
+      "fieldSources": {"avgSpeed": "current_message", ...}
+    },
+    "selected_agents": ["CongestionAgent", "SignalAgent", "PublicSafetyAgent", "DispatchAgent", "ConflictDetector", "ConflictArbiter", "FusionAgent"],
+    "previous_run_context": null,
+    "budget_usage": {"max_agents": 4, "max_agent_calls": 2, "used_agent_calls": {...}},
+    "final_decision": {"fusionSummary": "...", "requiresHumanReview": true, "arbitration": {...}}
+  },
+  "tasks": [
+    {"task_id": "task_0_CongestionAgent", "agent_name": "CongestionAgent", "status": "succeeded", "output_snapshot": {...}},
+    ...
+  ],
+  "messages": [...],
+  "conflicts": [
+    {"conflict_id": "arb_0", "type": "strategy_conflict", "severity": "high", "resolution": "高风险冲突需要人工研判", "requires_human_review": 1}
+  ],
+  "events": [...]
+}
+```
+
+### 13. POST /chat/stream — Chat SSE 流式对话
+
+```bash
+curl -X POST http://localhost:8000/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "content": "人民路早高峰拥堵严重，请分析。",
+    "mode": "collaboration",
+    "sessionId": null
+  }'
+```
+
+### 14. DELETE /chat/sessions/{session_id} — 删除会话及全部关联数据
+
+```bash
+curl -X DELETE "http://localhost:8000/chat/sessions/sess_20260724..."
+```
+
+> **注意**：删除会话时会级联清理全部关联数据（chat_messages、memory_summaries、evidence_logs、collaboration_runs、collaboration_tasks、collaboration_messages、collaboration_conflicts、collaboration_events）。
