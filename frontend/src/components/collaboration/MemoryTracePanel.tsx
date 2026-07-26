@@ -2,25 +2,26 @@
  * Memory V2 · 记忆追踪面板 — Phase 10
  *
  * 4 Tab：召回记忆 / 按Agent注入 / 写入结果 / 过滤与拒绝
+ *
+ * 所有 Hook 调用在组件顶层，确保渲染周期内 Hook 数量固定。
  */
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Tabs, Empty, Tag, Descriptions, Collapse, Spin, Alert, Card, Typography } from "antd";
 import {
   DatabaseOutlined, RobotOutlined, EditOutlined,
-  StopOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  SyncOutlined,
+  StopOutlined, CloseCircleOutlined,
 } from "@ant-design/icons";
 import type {
   MemoryTraceResponse, MemorySelectedItem, MemoryRejectedItem,
   AgentMemoryInjection, MemoryWriteResult,
 } from "../../types/memory";
 import {
-  MEMORY_TYPE_LABELS, MEMORY_STATUS_LABELS, REJECTION_REASON_LABELS,
+  MEMORY_TYPE_LABELS, REJECTION_REASON_LABELS,
   EMPTY_MEMORY_TRACE,
 } from "../../types/memory";
 import { getRunMemoryTrace } from "../../api/memoryApi";
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 const { Panel } = Collapse;
 
 interface Props {
@@ -28,22 +29,53 @@ interface Props {
   visible?: boolean;
 }
 
+/** 纯函数：按 memoryType 分组（不使用 Hook，无条件调用安全） */
+function groupByType(items: MemorySelectedItem[]): Record<string, MemorySelectedItem[]> {
+  const groups: Record<string, MemorySelectedItem[]> = {};
+  for (const item of items) {
+    const t = item.memoryType || "unknown";
+    if (!groups[t]) groups[t] = [];
+    groups[t].push(item);
+  }
+  return groups;
+}
+
 const MemoryTracePanel: React.FC<Props> = ({ runId, visible = true }) => {
   const [trace, setTrace] = useState<MemoryTraceResponse>(EMPTY_MEMORY_TRACE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!runId || !visible) return;
+
+    // Cancel any in-flight request
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     let cancelled = false;
+    // Reset state for new runId
+    setTrace(EMPTY_MEMORY_TRACE);
     setLoading(true);
     setError(null);
-    getRunMemoryTrace(runId)
+
+    getRunMemoryTrace(runId, controller.signal)
       .then((data) => { if (!cancelled) setTrace(data); })
-      .catch((err) => { if (!cancelled) setError(err?.safeMessage || "加载失败"); })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setError(err?.safeMessage || "加载失败");
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [runId, visible]);
+
+  // --- All Hooks called above this line; early returns below are safe ---
 
   if (!visible) return null;
   if (loading) return <Spin tip="加载记忆追踪…" />;
@@ -60,21 +92,12 @@ const MemoryTracePanel: React.FC<Props> = ({ runId, visible = true }) => {
     );
   }
 
+  // Plain computation — no Hook
   const selected: MemorySelectedItem[] = trace.selected || [];
   const rejected: MemoryRejectedItem[] = trace.rejected || [];
   const injectionMap: Record<string, AgentMemoryInjection> = trace.injectionMap || {};
   const writeResults: MemoryWriteResult[] = trace.writeResults || [];
-
-  // Group selected by type
-  const byType = useMemo(() => {
-    const groups: Record<string, MemorySelectedItem[]> = {};
-    for (const item of selected) {
-      const t = item.memoryType || "unknown";
-      if (!groups[t]) groups[t] = [];
-      groups[t].push(item);
-    }
-    return groups;
-  }, [selected]);
+  const byType = groupByType(selected);
 
   const tabItems = [
     {
