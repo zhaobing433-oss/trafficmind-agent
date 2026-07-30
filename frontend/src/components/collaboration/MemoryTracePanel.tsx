@@ -217,10 +217,22 @@ const MemoryTracePanel: React.FC<Props> = ({ runId, visible = true }) => {
           ) : (
             rejected.map((r, idx) => (
               <div key={idx} style={{ marginBottom: 6, padding: 6, background: "#fff7f7", borderRadius: 4, fontSize: 12 }}>
-                <Tag color="red">{r.reason && REJECTION_REASON_LABELS[r.reason] ? REJECTION_REASON_LABELS[r.reason] : r.reason}</Tag>
-                <Tag>{MEMORY_TYPE_LABELS[r.memoryType] || r.memoryType}</Tag>
-                <Text>{r.memoryKey}</Text>
-                {r.sourceRunId && <Tag>{r.sourceRunId.slice(0, 12)}</Tag>}
+                <Tag color="red">
+                  {r.reason && REJECTION_REASON_LABELS[r.reason]
+                    ? REJECTION_REASON_LABELS[r.reason]
+                    : (r.reason || "未知拒绝原因")}
+                </Tag>
+                <Tag>{MEMORY_TYPE_LABELS[r.memoryType] || r.memoryType || "unknown"}</Tag>
+                <Text strong>{r.memoryKey || "(无key)"}</Text>
+                {r.eventThreadId && (
+                  <Tag color="default">{String(r.eventThreadId)}</Tag>
+                )}
+                <div style={{ marginTop: 2 }}>
+                  <Text type="secondary" style={{ fontSize: 10 }}>
+                    {r.sourceRunId ? `run: ${String(r.sourceRunId)}` : ""}
+                    {r.value ? ` · ${JSON.stringify(r.value).slice(0, 80)}` : ""}
+                  </Text>
+                </div>
               </div>
             ))
           )}

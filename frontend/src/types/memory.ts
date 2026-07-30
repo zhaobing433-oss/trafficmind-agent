@@ -153,6 +153,7 @@ export interface MemoryRejectedItem {
   reason: string;
   sourceRunId: string;
   eventThreadId: string;
+  value?: Record<string, unknown>;
 }
 
 export interface AgentMemoryInjection {

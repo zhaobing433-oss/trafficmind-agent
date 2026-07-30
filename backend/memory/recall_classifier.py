@@ -190,6 +190,18 @@ class RecallClassifier:
             decision.reasons.append("continue_keywords_with_active_thread")
             return decision
 
+        # ===== No active thread + traffic content → fresh_event =====
+        if not active_thread and len(user_input) > 6:
+            has_road = current_event.get("roadName") and current_event.get("roadName") not in ("未知路段", "未命名路段", "未命名")
+            has_event = current_event.get("eventTypeCn") or current_event.get("eventType")
+            is_traffic = any(kw in user_input for kw in ["拥堵", "事故", "追尾", "信号", "排队", "分析", "研判", "路", "交通"])
+            if has_road or has_event or is_traffic:
+                decision.primary_intent = "fresh_event"
+                decision.starts_new_event = True
+                decision.confidence = 0.8
+                decision.reasons.append("first_round_traffic_content")
+                return decision
+
         # ===== Default: ambiguous =====
         decision.primary_intent = "ambiguous"
         decision.confidence = 0.3

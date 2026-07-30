@@ -148,7 +148,11 @@ class MemoryRetriever:
             if field_name and field_name in current_event:
                 current_val = current_event[field_name]
                 mem_val = item.value.get("value")
-                if current_val is not None and mem_val is not None and current_val != mem_val:
+                # Only override when current input has a MEANINGFUL value
+                # (not empty, not None, not default placeholder)
+                _is_empty = current_val is None or current_val == "" or current_val is False
+                _is_default = isinstance(current_val, str) and current_val in ("未知路段", "未命名路段", "未命名")
+                if not _is_empty and not _is_default and mem_val is not None and current_val != mem_val:
                     return "current_input_override"
 
         # 5. Dynamic field block (shouldn't exist in DB for stable_fact, but as safety)

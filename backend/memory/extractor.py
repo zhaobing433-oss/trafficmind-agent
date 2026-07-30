@@ -155,7 +155,11 @@ class MemoryExtractor:
         self._extract_session_goal(result, user_input, session_id, run_id,
                                    user_message_id, is_first_round)
 
-        # --- Stable Facts ---
+        # --- User Corrections (must run BEFORE stable_facts to suppress parser) ---
+        self._extract_user_corrections(result, user_input, current_event,
+                                       session_id, run_id, user_message_id)
+
+        # --- Stable Facts (skip keys being corrected) ---
         self._extract_stable_facts(result, current_event, user_input,
                                    session_id, run_id, user_message_id)
 
@@ -170,10 +174,6 @@ class MemoryExtractor:
         # --- Confirmed Decisions ---
         self._extract_confirmed_decisions(result, user_input, session_id,
                                           run_id, user_message_id)
-
-        # --- User Corrections ---
-        self._extract_user_corrections(result, user_input, current_event,
-                                       session_id, run_id, user_message_id)
 
         # --- Unresolved Issues ---
         self._extract_unresolved_issues(result, conflicts, arbitration_results,
@@ -259,7 +259,14 @@ class MemoryExtractor:
                     "sourceRunId": run_id,
                 })
 
+        # Keys being corrected — suppress normal parser candidates
+        corrected_keys = {c.memory_key for c in result.user_corrections}
+
         for field_name, memory_key in STABLE_FIELD_WHITELIST.items():
+            # Skip if this key is being corrected (correction creates its own stable_fact)
+            if memory_key in corrected_keys:
+                continue
+
             value = current_event.get(field_name)
             if value in DEFAULT_PLACEHOLDERS:
                 continue
@@ -267,6 +274,12 @@ class MemoryExtractor:
                 continue
             if isinstance(value, str) and not value.strip():
                 continue
+
+            # Skip boolean False defaults (only write when True or explicitly stated)
+            if isinstance(value, bool) and not value:
+                source = field_sources.get(field_name, "")
+                if source not in ("user", "user_explicit", "human_review"):
+                    continue  # 默认False不写入
 
             # Check dynamic field blocklist
             if field_name in DYNAMIC_FIELD_BLOCKLIST:
@@ -567,6 +580,7 @@ class MemoryExtractor:
                         memory_key = key
                         break
 
+                # 1. Create user_correction audit record
                 candidate = MemoryWriteCandidate(
                     memory_type=MemoryType.USER_CORRECTION.value,
                     memory_key=memory_key,
@@ -581,6 +595,26 @@ class MemoryExtractor:
                     source_message_id=user_message_id,
                 )
                 result.user_corrections.append(candidate)
+
+                # 2. Also create stable_fact with corrected value so old gets superseded
+                # Only for known stable fields (road.name, school.nearby, hospital.nearby)
+                if memory_key in ("road.name", "school.nearby", "hospital.nearby",
+                                  "road.is_main", "road.direction", "route.event_type"):
+                    stable_candidate = MemoryWriteCandidate(
+                        memory_type=MemoryType.STABLE_FACT.value,
+                        memory_key=memory_key,
+                        value={"value": new_val},
+                        text_content=f"Corrected: {old_val} → {new_val}",
+                        status=MemoryStatus.ACTIVE.value,
+                        confidence=1.0,
+                        authority_level=AuthorityLevel.USER_CORRECTION,
+                        source_type=MemorySourceType.USER_CORRECTION.value,
+                        source_id=user_message_id,
+                        source_run_id=run_id,
+                        source_message_id=user_message_id,
+                    )
+                    result.stable_facts.append(stable_candidate)
+
                 return
 
     # ================================================================

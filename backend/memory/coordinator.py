@@ -5,6 +5,7 @@ Memory V2 协调器 — Phase 10 里程碑二
 Extractor → Policy → WriteGate → ConflictResolver → Store(tx) → Trace
 """
 
+import json
 import time
 import logging
 from typing import Any, Dict, List, Optional
@@ -70,6 +71,7 @@ class MemoryCoordinator:
         run_status: str,
         degraded: bool = False,
         is_first_round: bool = False,
+        event_thread_id: str = "",
     ) -> Dict[str, Any]:
         """执行完整的 Memory 抽取和写入流程。
 
@@ -116,8 +118,26 @@ class MemoryCoordinator:
 
             candidates = extraction.all_candidates()
             if not candidates:
-                return self._empty_result(run_id, session_id, trace_id,
-                                          int((time.time() - start_time) * 1000))
+                # Save trace with no_op even when no candidates
+                self.repo.merge_trace(MemoryTrace(
+                    trace_id=trace_id, run_id=run_id, session_id=session_id,
+                    write_results_json=json.dumps(
+                        [{"action": "no_op", "reason": "no_memory_candidates"}],
+                        ensure_ascii=False,
+                    ),
+                    write_latency_ms=int((time.time() - start_time) * 1000),
+                    event_thread_id=event_thread_id,
+                ), phase="write")
+                return {
+                    "runId": run_id, "sessionId": session_id,
+                    "candidateCount": 0, "createdCount": 0, "deduplicatedCount": 0,
+                    "supersededCount": 0, "rejectedCount": 0, "confirmedCount": 0,
+                    "latencyMs": int((time.time() - start_time) * 1000),
+                    "traceId": trace_id,
+                    "writeResults": [
+                        {"action": "no_op", "reason": "no_memory_candidates"}
+                    ], "error": None,
+                }
 
             # ============ Step 2: Load existing items for conflict check ============
             existing_items = self.repo.list_session_items(session_id, limit=500)
@@ -140,26 +160,32 @@ class MemoryCoordinator:
                 for candidate, action, reason, superseded_id in resolved:
                     wr = self._execute_action(
                         candidate, action, reason, superseded_id,
-                        session_id, run_id,
+                        session_id, run_id, event_thread_id,
                     )
                     write_results.append(wr)
                     if action in counts:
                         counts[action] += 1
 
+                # If all were rejected/filtered, write a no_op result
+                if not write_results:
+                    write_results.append({
+                        "action": "no_op", "reason": "all_candidates_rejected",
+                        "memoryType": "", "memoryKey": "",
+                    })
+
                 # Save trace (write phase — merge with recall fields)
+                _write_results_json = json.dumps(write_results, ensure_ascii=False)
                 trace = MemoryTrace(
                     trace_id=trace_id,
                     run_id=run_id,
                     session_id=session_id,
-                    candidates_json="[]",  # JSON handled at repo boundary
-                    selected_json="[]",
-                    rejected_json="[]",
-                    injection_map_json="{}",
-                    write_candidates_json="[]",
-                    write_results_json="[]",
-                    token_estimate=0,
-                    recall_latency_ms=0,
-                    write_latency_ms=0,
+                    write_candidates_json=json.dumps(
+                        [{"memoryType": c.memory_type, "memoryKey": c.memory_key,
+                          "sourceType": c.source_type, "sourceRunId": c.source_run_id}
+                         for c in candidates], ensure_ascii=False),
+                    write_results_json=_write_results_json,
+                    write_latency_ms=int((time.time() - start_time) * 1000),
+                    event_thread_id=event_thread_id,
                 )
                 self.repo.merge_trace(trace, phase="write")
 
@@ -208,6 +234,7 @@ class MemoryCoordinator:
         superseded_id: Optional[str],
         session_id: str,
         run_id: str,
+        event_thread_id: str = "",
     ) -> Dict[str, Any]:
         """执行单个写入操作。"""
         result = {
@@ -233,6 +260,7 @@ class MemoryCoordinator:
                     source_run_id=candidate.source_run_id,
                     source_message_id=candidate.source_message_id,
                     valid_until=candidate.valid_until,
+                    event_thread_id=event_thread_id,
                 )
                 result["itemId"] = item.id
 
@@ -254,6 +282,7 @@ class MemoryCoordinator:
                     valid_until=candidate.valid_until,
                     scope_type="session",
                     scope_id=session_id,
+                    event_thread_id=event_thread_id,
                 )
                 old_item, new_created = self.repo.supersede_item(
                     superseded_id, new_item
@@ -284,6 +313,7 @@ class MemoryCoordinator:
                         source_id=candidate.source_id,
                         source_run_id=run_id,
                         source_message_id=candidate.source_message_id,
+                        event_thread_id=event_thread_id,
                     )
                     result["itemId"] = item.id
 
@@ -530,6 +560,7 @@ class MemoryCoordinator:
 
             # --- Save recall-phase trace ---
             import json as _json
+            _all_candidates = retrieval_result.get("candidates", [])
             _trace = MemoryTrace(
                 trace_id=f"memtrace_{run_id}",
                 run_id=run_id,
@@ -537,17 +568,33 @@ class MemoryCoordinator:
                 recall_intent=decision.primary_intent,
                 recall_decision_json=_json.dumps(decision.to_dict(), ensure_ascii=False),
                 recall_plan_json=_json.dumps(plan.to_dict(), ensure_ascii=False),
-                selected_json=_json.dumps([fi.item.id for fi in selected], ensure_ascii=False),
+                candidates_json=_json.dumps([
+                    {"memoryId": fi.item.id, "memoryType": fi.item.memory_type,
+                     "memoryKey": fi.item.memory_key, "status": fi.item.status}
+                    for fi in _all_candidates
+                ], ensure_ascii=False),
+                selected_json=_json.dumps([
+                    {"memoryId": fi.item.id, "memoryType": fi.item.memory_type,
+                     "memoryKey": fi.item.memory_key, "value": fi.item.value,
+                     "status": fi.item.status, "sourceType": fi.item.source_type,
+                     "sourceRunId": fi.item.source_run_id,
+                     "eventThreadId": getattr(fi.item, "event_thread_id", ""),
+                     "confidence": fi.item.confidence,
+                     "authorityLevel": fi.item.authority_level,
+                     "score": fi.score, "reason": getattr(fi, "selected_reason", "")}
+                    for fi in selected
+                ], ensure_ascii=False),
                 rejected_json=_json.dumps(
                     [{"memoryType": fi.item.memory_type, "memoryKey": fi.item.memory_key,
-                      "reason": fi.rejection_reason, "sourceRunId": fi.item.source_run_id}
+                      "reason": fi.rejection_reason, "sourceRunId": fi.item.source_run_id,
+                      "eventThreadId": getattr(fi.item, "event_thread_id", "")}
                      for fi in retrieval_result.get("rejected", [])],
                     ensure_ascii=False,
                 ),
-                injection_map_json=_json.dumps({
-                    a: {"itemCount": m.get("itemCount", 0), "allowedTypes": m.get("allowedTypes", [])}
-                    for a, m in injection.get("agentInjectionMap", {}).items()
-                }, ensure_ascii=False),
+                injection_map_json=_json.dumps(
+                    injection.get("agentInjectionMap", {}),
+                    ensure_ascii=False, default=str,
+                ),
                 token_estimate=0,
                 recall_latency_ms=latency_ms,
                 event_thread_id=active_thread_id,
@@ -571,7 +618,7 @@ class MemoryCoordinator:
                 "intent": decision.primary_intent,
                 "recallDecision": decision.to_dict(),
                 "recallPlan": plan.to_dict(),
-                "candidateCount": retrieval_result["total_candidates"],
+                "candidateCount": len(_all_candidates),
                 "selectedCount": retrieval_result["selected_count"],
                 "rejectedCount": retrieval_result["rejected_count"],
                 "selected": selected,

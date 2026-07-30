@@ -292,6 +292,7 @@ class SQLiteMemoryRepository(MemoryStore):
         supersedes_id: str = "",
         scope_type: str = "session",
         scope_id: str = "",
+        event_thread_id: str = "",
         item_id: Optional[str] = None,
     ) -> MemoryItem:
         """创建一条新记忆。相同 dedupKey 返回已有记录。
@@ -335,9 +336,9 @@ class SQLiteMemoryRepository(MemoryStore):
                     memory_key, value_json, text_content, status,
                     confidence, authority_level, source_type, source_id,
                     source_run_id, source_message_id, valid_from, valid_until,
-                    supersedes_id, dedup_key, created_at, updated_at,
-                    last_accessed_at, access_count
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    supersedes_id, dedup_key, event_thread_id,
+                    created_at, updated_at, last_accessed_at, access_count
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     mid, memory_type, scope_type, scope_id, session_id,
@@ -345,8 +346,8 @@ class SQLiteMemoryRepository(MemoryStore):
                     text_content, status,
                     confidence, authority_level, source_type, source_id,
                     source_run_id, source_message_id, valid_from, valid_until,
-                    supersedes_id, dk, now, now,
-                    None, 0,
+                    supersedes_id, dk, event_thread_id,
+                    now, now, None, 0,
                 ),
             )
             _tx_safe_commit(conn)
@@ -721,6 +722,11 @@ class SQLiteMemoryRepository(MemoryStore):
                 trace.session_id = existing.session_id
             if existing.created_at:
                 trace.created_at = existing.created_at
+            if existing.run_id:
+                trace.run_id = existing.run_id
+            # Preserve event_thread_id from existing if patch is empty
+            if not trace.event_thread_id and existing.event_thread_id:
+                trace.event_thread_id = existing.event_thread_id
             trace.trace_id = existing.trace_id
 
         if not trace.created_at:

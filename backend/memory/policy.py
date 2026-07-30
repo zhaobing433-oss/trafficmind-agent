@@ -98,7 +98,9 @@ class MemoryPolicy:
                 MemoryType.STABLE_FACT.value,
                 MemoryType.CONSTRAINT.value,
                 MemoryType.CONFIRMED_DECISION.value,
+                MemoryType.UNRESOLVED_ISSUE.value,
                 MemoryType.SESSION_GOAL.value,
+                MemoryType.USER_CORRECTION.value,
             },
             "DispatchAgent": {
                 MemoryType.STABLE_FACT.value,

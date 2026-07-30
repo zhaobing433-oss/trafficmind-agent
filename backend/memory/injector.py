@@ -22,6 +22,42 @@ class MemoryInjector:
 
     def __init__(self, policy=None):
         self.policy = policy or DEFAULT_POLICY
+        # Field-level whitelist: agent_name → allowed memoryKey prefixes
+        self.field_whitelist: Dict[str, set] = {
+            "CongestionAgent": {
+                "road.name", "road.direction", "road.is_main", "route.event_type",
+                "goal.primary", "constraint.", "decision.",
+            },
+            "SignalAgent": {
+                "road.name", "road.direction", "road.is_main", "route.event_type",
+                "school.nearby", "hospital.nearby", "intersection.",
+                "goal.primary", "constraint.", "decision.", "correction.",
+            },
+            "AccidentAgent": {
+                "road.name", "road.direction", "route.event_type",
+                "intersection.", "goal.primary", "constraint.",
+                "decision.", "correction.", "unresolved.",
+            },
+            "PublicSafetyAgent": {
+                "road.name", "school.nearby", "hospital.nearby",
+                "goal.primary", "constraint.", "decision.", "correction.",
+                "unresolved.",
+            },
+            "DispatchAgent": {
+                "road.name", "road.direction", "route.event_type",
+                "goal.primary", "constraint.", "decision.", "unresolved.",
+            },
+            "ConflictDetector": {
+                "constraint.", "proposal.", "decision.",
+            },
+            "ConflictArbiter": {
+                "constraint.", "decision.", "correction.", "unresolved.",
+            },
+            "FusionAgent": {
+                "goal.primary", "constraint.", "decision.",
+                "unresolved.", "run.summary.", "proposal.",
+            },
+        }
 
     def build_injection_context(
         self,
@@ -167,12 +203,25 @@ class MemoryInjector:
         agent_name: str,
         current_event: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """为特定 Agent 筛选 Memory 子集。"""
+        """为特定 Agent 筛选 Memory 子集（类型 + 字段级白名单）。"""
         allowed_types = self.policy.get_allowed_memory_types_for_agent(agent_name)
         if not allowed_types:
             return {"items": [], "itemCount": 0, "allowedTypes": []}
 
-        filtered = [fi for fi in selected if fi.item.memory_type in allowed_types]
+        allowed_keys = self.field_whitelist.get(agent_name, set())
+
+        filtered = []
+        for fi in selected:
+            item = fi.item
+            # Type check
+            if item.memory_type not in allowed_types:
+                continue
+            # Key check (if whitelist exists for this agent, it must match)
+            if allowed_keys and not any(
+                item.memory_key.startswith(prefix) for prefix in allowed_keys
+            ):
+                continue
+            filtered.append(fi)
 
         return {
             "items": [self._item_dict(fi) for fi in filtered],

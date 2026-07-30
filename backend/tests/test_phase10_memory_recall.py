@@ -486,7 +486,7 @@ class TestAgentInjection:
                              session_id="s",memory_key="road.name",
                              value={"value":"人民路"},status="active")),
                     self._build_fi(MemoryItem(id="m2",memory_type="constraint",
-                             session_id="s",memory_key="c.1",
+                             session_id="s",memory_key="constraint.speed",
                              value={"op":"gte"},status="active"))]
         result = injector.build_injection_context(selected,["CongestionAgent"],_event(),"r1","s")
         agent_ctx = result["agentInjectionMap"].get("CongestionAgent",{})
@@ -512,7 +512,7 @@ class TestAgentInjection:
     def test_dispatch_agent_whitelist(self):
         injector = MemoryInjector()
         selected = [self._build_fi(MemoryItem(id="m1",memory_type="confirmed_decision",
-                             session_id="s",memory_key="d.1",
+                             session_id="s",memory_key="decision.confirmed.r1",
                              value={"decision":"go"},status="confirmed"))]
         result = injector.build_injection_context(selected,["DispatchAgent"],_event(),"r1","s")
         assert result["agentInjectionMap"]["DispatchAgent"]["itemCount"] == 1
@@ -706,3 +706,432 @@ class TestStability:
 
     def test_full_regression_marker(self):
         pass  # verified by full regression
+
+
+# ================================================================
+# K. Production Acceptance Regression (Phase 10 Final)
+# ================================================================
+class TestProductionAcceptance:
+    def test_candidate_count_gte_selected(self):
+        """candidateCount >= selectedCount"""
+        repo = MemoryRepository()
+        t = repo.create_event_thread("s_cand", "Test", "r_cand")
+        item = repo.create_item(memory_type="stable_fact", session_id="s_cand",
+                                memory_key="road.name", value={"value":"人民路"},
+                                status="active", source_type="user_explicit")
+        repo.update_item(item.id, event_thread_id=t.id)
+        plan = MemoryRecallPlan(intent="continue_event", session_id="s_cand",
+                                event_thread_id=t.id, requested_types=["stable_fact"])
+        retriever = MemoryRetriever(repo)
+        result = retriever.retrieve(plan, _event(roadName=""), "s_cand")
+        assert result["total_candidates"] >= result["selected_count"]
+
+    def test_road_name_extraction(self):
+        """road.name 从 NL 输入提取"""
+        from backend.agent.collaboration.event_parser import parse_content_to_event
+        parsed = parse_content_to_event("人民路小学门口拥堵，平均速度8km/h，排队400米")
+        assert parsed["roadName"] in ("人民路", "人民路小学门口")
+        assert parsed["nearbySchool"] is True
+
+    def test_zhongshan_road_junction(self):
+        from backend.agent.collaboration.event_parser import parse_content_to_event
+        parsed = parse_content_to_event("中山路与解放路交叉口发生事故")
+        assert "中山路" in parsed.get("roadName", "")
+
+    def test_airport_highway(self):
+        from backend.agent.collaboration.event_parser import parse_content_to_event
+        parsed = parse_content_to_event("机场高速拥堵")
+        assert parsed["roadName"] == "机场高速"
+
+    def test_unknown_road_not_written(self):
+        from backend.agent.collaboration.event_parser import parse_content_to_event
+        parsed = parse_content_to_event("前方发生拥堵")
+        assert parsed["roadName"] in ("未命名路段", "")
+
+    def test_hospital_false_not_written(self):
+        """未提及hospital不写false到stable_fact"""
+        from backend.memory.extractor import MemoryExtractor
+        e = MemoryExtractor()
+        event = _event(nearbyHospital=False, roadName="人民路")
+        event["fieldSources"] = {"roadName": "user", "nearbyHospital": ""}
+        result = e.extract(
+            session_id="s_hosp", run_id="r_hosp",
+            user_message_id="um", assistant_message_id="am",
+            user_input="人民路拥堵", current_event=event,
+            selected_agents=[], agent_results=[], conflicts=[],
+            arbitration_results=[], fusion_summary="", final_decision={},
+            requires_human_review=False, run_status="completed", degraded=False,
+        )
+        hospital_facts = [f for f in result.stable_facts if f.memory_key == "hospital.nearby"]
+        assert len(hospital_facts) == 0
+
+    def test_is_main_road_false_not_written(self):
+        """未提及isMainRoad不写false"""
+        from backend.memory.extractor import MemoryExtractor
+        e = MemoryExtractor()
+        event = _event(isMainRoad=False, roadName="人民路")
+        event["fieldSources"] = {"roadName": "user", "isMainRoad": ""}
+        result = e.extract(
+            session_id="s_mainrd", run_id="r_mainrd",
+            user_message_id="um", assistant_message_id="am",
+            user_input="人民路拥堵", current_event=event,
+            selected_agents=[], agent_results=[], conflicts=[],
+            arbitration_results=[], fusion_summary="", final_decision={},
+            requires_human_review=False, run_status="completed", degraded=False,
+        )
+        main_rd = [f for f in result.stable_facts if f.memory_key == "road.is_main"]
+        assert len(main_rd) == 0
+
+    def test_session_goal_first_round(self):
+        """首轮创建 session_goal"""
+        from backend.memory.extractor import MemoryExtractor
+        e = MemoryExtractor()
+        result = e.extract(
+            session_id="s_sg", run_id="r_sg",
+            user_message_id="um", assistant_message_id="am",
+            user_input="人民路小学门口拥堵",
+            current_event=_event(), selected_agents=["CongestionAgent"],
+            agent_results=[], conflicts=[], arbitration_results=[],
+            fusion_summary="", final_decision={},
+            requires_human_review=False, run_status="completed", degraded=False,
+            is_first_round=True,
+        )
+        goals = [g for g in result.session_goals if g.memory_key == "goal.primary"]
+        assert len(goals) == 1
+
+    def test_different_agents_different_injection(self):
+        """不同Agent注入内容不同"""
+        injector = MemoryInjector()
+        selected = [
+            FilteredItem(item=MemoryItem(
+                id="m1", memory_type="stable_fact", session_id="s",
+                memory_key="road.name", value={"value":"人民路"},
+                status="active"), selected=True, score=0.9),
+            FilteredItem(item=MemoryItem(
+                id="m2", memory_type="stable_fact", session_id="s",
+                memory_key="school.nearby", value={"value":True},
+                status="active"), selected=True, score=0.8),
+            FilteredItem(item=MemoryItem(
+                id="m3", memory_type="constraint", session_id="s",
+                memory_key="constraint.speed", value={"op":"gte"},
+                status="active"), selected=True, score=0.7),
+        ]
+        for fi in selected:
+            fi.selected_reason = "test"
+        result = injector.build_injection_context(
+            selected, ["CongestionAgent", "PublicSafetyAgent"],
+            _event(), "r_inj", "s_inj",
+        )
+        ca = result["agentInjectionMap"]["CongestionAgent"]
+        pa = result["agentInjectionMap"]["PublicSafetyAgent"]
+        # CongestionAgent should not get school.nearby
+        ca_keys = [it["memoryKey"] for it in ca["items"]]
+        pa_keys = [it["memoryKey"] for it in pa["items"]]
+        assert "school.nearby" not in ca_keys
+        # PublicSafetyAgent should get school.nearby
+        assert "school.nearby" in pa_keys
+
+    def test_avgspeed_not_inherited(self):
+        """avgSpeed 不跨轮继承"""
+        coordinator = MemoryCoordinator()
+        result = coordinator.recall_and_inject("s_avg","r_avg","继续分析",_event(),["CongestionAgent"])
+        ctx = result.get("injectionContext", {})
+        for fact in ctx.get("stableFacts", []):
+            assert "avgSpeed" not in str(fact.get("value", {}))
+
+    def test_queuelength_not_inherited(self):
+        """queueLength 不跨轮继承"""
+        coordinator = MemoryCoordinator()
+        result = coordinator.recall_and_inject("s_q","r_q","继续分析",_event(),["CongestionAgent"])
+        ctx = result.get("injectionContext", {})
+        for fact in ctx.get("stableFacts", []):
+            assert "queueLength" not in str(fact.get("value", {}))
+
+    def test_event_thread_consistent(self):
+        """两轮 Event Thread 相同"""
+        repo = MemoryRepository()
+        coordinator = MemoryCoordinator(repo=repo)
+        r1 = coordinator.recall_and_inject("s_etc","r1","人民路拥堵",_event(),["CongestionAgent"])
+        r2 = coordinator.recall_and_inject("s_etc","r2","继续分析",_event(),["CongestionAgent"])
+        assert r1.get("eventThreadId") == r2.get("eventThreadId")
+        assert r1.get("eventThreadId") != ""
+
+    def test_current_event_immutable(self):
+        """Memory 写入前后 currentEvent 不变"""
+        import copy as _cp
+        ev = _event()
+        ev_copy = _cp.deepcopy(ev)
+        coordinator = MemoryCoordinator()
+        coordinator.recall_and_inject("s_imm2","r_imm2","测试",ev,["CongestionAgent"])
+        assert ev == ev_copy
+
+
+# ================================================================
+# L. Real Acceptance Regression (Phase 10 Final)
+# ================================================================
+class TestRealAcceptance:
+    def test_current_input_override_skips_empty_value(self):
+        repo = MemoryRepository()
+        t = repo.create_event_thread("s_cie", "Test", "r_cie")
+        item = repo.create_item(memory_type="stable_fact", session_id="s_cie",
+                                memory_key="road.name", value={"value":"人民路"},
+                                status="active", source_type="user_explicit")
+        repo.update_item(item.id, event_thread_id=t.id)
+        plan = MemoryRecallPlan(intent="continue_event", session_id="s_cie",
+                                event_thread_id=t.id, requested_types=["stable_fact"])
+        retriever = MemoryRetriever(repo)
+        result = retriever.retrieve(plan, _event(roadName=""), "s_cie")
+        road_selected = [fi for fi in result["selected"] if fi.item.memory_key=="road.name"]
+        assert len(road_selected) >= 1
+
+    def test_unknown_road_not_override(self):
+        repo = MemoryRepository()
+        t = repo.create_event_thread("s_uno", "Test", "r_uno")
+        item = repo.create_item(memory_type="stable_fact", session_id="s_uno",
+                                memory_key="road.name", value={"value":"人民路"},
+                                status="active", source_type="user_explicit")
+        repo.update_item(item.id, event_thread_id=t.id)
+        plan = MemoryRecallPlan(intent="continue_event", session_id="s_uno",
+                                event_thread_id=t.id, requested_types=["stable_fact"])
+        retriever = MemoryRetriever(repo)
+        result = retriever.retrieve(plan, _event(roadName="未知路段"), "s_uno")
+        road_selected = [fi for fi in result["selected"] if fi.item.memory_key=="road.name"]
+        assert len(road_selected) >= 1
+
+    def test_real_override_with_conflicting_value(self):
+        repo = MemoryRepository()
+        t = repo.create_event_thread("s_rov", "Test", "r_rov")
+        item = repo.create_item(memory_type="stable_fact", session_id="s_rov",
+                                memory_key="road.name", value={"value":"人民路"},
+                                status="active", source_type="user_explicit")
+        repo.update_item(item.id, event_thread_id=t.id)
+        plan = MemoryRecallPlan(intent="continue_event", session_id="s_rov",
+                                event_thread_id=t.id, requested_types=["stable_fact"])
+        retriever = MemoryRetriever(repo)
+        result = retriever.retrieve(plan, _event(roadName="中山路"), "s_rov")
+        rejected = [fi for fi in result.get("rejected",[])
+                    if fi.rejection_reason=="current_input_override"]
+        assert len(rejected) >= 1
+
+    def test_first_round_goal_created(self):
+        from backend.memory.extractor import MemoryExtractor
+        e = MemoryExtractor()
+        result = e.extract(
+            session_id="s_frg", run_id="r_frg",
+            user_message_id="um", assistant_message_id="am",
+            user_input="人民路小学门口拥堵",
+            current_event=_event(), selected_agents=["CongestionAgent"],
+            agent_results=[], conflicts=[], arbitration_results=[],
+            fusion_summary="", final_decision={},
+            requires_human_review=False, run_status="completed", degraded=False,
+            is_first_round=True,
+        )
+        goals = [g for g in result.session_goals if g.memory_key=="goal.primary"]
+        assert len(goals) == 1
+
+    def test_road_name_recalled_in_continue(self):
+        repo = MemoryRepository()
+        t = repo.create_event_thread("s_rrc", "Test", "r_rrc")
+        item = repo.create_item(memory_type="stable_fact", session_id="s_rrc",
+                                memory_key="road.name", value={"value":"人民路"},
+                                status="active", source_type="user_explicit")
+        repo.update_item(item.id, event_thread_id=t.id)
+        plan = MemoryRecallPlan(intent="continue_event", session_id="s_rrc",
+                                event_thread_id=t.id, requested_types=["stable_fact"])
+        retriever = MemoryRetriever(repo)
+        result = retriever.retrieve(plan, _event(roadName=""), "s_rrc")
+        road = [fi for fi in result["selected"] if fi.item.memory_key=="road.name"]
+        assert len(road) >= 1
+
+    def test_correction_supersede_chain(self):
+        repo = MemoryRepository()
+        sid = "s_csc"
+        repo.create_event_thread(sid, "Test", "r1")
+        old = repo.create_item(memory_type="stable_fact", session_id=sid,
+                               memory_key="road.name", value={"value":"人民路"},
+                               status="active", source_type="user_explicit")
+        coordinator = MemoryCoordinator(repo=repo)
+        result = coordinator.apply_user_correction(
+            session_id=sid, run_id="r_corr", user_message_id="um",
+            old_value="人民路", new_value="中山路", memory_key="road.name",
+        )
+        assert result["success"] is True
+        old_reloaded = repo.get_item(old.id)
+        assert old_reloaded.status == "superseded"
+        new_fact = repo.find_active_by_key(sid, "road.name")
+        assert new_fact is not None
+        assert new_fact.value.get("value") == "中山路"
+
+    def test_correction_recall_only_new(self):
+        repo = MemoryRepository()
+        sid = "s_crn"
+        t = repo.create_event_thread(sid, "Test", "r1")
+        old = repo.create_item(memory_type="stable_fact", session_id=sid,
+                               memory_key="road.name", value={"value":"人民路"},
+                               status="active", source_type="user_explicit")
+        repo.update_item(old.id, event_thread_id=t.id)
+        coordinator = MemoryCoordinator(repo=repo)
+        result = coordinator.apply_user_correction(
+            session_id=sid, run_id="r_corr", user_message_id="um",
+            old_value="人民路", new_value="中山路", memory_key="road.name",
+        )
+        # Set event_thread_id on the new fact
+        if result.get("newItemId"):
+            repo.update_item(result["newItemId"], event_thread_id=t.id)
+        plan = MemoryRecallPlan(intent="continue_event", session_id=sid,
+                                event_thread_id=t.id, requested_types=["stable_fact"])
+        retriever = MemoryRetriever(repo)
+        r = retriever.retrieve(plan, _event(roadName=""), sid)
+        road_selected = [fi for fi in r["selected"] if fi.item.memory_key=="road.name"]
+        names = [fi.item.value.get("value","") for fi in road_selected]
+        assert "中山路" in names
+        assert "人民路" not in names
+
+    def test_no_crash_on_empty_input(self):
+        repo = MemoryRepository()
+        coordinator = MemoryCoordinator(repo=repo)
+        result = coordinator.extract_and_write(
+            session_id="s_nec", run_id="r_nec",
+            user_message_id="um", assistant_message_id="am",
+            user_input="人民路拥堵", current_event=_event(),
+            selected_agents=[], agent_results=[], conflicts=[],
+            arbitration_results=[], fusion_summary="", final_decision={},
+            requires_human_review=False, run_status="completed",
+            degraded=False, is_first_round=True,
+        )
+        assert result is not None
+
+
+# ================================================================
+# M. Correction Chain (Phase 10 Final)
+# ================================================================
+class TestCorrectionChain:
+    def test_parser_extracts_new_value_from_correction(self):
+        """correction 输入中 newValue 被解析为 roadName"""
+        from backend.agent.collaboration.event_parser import parse_content_to_event
+        parsed = parse_content_to_event("刚才说错了，不是人民路，是中山路")
+        assert parsed["roadName"] == "中山路"
+
+    def test_correction_not_use_old_as_roadname(self):
+        """correction 中旧道路名不作为 currentEvent.roadName"""
+        from backend.agent.collaboration.event_parser import parse_content_to_event
+        parsed = parse_content_to_event("刚才说错了，不是人民路，是中山路")
+        assert parsed["roadName"] != "人民路"
+
+    def test_extractor_suppresses_parser_candidate_for_corrected_key(self):
+        """correction 抑制同 key 的 parser stable_fact 候选"""
+        from backend.memory.extractor import MemoryExtractor
+        e = MemoryExtractor()
+        result = e.extract(
+            session_id="s_sup", run_id="r_sup",
+            user_message_id="um", assistant_message_id="am",
+            user_input="刚才说错了，不是人民路，是中山路",
+            current_event={"roadName":"中山路","fieldSources":{"roadName":"nl_parsed"}},
+            selected_agents=[], agent_results=[], conflicts=[],
+            arbitration_results=[], fusion_summary="", final_decision={},
+            requires_human_review=False, run_status="completed", degraded=False,
+        )
+        # Should have correction stable_fact, not parser stable_fact
+        correction_facts = [c for c in result.stable_facts
+                           if c.source_type=="user_correction"
+                           and c.memory_key=="road.name"]
+        parser_facts = [c for c in result.stable_facts
+                       if c.source_type!="user_correction"
+                       and c.memory_key=="road.name"]
+        assert len(correction_facts) >= 1
+        assert len(parser_facts) == 0  # suppressed
+
+    def test_old_fact_superseded(self):
+        """纠正后旧事实状态为 superseded"""
+        repo = MemoryRepository()
+        sid = "s_ofs"
+        repo.create_event_thread(sid, "Test", "r1")
+        old = repo.create_item(memory_type="stable_fact", session_id=sid,
+                               memory_key="road.name", value={"value":"人民路"},
+                               status="active", source_type="user_explicit")
+        coordinator = MemoryCoordinator(repo=repo)
+        coordinator.apply_user_correction(
+            session_id=sid, run_id="r_corr", user_message_id="um",
+            old_value="人民路", new_value="中山路", memory_key="road.name",
+        )
+        assert repo.get_item(old.id).status == "superseded"
+
+    def test_new_fact_active_with_correction_source(self):
+        """新事实为 active，sourceType=user_correction"""
+        repo = MemoryRepository()
+        sid = "s_nfs"
+        repo.create_event_thread(sid, "Test", "r1")
+        repo.create_item(memory_type="stable_fact", session_id=sid,
+                         memory_key="road.name", value={"value":"人民路"},
+                         status="active", source_type="user_explicit")
+        coordinator = MemoryCoordinator(repo=repo)
+        result = coordinator.apply_user_correction(
+            session_id=sid, run_id="r_corr", user_message_id="um",
+            old_value="人民路", new_value="中山路", memory_key="road.name",
+        )
+        new_fact = repo.get_item(result["newItemId"])
+        assert new_fact.status == "active"
+        assert new_fact.value.get("value") == "中山路"
+
+    def test_new_fact_supersedes_id_points_to_old(self):
+        """新事实 supersedesId 指向旧事实"""
+        repo = MemoryRepository()
+        sid = "s_nfi"
+        repo.create_event_thread(sid, "Test", "r1")
+        old = repo.create_item(memory_type="stable_fact", session_id=sid,
+                               memory_key="road.name", value={"value":"人民路"},
+                               status="active", source_type="user_explicit")
+        coordinator = MemoryCoordinator(repo=repo)
+        result = coordinator.apply_user_correction(
+            session_id=sid, run_id="r_corr", user_message_id="um",
+            old_value="人民路", new_value="中山路", memory_key="road.name",
+        )
+        new_fact = repo.get_item(result["newItemId"])
+        assert new_fact.supersedes_id == old.id
+
+    def test_correction_audit_confirmed(self):
+        """user_correction 审计记录为 confirmed"""
+        repo = MemoryRepository()
+        sid = "s_cac"
+        repo.create_event_thread(sid, "Test", "r1")
+        coordinator = MemoryCoordinator(repo=repo)
+        result = coordinator.apply_user_correction(
+            session_id=sid, run_id="r_corr", user_message_id="um",
+            old_value="人民路", new_value="中山路", memory_key="road.name",
+        )
+        audit = repo.get_item(result["correctionId"])
+        assert audit.status == "confirmed"
+        assert audit.memory_type == "user_correction"
+
+    def test_continue_recalls_new_not_old(self):
+        """后续 continue 选中新 road.name，拒绝旧 road.name"""
+        repo = MemoryRepository()
+        sid = "s_cno"
+        t = repo.create_event_thread(sid, "Test", "r1")
+        old = repo.create_item(memory_type="stable_fact", session_id=sid,
+                               memory_key="road.name", value={"value":"人民路"},
+                               status="active", source_type="user_explicit")
+        repo.update_item(old.id, event_thread_id=t.id)
+        coordinator = MemoryCoordinator(repo=repo)
+        r = coordinator.apply_user_correction(
+            session_id=sid, run_id="r_corr", user_message_id="um",
+            old_value="人民路", new_value="中山路", memory_key="road.name",
+        )
+        if r.get("newItemId"):
+            repo.update_item(r["newItemId"], event_thread_id=t.id)
+        plan = MemoryRecallPlan(intent="continue_event", session_id=sid,
+                                event_thread_id=t.id, requested_types=["stable_fact"])
+        retriever = MemoryRetriever(repo)
+        result = retriever.retrieve(plan, _event(roadName=""), sid)
+        selected = result["selected"]
+        rejected = result["rejected"]
+        sel_names = [fi.item.value.get("value","") for fi in selected if fi.item.memory_key=="road.name"]
+        rej_names = [fi.item.value.get("value","") for fi in rejected if fi.item.memory_key=="road.name"]
+        assert "中山路" in sel_names
+        assert "人民路" not in sel_names
+
+    def test_parser_not_affected_for_normal_input(self):
+        """非 correction 输入道路解析不受影响"""
+        from backend.agent.collaboration.event_parser import parse_content_to_event
+        parsed = parse_content_to_event("人民路小学门口拥堵")
+        assert parsed["roadName"] == "人民路"

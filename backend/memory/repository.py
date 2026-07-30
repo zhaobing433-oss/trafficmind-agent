@@ -79,6 +79,7 @@ class MemoryStore(ABC):
         supersedes_id: str = "",
         scope_type: str = "session",
         scope_id: str = "",
+        event_thread_id: str = "",
         item_id: Optional[str] = None,
     ) -> MemoryItem:
         """创建一条新记忆。

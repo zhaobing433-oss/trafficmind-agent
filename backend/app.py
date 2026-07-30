@@ -689,14 +689,18 @@ async def _run_memory_extraction(
     fusion_summary: str, final_decision: Any,
     requires_human_review: bool, run_status: str,
     degraded: bool = False,
+    event_thread_id: str = "",
+    is_first_round: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Phase 10 Memory V2: 运行抽取并写入结构化记忆。
 
     从 CollaborationRepository 读取 Run 最终状态，不依赖 SSE 字符串解析。
-    失败不影响 Run 完成。
+    即使无候选也写入 Trace（no_op），失败时发送 memory_write_failed。
     """
     try:
         from backend.memory.coordinator import MemoryCoordinator
+        from backend.memory.factory import create_memory_repository
+        from backend.memory.models import MemoryTrace
         from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
 
         # === Read Run state from collaboration repository (source of truth) ===
@@ -773,13 +777,34 @@ async def _run_memory_extraction(
             requires_human_review=requires_human_review,
             run_status=_run_status or run_status,
             degraded=degraded,
-            is_first_round=False,  # 由调用方判定
+            is_first_round=is_first_round,
+            event_thread_id=event_thread_id,
         )
         return result
     except Exception:
         import traceback
         traceback.print_exc()
-        return None
+        # Write a no_op trace so the run is never without a trace record
+        try:
+            repo = create_memory_repository()
+            repo.merge_trace(MemoryTrace(
+                trace_id=f"memtrace_{run_id}", run_id=run_id,
+                session_id=session_id, recall_intent="write_failed",
+                write_results_json=json.dumps([
+                    {"action": "no_op", "reason": f"memory_extraction_error: {str(e)[:100]}"}
+                ], ensure_ascii=False),
+                write_latency_ms=0, event_thread_id=event_thread_id,
+            ), phase="write")
+        except Exception:
+            pass
+        return {
+            "runId": run_id, "sessionId": session_id,
+            "candidateCount": 0, "createdCount": 0, "deduplicatedCount": 0,
+            "supersededCount": 0, "rejectedCount": 0, "confirmedCount": 0,
+            "latencyMs": 0, "traceId": "", "writeResults": [
+                {"action": "no_op", "reason": f"memory_extraction_error: {str(e)[:100]}"}
+            ], "error": str(e)[:200],
+        }
 
 
 async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
@@ -963,13 +988,27 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
         except Exception as e:
             # Non-retryable: don't silently fallback
             if any(kw in str(e) for kw in ["ValidationError", "缺少", "未注册", "非法"]):
-                yield sse_error(str(e))
+                run_status = "failed"
+                yield sse_event("run_failed", {"runId": run_id, "reason": str(e)[:200], "errorCode": "agent_not_registered"})
                 return
             # System error: degraded fallback
             degraded = True; fallback_reason = str(e)
             yield sse_event("fallback_started", {"reason": fallback_reason, "fallbackFrom": "orchestrator"})
             async for ev in _legacy_analyze_stream_inner(body, sid):
                 yield ev
+        finally:
+            # Guard: ensure collaboration_runs.status is never left in "running" if we crash
+            if run_status == "unknown":
+                try:
+                    from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+                    repo = SQLiteCollaborationRepository()
+                    run_data = repo.get_run(run_id)
+                    if run_data and run_data.get("status") not in ("completed", "partial_success", "failed", "interrupted"):
+                        run_data["status"] = "failed"
+                        run_data["updated_at"] = datetime.now().isoformat()
+                        repo.update_run(run_data)
+                except Exception:
+                    pass
 
         # Save assistant message with REAL fusion summary (not placeholder)
         assistant_content = fusion_summary or "协同分析已完成，请查看运行详情获取融合决策。"
@@ -990,6 +1029,8 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
                 fusion_summary, final_decision_for_memory,
                 requires_human_review_for_memory,
                 run_status, degraded,
+                event_thread_id=_recall_result.get("eventThreadId", ""),
+                is_first_round=(previous_run_context is None),
             )
             if _mem_result:
                 yield sse_event("memory_write_completed", {

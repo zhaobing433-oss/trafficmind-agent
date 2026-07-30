@@ -34,6 +34,43 @@ def parse_content_to_event(content: str) -> Dict[str, Any]:
     result["signalOptimizationRequested"] = any(w in content for w in ["绿灯", "绿信比", "相位", "信号", "配时", "放行"])
     result["conflictIntent"] = any(w in content for w in ["冲突", "权衡", "矛盾", "兼顾", "平衡", "评估.*与"])
 
+    # Correction-aware road extraction
+    # Check for correction patterns first: "不是X，是Y" → roadName=Y
+    correction_new_val = None
+    correction_patterns = [
+        r'不是\s*(\S+?)\s*[,，]?\s*而是?\s*(\S+)',
+        r'不是\s*(\S+?)[，,]\s*是\s*(\S+)',
+        r'(\S+?)\s*改成\s*(\S+)',
+        r'(\S+?)\s*更正为\s*(\S+)',
+        r'应该是\s*(\S+)',
+        r'修改为\s*(\S+)',
+    ]
+    for pat in correction_patterns:
+        m = re.search(pat, content)
+        if m:
+            groups = m.groups()
+            if len(groups) == 2:
+                correction_new_val = groups[1]  # new value
+            else:
+                correction_new_val = groups[0]
+            break
+
+    road_pattern = r'([一-鿿]{2,8}?(?:路|街|道|巷|高速|快速路|大道))'
+    if correction_new_val:
+        # Use the corrected road name
+        road = correction_new_val
+        road = re.sub(r'(小学|中学|大学|医院|门口|附近|周边|交叉口).*$', '', road)
+        if road and road not in ("未知路段", "未命名路段", "未命名"):
+            result["roadName"] = road
+    else:
+        # Normal road extraction
+        match = re.search(road_pattern, content)
+        if match:
+            road = match.group(1)
+            road = re.sub(r'(小学|中学|大学|医院|门口|附近|周边|交叉口).*$', '', road)
+            if road and road not in ("未知路段", "未命名路段", "未命名"):
+                result["roadName"] = road
+
     # Negations first
     has_no_accident = any(w in content for w in ["无事故", "没有事故", "未发生事故", "没出事故"])
     has_accident_kw = any(w in content for w in ["事故", "碰撞", "追尾", "剐蹭", "撞车", "车祸"])
