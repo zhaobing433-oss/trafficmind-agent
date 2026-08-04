@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import LayoutShell from './components/LayoutShell';
 import HomeHero from './components/HomeHero';
 import ScenarioGrid from './components/ScenarioGrid';
@@ -17,8 +17,12 @@ const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes
 };
 
 export default function App() {
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [pendingCreate, setPendingCreate] = useState(true);
+  // Read sessionId from URL on mount for refresh persistence
+  const urlSessionId = useMemo(() => new URLSearchParams(window.location.search).get('sessionId'), []);
+  const initialSessionId = urlSessionId || null;
+
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId);
+  const [pendingCreate, setPendingCreate] = useState(!initialSessionId);
   const [view, setView] = useState('home');
   const [draftInput, setDraftInput] = useState('');
   const [draftMode, setDraftMode] = useState('react');
@@ -31,12 +35,33 @@ export default function App() {
   const sessionIdRef = useRef<string | null>(null);
   useEffect(() => { sessionIdRef.current = activeSessionId; }, [activeSessionId]);
 
+  // Update URL when active session changes
+  const updateUrl = useCallback((sid: string | null) => {
+    const url = new URL(window.location.href);
+    if (sid) {
+      url.searchParams.set('sessionId', sid);
+    } else {
+      url.searchParams.delete('sessionId');
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
+  // On mount: if URL has sessionId, load it and set the correct view
+  useEffect(() => {
+    if (!initialSessionId) return;
+    chatApi.getSession(initialSessionId).then(detail => {
+      const m = detail.session.mode || 'react';
+      const vm: Record<string,string> = { react:'home',routed:'home',hybrid:'home',rag:'qa',collaboration:'multi',report:'report' };
+      setView(vm[m] || 'home');
+    }).catch(() => setView('home'));
+  }, [initialSessionId]);
+
   useEffect(() => { chatApi.listSessions(30).then(setSessions).catch(() => {}); }, [recentRefresh]);
   const refreshSessions = useCallback(() => setRecentRefresh(Date.now()), []);
   // CRITICAL: session created via first send — do NOT reset the component (key stays same)
-  const handleSessionCreated = useCallback((id: string) => { sessionIdRef.current = id; setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); }, []);
-  const handleNewConversation = () => { sessionIdRef.current = null; setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); };
-  const handleScenario = (prompt: string, mode: string, targetView: string) => { sessionIdRef.current = null; setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); };
+  const handleSessionCreated = useCallback((id: string) => { sessionIdRef.current = id; setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); updateUrl(id); }, []);
+  const handleNewConversation = () => { sessionIdRef.current = null; setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); updateUrl(null); };
+  const handleScenario = (prompt: string, mode: string, targetView: string) => { sessionIdRef.current = null; setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); updateUrl(null); };
   const handleNavigate = (v: string) => { setView(v); };
   const handleRecentClick = async (id: string) => {
     // Fetch session to determine its mode, then route to correct workspace
@@ -51,12 +76,23 @@ export default function App() {
     } catch {
       setView('home');
     }
-    setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1);
+    setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1); updateUrl(id);
   };
   const handleRenameSession = async (id: string, t: string) => { try { await fetch(`/api/chat/sessions/${id}/title`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t }) }); refreshSessions(); } catch { /* ignore */ } };
   const handleDeleteSession = async (sessionId: string) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let deleted = false;
     try {
-      await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
+      const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+        method: 'DELETE',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      deleted = resp.ok || resp.status === 404;
+      if (!deleted) {
+        console.error(`Delete session ${sessionId} failed: HTTP ${resp.status}`);
+      }
       if (activeSessionId === sessionId) {
         sessionIdRef.current = null;
         setActiveSessionId(null);
@@ -64,8 +100,18 @@ export default function App() {
         setView('home');
         setWorkspaceKey(k => k + 1);
       }
-      refreshSessions();
-    } catch { /* ignore */ }
+    } catch (err: unknown) {
+      clearTimeout(timeoutId);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        console.error('Delete session timed out');
+      } else {
+        console.error('Delete session failed:', err);
+      }
+    } finally {
+      // Always refresh list (fire-and-forget — don't block modal close)
+      if (deleted) refreshSessions();
+      else setTimeout(() => refreshSessions(), 200); // slight delay so error can be seen
+    }
   };
   const info = WORKSPACE_INFO[view] || WORKSPACE_INFO.home;
   // Dedup by session ID — same sessionId = 1 sidebar entry
@@ -79,7 +125,7 @@ export default function App() {
         {view === 'alert' ? <AlertDashboard /> :
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard /> :
-         view === 'qa' ? <QaDashboard onRefresh={refreshSessions} /> :
+         view === 'qa' ? <QaDashboard onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
          view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> : (
           <>
             <HomeHero />
@@ -477,7 +523,7 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 
 // ========== Knowledge Base (QA) Dashboard ==========
 
-function QaDashboard({ onRefresh }: { onRefresh: () => void }) {
+function QaDashboard({ onRefresh, activeSessionId }: { onRefresh: () => void; activeSessionId?: string }) {
   const [ragStatus] = useState<Record<string,unknown>>({});
   useEffect(() => { fetch('/api/rag/status').then(r => r.json()).catch(() => {}); }, []);
   const quickQs = ['雨天早高峰拥堵有哪些处置原则？', '信号灯异常应该优先检索哪些预案？', '学校周边拥堵需要关注哪些安全因素？', '为什么证据不足时系统会拒答？', '高风险路口如何判定？'];
@@ -498,7 +544,7 @@ function QaDashboard({ onRefresh }: { onRefresh: () => void }) {
           <div key={q} onClick={() => { /* set input */ }} style={{ background: '#FFF', borderRadius: 10, padding: '6px 12px', border: '1px solid #E5E7EB', cursor: 'pointer', fontSize: 11, color: '#6B7280' }}>{q}</div>
         ))}
       </div>
-      <ChatWorkspace sessionId={undefined} pendingCreate={true} defaultMode="rag" showFullModes={false} onSessionCreated={(id) => { onRefresh(); }} onConversationUpdate={onRefresh} onNewConversation={() => {}} view="qa" />
+      <ChatWorkspace sessionId={activeSessionId} pendingCreate={!activeSessionId} defaultMode="rag" showFullModes={false} onSessionCreated={(id) => { onRefresh(); }} onConversationUpdate={onRefresh} onNewConversation={() => {}} view="qa" />
     </div>
   );
 }

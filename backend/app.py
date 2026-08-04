@@ -364,6 +364,198 @@ async def rag_status():
     return get_collection_stats()
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 11: RAG V2 生产化升级
+# ═══════════════════════════════════════════════════════════════════════════════
+
+try:
+    from backend.rag.v2.pipeline import get_pipeline
+    from backend.rag.v2.indexer import IncrementalIndexer, load_all_documents
+    from backend.rag.v2.providers import get_embedding_provider, get_reranker_provider
+    from backend.rag.v2.document_repository import (
+        get_trace, get_latest_index_version,
+    )
+    from backend.rag.v2.models import (
+        EvidenceState,
+        IndexJobResult,
+        RagAnswer,
+        RagTrace,
+    )
+    _RAG_V2_AVAILABLE = True
+except ImportError as e:
+    _RAG_V2_AVAILABLE = False
+    _rag_v2_import_error = str(e)
+
+
+class RagV2SearchRequest(BaseModel):
+    query: str
+    top_k: Optional[int] = 10
+    filters: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None
+    event_thread_id: Optional[str] = None
+    agent_id: Optional[str] = None
+
+
+class RagV2AskRequest(BaseModel):
+    question: str
+    session_id: Optional[str] = None
+    event_thread_id: Optional[str] = None
+    include_trace: Optional[bool] = True
+
+
+@app.post("/rag/v2/search", summary="[Phase 11] RAG V2 混合检索")
+async def rag_v2_search(body: RagV2SearchRequest):
+    """Dense + BM25 + Structured → RRF → Reranker 完整检索管线。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    pipeline = get_pipeline()
+    result = pipeline.search(
+        query=body.query,
+        top_k=body.top_k or 10,
+        filters=body.filters,
+    )
+    return result
+
+
+@app.post("/rag/v2/ask", summary="[Phase 11] RAG V2 知识库问答")
+async def rag_v2_ask(body: RagV2AskRequest):
+    """端到端 RAG V2 问答：检索→重排→证据评估→生成带引用答案。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    pipeline = get_pipeline()
+    answer: RagAnswer = pipeline.ask(question=body.question)
+    resp = answer.model_dump(mode="json")
+    if body.include_trace and answer.trace_id:
+        try:
+            trace = get_trace(answer.trace_id)
+            if trace:
+                resp["trace"] = trace.model_dump(mode="json")
+        except Exception:
+            pass
+    return resp
+
+
+@app.post("/rag/v2/index", summary="[Phase 11] RAG V2 增量索引")
+async def rag_v2_index():
+    """增量索引：加载所有知识源文档，checksum 去重，仅更新变化部分。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    try:
+        docs = load_all_documents()
+        emb_provider = get_embedding_provider()
+        indexer = IncrementalIndexer(emb_provider)
+        job: IndexJobResult = indexer.index_documents(docs)
+        return job.model_dump(mode="json")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"索引失败: {e}")
+
+
+@app.get("/rag/v2/status", summary="[Phase 11] RAG V2 索引状态")
+async def rag_v2_status():
+    """返回最新索引版本信息和文档统计。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    try:
+        ver = get_latest_index_version()
+        emb = get_embedding_provider()
+        reranker = get_reranker_provider()
+        from backend.rag.v2.dense_index import get_collection_count, get_active_collection_name
+        active_coll = get_active_collection_name()
+        return {
+            "rag_v2_enabled": True,
+            "index_version": ver.model_dump(mode="json") if ver else None,
+            "configured_embedding_model": emb.get_model_name(),
+            "resolved_embedding_model": emb.get_resolved_model_name(),
+            "embedding_dimension": emb.get_dimension(),
+            "embedding_provider_class": type(emb).__name__,
+            "embedding_degraded": emb.is_degraded(),
+            "embedding_degraded_reason": emb.get_degraded_reason(),
+            "configured_reranker_model": reranker.get_model_name(),
+            "resolved_reranker_model": reranker.get_resolved_model_name(),
+            "reranker_degraded": reranker.is_degraded(),
+            "reranker_degraded_reason": reranker.get_degraded_reason(),
+            "active_collection": active_coll,
+            "chunks_in_chroma": get_collection_count(active_coll),
+            "v1_collection_preserved": True,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"状态查询失败: {e}")
+
+
+@app.get("/rag/v2/traces/{trace_id}", summary="[Phase 11] RAG V2 查询 Trace")
+async def rag_v2_get_trace(trace_id: str):
+    """查询指定 trace_id 的完整 RAG 追踪记录。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    trace: Optional[RagTrace] = get_trace(trace_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail=f"Trace {trace_id} 不存在")
+    return trace.model_dump(mode="json")
+
+
+@app.post("/rag/v2/ask/stream", summary="[Phase 11] RAG V2 流式问答（SSE）")
+async def rag_v2_ask_stream(body: RagV2AskRequest):
+    """SSE 流式 RAG V2 问答。
+
+    事件类型: rag_route_done → rag_query_rewritten → rag_candidates_retrieved
+    → rag_rerank_done → rag_evidence_selected → rag_abstained (if insufficient)
+    → delta → rag_trace_ready → done
+    """
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    from backend.agent.streaming import sse_event
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    async def _stream():
+        try:
+            pipeline = get_pipeline()
+            async for event in pipeline.ask_stream(question=body.question):
+                event_name = event.get("event", "message")
+                event_data = event.get("data", {})
+                yield sse_event(event_name, event_data)
+                await asyncio.sleep(0.01)
+        except Exception as e:
+            import traceback
+            # Log full traceback server-side only, never send to client
+            print(f"[RAG SSE ERROR] {traceback.format_exc()}")
+            # Send safe error to client: no traceback, no local paths
+            error_msg = str(e).split("\n")[0][:200]  # first line only, capped
+            yield sse_event("error", {
+                "message": error_msg,
+                "details": "An internal error occurred during RAG processing."
+            })
+            yield sse_event("done", {"error": True, "degraded": True})
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/similar_cases_hybrid/{event_id}", summary="混合相似案例检索")
 async def similar_cases_hybrid(event_id: str, limit: int = 5, min_score: float = 0.4):
     result = hybrid_similarity(event_id, limit=limit, min_score=min_score)
@@ -1143,6 +1335,9 @@ async def health():
         "collaborationFallbackEnabled": True,
         "memoryV2Enabled": True,
         "memoryV2RepositoryType": "sqlite",
+        "ragV2Enabled": bool(globals().get("_RAG_V2_AVAILABLE", False)),
+        "ragV2EmbeddingModel": get_embedding_provider().get_model_name() if globals().get("_RAG_V2_AVAILABLE", False) else None,
+        "ragV2RerankerModel": get_reranker_provider().get_model_name() if globals().get("_RAG_V2_AVAILABLE", False) else None,
     }
 
 
