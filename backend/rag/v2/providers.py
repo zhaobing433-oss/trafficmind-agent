@@ -43,6 +43,14 @@ class EmbeddingProvider(ABC):
         """将单条文本编码为向量。"""
         ...
 
+    def embed_query(self, query: str) -> List[float]:
+        """编码查询（可加 instruction）。默认等同 embed_text。"""
+        return self.embed_text(query)
+
+    def embed_documents(self, documents: List[str]) -> List[List[float]]:
+        """编码文档（不加 instruction）。默认等同 embed_texts。"""
+        return self.embed_texts(documents)
+
     @abstractmethod
     def get_dimension(self) -> int:
         """返回向量维度。"""
@@ -199,40 +207,84 @@ class HashEmbeddingProvider(EmbeddingProvider):
 
 
 class SentenceTransformersEmbeddingProvider(EmbeddingProvider):
-    """基于 sentence-transformers 的生产级 Embedding。"""
+    """基于 sentence-transformers 的生产级 Embedding。
+
+    Query 使用 instruction prompt，Document 不加 instruction。
+    """
 
     def __init__(self, model_name: Optional[str] = None, device: Optional[str] = None):
         self._model_name = model_name or RAG_EMBEDDING_MODEL
-        self._device = device or RAG_EMBEDDING_DEVICE
+        self._resolved_device = self._resolve_device(device or RAG_EMBEDDING_DEVICE)
         self._model = None
         self._degraded = False
         self._degraded_reason = ""
         self._loaded = False
-        self._fallback_provider: Optional[HashEmbeddingProvider] = None
+
+    @staticmethod
+    def _resolve_device(device: str) -> str:
+        """Resolve device string. 'auto' → 'cuda' if available, else 'cpu'."""
+        if device == "auto":
+            try:
+                import torch
+                return "cuda" if torch.cuda.is_available() else "cpu"
+            except ImportError:
+                return "cpu"
+        if device == "cuda":
+            import torch
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA requested but not available")
+        return device
 
     def _load(self):
         if self._loaded:
             return
         self._loaded = True
-        if not RAG_ALLOW_MODEL_DOWNLOAD:
-            self._degraded = True
-            self._degraded_reason = "RAG_ALLOW_MODEL_DOWNLOAD=false"
-            return
         try:
             from sentence_transformers import SentenceTransformer
             model_kwargs = {}
             if RAG_MODEL_CACHE_DIR:
                 model_kwargs["cache_folder"] = RAG_MODEL_CACHE_DIR
+            # Use local_files_only if download is disabled
+            if not RAG_ALLOW_MODEL_DOWNLOAD:
+                model_kwargs["local_files_only"] = True
             self._model = SentenceTransformer(
                 self._model_name,
-                device=self._device,
+                device=self._resolved_device,
                 **model_kwargs,
             )
-            logger.info(f"Embedding model loaded: {self._model_name}")
+            logger.info(f"Embedding model loaded: {self._model_name} on {self._resolved_device}")
         except Exception as e:
             self._degraded = True
             self._degraded_reason = f"Failed to load embedding model '{self._model_name}': {e}"
             logger.error(self._degraded_reason)
+
+    def embed_query(self, query: str) -> List[float]:
+        """Embed a query with instruction prompt."""
+        self._load()
+        if self._model is None:
+            return self.embed_texts([query])[0]
+        try:
+            emb = self._model.encode(
+                [query], prompt_name="query", normalize_embeddings=True,
+                batch_size=1, show_progress_bar=False, convert_to_numpy=True,
+            )
+            return emb.tolist()[0]
+        except Exception:
+            return self.embed_texts([query])[0]
+
+    def embed_documents(self, documents: List[str]) -> List[List[float]]:
+        """Embed documents WITHOUT instruction prompt."""
+        self._load()
+        if self._model is None:
+            return self.embed_texts(documents)
+        try:
+            emb = self._model.encode(
+                documents, prompt_name=None, normalize_embeddings=True,
+                batch_size=RAG_EMBEDDING_BATCH_SIZE, show_progress_bar=False, convert_to_numpy=True,
+            )
+            return emb.tolist()
+        except Exception:
+            return self.embed_texts(documents)
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         if not texts:
@@ -301,7 +353,8 @@ class CrossEncoderRerankerProvider(RerankerProvider):
 
     def __init__(self, model_name: Optional[str] = None, device: Optional[str] = None):
         self._model_name = model_name or RAG_RERANKER_MODEL
-        self._device = device or RAG_RERANKER_DEVICE
+        self._resolved_device = SentenceTransformersEmbeddingProvider._resolve_device(
+            device or RAG_RERANKER_DEVICE)
         self._model = None
         self._degraded = False
         self._degraded_reason = ""
@@ -311,18 +364,16 @@ class CrossEncoderRerankerProvider(RerankerProvider):
         if self._loaded:
             return
         self._loaded = True
-        if not RAG_ALLOW_MODEL_DOWNLOAD:
-            self._degraded = True
-            self._degraded_reason = "RAG_ALLOW_MODEL_DOWNLOAD=false"
-            return
         try:
             from sentence_transformers import CrossEncoder
             model_kwargs = {}
             if RAG_MODEL_CACHE_DIR:
                 model_kwargs["cache_folder"] = RAG_MODEL_CACHE_DIR
+            if not RAG_ALLOW_MODEL_DOWNLOAD:
+                model_kwargs["local_files_only"] = True
             self._model = CrossEncoder(
                 self._model_name,
-                device=self._device,
+                device=self._resolved_device,
                 **model_kwargs,
             )
             logger.info(f"Reranker model loaded: {self._model_name}")
@@ -332,22 +383,47 @@ class CrossEncoderRerankerProvider(RerankerProvider):
             logger.error(self._degraded_reason)
 
     def rerank(self, query: str, documents: List[str], top_k: int = 25) -> List[float]:
+        """Rerank documents, returning NORMALIZED scores in [0,1] via sigmoid."""
         if not documents:
             return []
         self._load()
         if self._model is not None:
             try:
                 pairs = [[query, doc] for doc in documents]
-                scores = self._model.predict(pairs, show_progress_bar=False)
-                return [float(s) for s in scores]
+                raw = [float(s) for s in self._model.predict(pairs, show_progress_bar=False)]
             except Exception as e:
                 logger.error(f"Reranker predict failed: {e}")
                 self._degraded = True
                 self._degraded_reason = f"Predict error: {e}"
+                raw = [0.0] * len(documents)
+            # Apply sigmoid to normalize raw logits to [0,1]
+            import math
+            return [1.0 / (1.0 + math.exp(-s)) for s in raw]
         # Degraded — deterministic fallback
         logger.warning(f"Reranker degraded, using deterministic fallback: {self._degraded_reason}")
         fake = FakeRerankerProvider()
         return fake.rerank(query, documents, top_k)
+
+    def rerank_with_raw(self, query: str, documents: List[str], top_k: int = 25):
+        """Rerank and return (normalized_scores, raw_scores)."""
+        if not documents:
+            return [], []
+        self._load()
+        if self._model is not None:
+            try:
+                pairs = [[query, doc] for doc in documents]
+                raw = [float(s) for s in self._model.predict(pairs, show_progress_bar=False)]
+            except Exception as e:
+                logger.error(f"Reranker predict failed: {e}")
+                self._degraded = True
+                self._degraded_reason = f"Predict error: {e}"
+                raw = [0.0] * len(documents)
+            import math
+            norm = [1.0 / (1.0 + math.exp(-s)) for s in raw]
+            return norm, raw
+        fake = FakeRerankerProvider()
+        scores = fake.rerank(query, documents, top_k)
+        return scores, scores
 
     def get_model_name(self) -> str:
         return self._model_name

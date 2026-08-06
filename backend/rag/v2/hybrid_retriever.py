@@ -82,15 +82,20 @@ class HybridRetriever:
     def _dense_retrieve(
         self, query: str, top_k: int, analysis: Optional[QueryAnalysis],
     ) -> List[Dict]:
-        """Dense 通道：显式传入 query_embedding。"""
-        from backend.rag.v2.dense_index import search_dense, is_available
+        """Dense 通道：显式传入 query_embedding + active collection。"""
+        from backend.rag.v2.dense_index import search_dense, is_available, get_active_collection_name
 
         if not is_available():
             logger.warning("Dense index not available")
             return []
 
+        active_collection = get_active_collection_name()
+        if not active_collection:
+            logger.error("No active collection for dense retrieval")
+            return []
+
         try:
-            query_embedding = self.embedding_provider.embed_text(query)
+            query_embedding = self.embedding_provider.embed_query(query)
         except Exception as e:
             logger.error(f"Dense embedding failed: {e}")
             return []
@@ -103,7 +108,7 @@ class HybridRetriever:
             if analysis.filters.get("doc_type"):
                 where["doc_type"] = analysis.filters["doc_type"]
 
-        return search_dense(query_embedding, top_k=top_k, where=where)
+        return search_dense(query_embedding, top_k=top_k, where=where, collection_name=active_collection)
 
     def _sparse_retrieve(
         self, query: str, top_k: int, analysis: Optional[QueryAnalysis],
