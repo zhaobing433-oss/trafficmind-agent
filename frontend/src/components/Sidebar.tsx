@@ -7,6 +7,7 @@ import { Tag, Input, Modal } from 'antd';
 
 const NAV_ITEMS = [
   { key: 'multi', label: '协同分析', icon: '🤝' },
+  { key: 'workflow', label: '工作流', icon: '🔀' },
   { key: 'qa', label: '知识库', icon: '📖' },
   { key: 'report', label: '统计报告', icon: '📋' },
   { key: 'alert', label: '风险提醒', icon: '⚠' },

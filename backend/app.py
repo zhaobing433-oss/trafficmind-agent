@@ -47,11 +47,21 @@ async def lifespan(app: FastAPI):
     # Phase 10: Memory V2 tables (idempotent)
     from backend.memory.store import init_memory_tables
     init_memory_tables()
+    # Phase 12: Workflow V1 tables (idempotent)
+    from backend.workflow.repository import init_workflow_tables
+    init_workflow_tables()
+    from backend.workflow.wait_scheduler import _migrate_wait_columns
+    _migrate_wait_columns()
+    # Phase 12: Wait Scheduler
+    from backend.workflow.wait_scheduler import get_wait_scheduler
+    wait_scheduler = get_wait_scheduler()
+    await wait_scheduler.start()
     llm_status = "已启用 (DeepSeek)" if LLM_ENABLED else "未配置，将使用本地模板"
     print(f"TrafficMind Agent 启动完成")
     print(f"  LLM 状态: {llm_status}")
     print(f"  API 文档: http://localhost:8000/docs")
     yield
+    await wait_scheduler.stop()
 
 
 # -------------------- 创建 FastAPI 应用 --------------------
@@ -1531,6 +1541,14 @@ async def list_event_threads(session_id: str):
         threads.append(td)
 
     return {"sessionId": session_id, "threads": threads}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 12: Workflow V1 Router
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from backend.workflow.api import router as workflow_router
+app.include_router(workflow_router)
 
 
 def _safe_json(s: str):

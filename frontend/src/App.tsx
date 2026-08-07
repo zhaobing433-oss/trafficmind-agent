@@ -8,22 +8,28 @@ import { reduceCollaborationEvent } from './utils/collaborationEventReducer';
 import { collabApi } from './api/collaborationApi';
 import type { CollaborationRun, CollaborationTask, CollaborationAgentResult } from './types/collaboration';
 import CollaborationRunView from './components/collaboration/CollaborationRunView';
+import { WorkflowWorkspace } from './components/workflow/WorkflowWorkspace';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
   qa: { title: '知识库', sub: 'RAG交通知识库 · 规则/预案/经验检索 · 证据问答', showFullModes: false, defaultMode: 'rag' },
   report: { title: '统计报告', sub: '日报/周报 · 高风险路口 · 事件趋势 · 管理建议', showFullModes: false, defaultMode: 'report' },
   multi: { title: '协同分析', sub: '多Agent研判 + 冲突检测 + 融合处置建议', showFullModes: false, defaultMode: 'routed' },
+  workflow: { title: '工作流', sub: '受控流程执行交通事件研判、审批与处置', showFullModes: false, defaultMode: 'routed' },
 };
 
 export default function App() {
-  // Read sessionId from URL on mount for refresh persistence
-  const urlSessionId = useMemo(() => new URLSearchParams(window.location.search).get('sessionId'), []);
+  // Read sessionId + workflowRunId from URL on mount for refresh persistence
+  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const urlSessionId = urlParams.get('sessionId');
+  const urlWorkflowRunId = urlParams.get('workflowRunId');
   const initialSessionId = urlSessionId || null;
+  const initialWorkflowRunId = urlWorkflowRunId || null;
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId);
   const [pendingCreate, setPendingCreate] = useState(!initialSessionId);
-  const [view, setView] = useState('home');
+  const [view, setView] = useState(urlWorkflowRunId ? 'workflow' : 'home');
+  const [workflowRunId, setWorkflowRunId] = useState<string | null>(initialWorkflowRunId);
   const [draftInput, setDraftInput] = useState('');
   const [draftMode, setDraftMode] = useState('react');
   const [recentRefresh, setRecentRefresh] = useState(0);
@@ -35,16 +41,29 @@ export default function App() {
   const sessionIdRef = useRef<string | null>(null);
   useEffect(() => { sessionIdRef.current = activeSessionId; }, [activeSessionId]);
 
-  // Update URL when active session changes
-  const updateUrl = useCallback((sid: string | null) => {
+  // Update URL when active session or workflow run changes
+  const updateUrl = useCallback((sid: string | null, wfRunId?: string | null) => {
     const url = new URL(window.location.href);
     if (sid) {
       url.searchParams.set('sessionId', sid);
     } else {
       url.searchParams.delete('sessionId');
     }
+    if (wfRunId !== undefined) {
+      if (wfRunId) {
+        url.searchParams.set('workflowRunId', wfRunId);
+      } else {
+        url.searchParams.delete('workflowRunId');
+      }
+    }
     window.history.replaceState({}, '', url.toString());
   }, []);
+
+  // Handle workflowRunId changes (from WorkflowWorkspace)
+  const handleWorkflowRunIdChange = useCallback((newRunId: string | null) => {
+    setWorkflowRunId(newRunId);
+    updateUrl(activeSessionId, newRunId);
+  }, [activeSessionId, updateUrl]);
 
   // On mount: if URL has sessionId, load it and set the correct view
   useEffect(() => {
@@ -126,7 +145,8 @@ export default function App() {
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard /> :
          view === 'qa' ? <QaDashboard onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
-         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> : (
+         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> :
+         view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> : (
           <>
             <HomeHero />
             <ScenarioGrid onSelect={handleScenario} />
