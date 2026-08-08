@@ -239,6 +239,34 @@ async def _dispatch_action(
         except Exception as e:
             return {"saved": False, "error": str(e)[:200]}
 
+    # ── Phase 13: Simulation Actions ──────────────────────────────────
+    # 所有 simulation action 必须标记 simulation=true
+    # Agent 不得直接调用，必须经过 Workflow Risk Gate → Human Approval
+
+    elif action_type == "simulation_traffic_diversion":
+        return await _execute_simulation_action(action_type, params, state,
+            "分流动作：将指定道路流量分流到目标道路")
+
+    elif action_type == "simulation_signal_adjustment":
+        return await _execute_simulation_action(action_type, params, state,
+            "信号调整：调整指定路口信号配时")
+
+    elif action_type == "simulation_lane_control":
+        return await _execute_simulation_action(action_type, params, state,
+            "车道控制：调整指定路段车道使用")
+
+    elif action_type == "simulation_dispatch_coordination":
+        return await _execute_simulation_action(action_type, params, state,
+            "调度协调：发送模拟调度指令")
+
+    elif action_type == "simulation_monitor":
+        return await _execute_simulation_action(action_type, params, state,
+            "监控：检查交通状态改善情况")
+
+    elif action_type == "simulation_close":
+        return await _execute_simulation_action(action_type, params, state,
+            "关闭：标记事件已处置完成")
+
     else:
         # 通用动作：记录日志
         return {
@@ -246,4 +274,105 @@ async def _dispatch_action(
             "params": params,
             "status": "executed",
             "note": "通用动作已记录",
+        }
+
+
+async def _execute_simulation_action(
+    action_type: str,
+    params: Dict[str, Any],
+    state: TrafficWorkflowState,
+    description: str,
+) -> Dict[str, Any]:
+    """执行模拟交通动作（Phase 13 Bridge）。
+
+    约束：
+      - simulation ALWAYS True
+      - 必须通过 Workflow Risk Gate + Human Approval 后才能调用
+      - 调用 DemoSimulationProvider.apply_action()
+      - 记录 before/after snapshot 对比
+    """
+    from backend.simulation.demo_provider import get_demo_provider
+    from backend.simulation.models import (
+        TrafficSimulationAction as SimAction,
+        ActionType,
+        generate_action_id,
+    )
+
+    sim_refs = state.simulation_refs or {}
+    simulation_run_id = sim_refs.get("simulationRunId", "")
+    if not simulation_run_id:
+        return {
+            "error": "simulation_refs 缺少 simulationRunId，无法执行模拟动作",
+            "simulation": True,
+        }
+
+    # 映射 workflow action_type → simulation ActionType
+    action_type_map = {
+        "simulation_traffic_diversion": ActionType.TRAFFIC_DIVERSION,
+        "simulation_signal_adjustment": ActionType.SIGNAL_ADJUSTMENT,
+        "simulation_lane_control": ActionType.LANE_CONTROL,
+        "simulation_dispatch_coordination": ActionType.DISPATCH_COORDINATION,
+        "simulation_monitor": ActionType.MONITOR,
+        "simulation_close": ActionType.CLOSE,
+    }
+    sim_action_type = action_type_map.get(action_type, ActionType.MONITOR)
+
+    provider = get_demo_provider()
+
+    # 构建模拟动作
+    sim_action = SimAction(
+        action_id=generate_action_id(),
+        action_type=sim_action_type,
+        target_ids=params.get("targetIds", params.get("target_ids", [])),
+        parameters=params.get("parameters", params.get("params", {})),
+        source="workflow",
+        workflow_run_id=state.workflow_run_id,
+        simulation=True,
+    )
+
+    try:
+        # 获取 before snapshot
+        before_snap = provider.get_snapshot(simulation_run_id)
+        sim_action.before_snapshot_id = before_snap.snapshot_id
+
+        # 执行动作
+        new_snap = provider.apply_action(simulation_run_id, sim_action)
+
+        # 构建改善指标
+        affected_roads = sim_action.target_ids
+        improvements = {}
+        for rid in affected_roads:
+            before_rs = before_snap.road_states.get(rid)
+            after_rs = new_snap.road_states.get(rid)
+            if before_rs and after_rs:
+                improvements[rid] = {
+                    "speedBefore": before_rs.avg_speed,
+                    "speedAfter": after_rs.avg_speed,
+                    "speedDelta": round(after_rs.avg_speed - before_rs.avg_speed, 1),
+                    "queueBefore": before_rs.queue_length,
+                    "queueAfter": after_rs.queue_length,
+                    "queueDelta": round(after_rs.queue_length - before_rs.queue_length, 0),
+                    "congestionBefore": before_rs.congestion_level.value,
+                    "congestionAfter": after_rs.congestion_level.value,
+                }
+
+        return {
+            "action_id": sim_action.action_id,
+            "action_type": action_type,
+            "simulation": True,
+            "status": "succeeded",
+            "description": description,
+            "beforeSnapshotId": before_snap.snapshot_id,
+            "afterSnapshotId": new_snap.snapshot_id,
+            "improvements": improvements,
+        }
+
+    except Exception as e:
+        return {
+            "action_id": sim_action.action_id,
+            "action_type": action_type,
+            "simulation": True,
+            "status": "failed",
+            "error": str(e)[:500],
+            "description": description,
         }

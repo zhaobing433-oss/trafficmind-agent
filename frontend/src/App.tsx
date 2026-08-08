@@ -9,6 +9,7 @@ import { collabApi } from './api/collaborationApi';
 import type { CollaborationRun, CollaborationTask, CollaborationAgentResult } from './types/collaboration';
 import CollaborationRunView from './components/collaboration/CollaborationRunView';
 import { WorkflowWorkspace } from './components/workflow/WorkflowWorkspace';
+import { TrafficMapWorkspace } from './components/simulation/TrafficMapWorkspace';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
@@ -16,6 +17,7 @@ const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes
   report: { title: '统计报告', sub: '日报/周报 · 高风险路口 · 事件趋势 · 管理建议', showFullModes: false, defaultMode: 'report' },
   multi: { title: '协同分析', sub: '多Agent研判 + 冲突检测 + 融合处置建议', showFullModes: false, defaultMode: 'routed' },
   workflow: { title: '工作流', sub: '受控流程执行交通事件研判、审批与处置', showFullModes: false, defaultMode: 'routed' },
+  simulation: { title: '交通态势', sub: '模拟交通环境 · 路网可视化 · 事件注入 · 态势感知', showFullModes: false, defaultMode: 'routed' },
 };
 
 export default function App() {
@@ -70,7 +72,7 @@ export default function App() {
     if (!initialSessionId) return;
     chatApi.getSession(initialSessionId).then(detail => {
       const m = detail.session.mode || 'react';
-      const vm: Record<string,string> = { react:'home',routed:'home',hybrid:'home',rag:'qa',collaboration:'multi',report:'report' };
+      const vm: Record<string,string> = { react:'home',routed:'home',hybrid:'home',rag:'qa',collaboration:'multi',report:'report',simulation:'simulation' };
       setView(vm[m] || 'home');
     }).catch(() => setView('home'));
   }, [initialSessionId]);
@@ -90,6 +92,7 @@ export default function App() {
       const viewMap: Record<string, string> = {
         react: 'home', routed: 'home', hybrid: 'home',
         rag: 'qa', collaboration: 'multi', report: 'report',
+        simulation: 'simulation',
       };
       setView(viewMap[sessionMode] || 'home');
     } catch {
@@ -146,7 +149,8 @@ export default function App() {
          view === 'report' ? <ReportDashboard /> :
          view === 'qa' ? <QaDashboard onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
          view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> :
-         view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> : (
+         view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> :
+         view === 'simulation' ? <TrafficMapWorkspace /> : (
           <>
             <HomeHero />
             <ScenarioGrid onSelect={handleScenario} />

@@ -52,6 +52,9 @@ async def lifespan(app: FastAPI):
     init_workflow_tables()
     from backend.workflow.wait_scheduler import _migrate_wait_columns
     _migrate_wait_columns()
+    # Phase 13: Simulation tables (idempotent)
+    from backend.simulation.repository import init_simulation_tables
+    init_simulation_tables()
     # Phase 12: Wait Scheduler
     from backend.workflow.wait_scheduler import get_wait_scheduler
     wait_scheduler = get_wait_scheduler()
@@ -1549,6 +1552,13 @@ async def list_event_threads(session_id: str):
 
 from backend.workflow.api import router as workflow_router
 app.include_router(workflow_router)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 13: Traffic Map & Simulation V1 Router
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from backend.simulation.api import router as simulation_router
+app.include_router(simulation_router)
 
 
 def _safe_json(s: str):

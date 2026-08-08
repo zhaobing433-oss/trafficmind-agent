@@ -119,6 +119,10 @@ class TrafficWorkflowState:
     errors: List[Dict[str, Any]] = field(default_factory=list)
     audit_events: List[Dict[str, Any]] = field(default_factory=list)
 
+    # ── Phase 13: Simulation Refs（独立于 current_event）──────────────
+    simulation_refs: Dict[str, Any] = field(default_factory=dict)
+    # keys: simulationRunId, trafficEventId, snapshotId, workflowRunId
+
     # ── 关联追踪 ID ──────────────────────────────────────────────────────
     rag_trace_ids: List[str] = field(default_factory=list)
     agent_run_ids: List[str] = field(default_factory=list)
@@ -251,6 +255,7 @@ class TrafficWorkflowState:
             "pendingApproval": self.pending_approval,
             "errors": self.errors,
             "auditEvents": self.audit_events,
+            "simulationRefs": self.simulation_refs,
             "ragTraceIds": self.rag_trace_ids,
             "agentRunIds": self.agent_run_ids,
             "approvalIds": self.approval_ids,
@@ -293,6 +298,7 @@ class TrafficWorkflowState:
             pending_approval=d.get("pendingApproval"),
             errors=d.get("errors", []),
             audit_events=d.get("auditEvents", []),
+            simulation_refs=d.get("simulationRefs", {}),
             rag_trace_ids=d.get("ragTraceIds", []),
             agent_run_ids=d.get("agentRunIds", []),
             approval_ids=d.get("approvalIds", []),
