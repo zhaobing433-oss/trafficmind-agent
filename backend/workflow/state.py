@@ -121,7 +121,10 @@ class TrafficWorkflowState:
 
     # ── Phase 13: Simulation Refs（独立于 current_event）──────────────
     simulation_refs: Dict[str, Any] = field(default_factory=dict)
-    # keys: simulationRunId, trafficEventId, snapshotId, workflowRunId
+    # keys: simulationRunId, trafficEventId, decisionSnapshotId,
+    #       latestSnapshotId, workflowRunId, spatialContextRef
+    # spatialContextRef = {simulationRunId, trafficEventId, snapshotId}
+    # 恢复时通过 build_spatial_context() 根据 refs 重建
 
     # ── 关联追踪 ID ──────────────────────────────────────────────────────
     rag_trace_ids: List[str] = field(default_factory=list)

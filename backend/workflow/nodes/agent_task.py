@@ -42,26 +42,56 @@ async def execute_agent_task(
     urgency = "low"
     confidence = 0.5
     evidence_refs: list = []
+    result: Dict[str, Any] = {}     # 初始化在 try 之前避免 UnboundLocalError
 
     try:
         # 使用 multi_agent 模块的 Agent 类
         from backend.agent.multi_agent import (
             CongestionAgent, SignalAgent, AccidentAgent, DispatchAgent,
-            PublicSafetyAgent,
+            ReportAgent,
             _get_event_info,
         )
 
         # 构建 Agent 输入
         info = _get_event_info(event)
 
+        # Phase 13: 注入 simulation spatial context（独立于 current_event）
+        sim_refs = state.simulation_refs or {}
+        if sim_refs.get("simulationRunId") or sim_refs.get("simulation_run_id"):
+            try:
+                from backend.simulation.tools import _spatial_context_to_dict
+                from backend.simulation.demo_provider import get_demo_provider
+                sim_run_id = sim_refs.get("simulationRunId") or sim_refs.get("simulation_run_id")
+                event_id = sim_refs.get("trafficEventId") or sim_refs.get("traffic_event_id")
+                decision_snap_id = sim_refs.get("decisionSnapshotId") or sim_refs.get("decision_snapshot_id")
+                sp_ref = sim_refs.get("spatialContextRef", {})
+
+                if sim_run_id and (event_id or sp_ref.get("trafficEventId")):
+                    evt_id = event_id or sp_ref.get("trafficEventId")
+                    provider = get_demo_provider()
+                    ctx = provider.build_spatial_context(sim_run_id, evt_id)
+                    info["simulation_context"] = _spatial_context_to_dict(ctx)
+                    info["simulation_refs"] = {
+                        "simulationRunId": sim_run_id,
+                        "trafficEventId": evt_id,
+                        "decisionSnapshotId": decision_snap_id or sp_ref.get("snapshotId", ""),
+                    }
+                    state.add_audit_event("agent_task_spatial_context", config.node_id, {
+                        "simulationRunId": sim_run_id,
+                        "trafficEventId": evt_id,
+                    })
+            except Exception:
+                pass  # simulation context 不可用时不影响 agent_task
+
         agent_map = {
             "CongestionAgent": CongestionAgent,
             "SignalAgent": SignalAgent,
             "AccidentAgent": AccidentAgent,
             "DispatchAgent": DispatchAgent,
-            "PublicSafetyAgent": PublicSafetyAgent,
+            "ReportAgent": ReportAgent,
         }
 
+        result: Dict[str, Any] = {}
         cls = agent_map.get(agent_name)
         if cls is not None:
             instance = cls()
@@ -77,6 +107,8 @@ async def execute_agent_task(
             confidence = 0.3
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         findings = [f"[{agent_name}] 执行异常: {str(e)[:200]}"]
         suggestion = "Agent 执行失败，建议人工介入"
         urgency = "high"
@@ -89,6 +121,16 @@ async def execute_agent_task(
             rid = r.get("id", r.get("evidenceId", ""))
             if rid:
                 evidence_refs.append(rid)
+
+    # Phase 13: 提取 Agent proposed_actions → state.proposed_actions
+    agent_proposed = result.get("proposed_actions", []) if result else []
+    if agent_proposed:
+        existing = list(state.proposed_actions or [])
+        for pa in agent_proposed:
+            if isinstance(pa, dict):
+                pa["source"] = agent_name
+                existing.append(pa)
+        state.proposed_actions = existing
 
     # 只在 state 中存 summary + evidence refs
     state.record_agent_output(agent_name, suggestion, evidence_refs)

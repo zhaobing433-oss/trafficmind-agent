@@ -377,13 +377,21 @@ class SimulationContext(BaseModel):
 
 
 class SimulationRefs(BaseModel):
-    """Workflow State 中存放的仿真引用（独立于 current_event）。"""
+    """Workflow State 中存放的仿真引用（独立于 current_event）。
+
+    decisionSnapshotId: Agent 分析基于的快照（固定不变）
+    latestSnapshotId: 最新快照（Action 后更新）
+    """
     model_config = ConfigDict(extra="allow")
 
     simulation_run_id: str = ""
     traffic_event_id: str = ""
-    snapshot_id: str = ""
+    decision_snapshot_id: str = ""   # Agent 基于此快照做 Proposal
+    latest_snapshot_id: str = ""     # Action 后更新为 after_snapshot_id
     workflow_run_id: str = ""
+    spatial_context_ref: Dict[str, Any] = Field(default_factory=dict)
+    # spatial_context_ref 只存 {simulationRunId, trafficEventId, snapshotId}
+    # 恢复时通过 build_spatial_context() 重建
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

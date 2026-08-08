@@ -26,10 +26,11 @@ from backend.simulation.demo_network import DEMO_NETWORK
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def get_traffic_map_state(run_id: str = "", **kwargs) -> Dict[str, Any]:
-    """获取当前仿真交通态势摘要。
+def get_traffic_map_state(run_id: str = "", snapshot_id: str = "", **kwargs) -> Dict[str, Any]:
+    """获取仿真交通态势摘要（支持显式快照 ID）。
 
     Agent 可用此工具了解整体交通状况，但不应接收完整路网 JSON。
+    若提供 snapshot_id，使用指定快照；否则使用 latest。
 
     Returns:
         {run_id, snapshot_id, road_count, roads_summary,
@@ -37,7 +38,12 @@ def get_traffic_map_state(run_id: str = "", **kwargs) -> Dict[str, Any]:
     """
     provider = get_demo_provider()
     try:
-        snap = provider.get_snapshot(run_id)
+        if snapshot_id:
+            snap = provider.get_snapshot_by_id(run_id, snapshot_id)
+            if snap is None:
+                return {"error": f"Snapshot '{snapshot_id}' 不存在", "simulated": True}
+        else:
+            snap = provider.get_snapshot(run_id)
     except (ValueError, KeyError):
         return {"error": f"Run '{run_id}' 不存在或无快照", "simulated": True}
 
@@ -66,17 +72,25 @@ def get_traffic_map_state(run_id: str = "", **kwargs) -> Dict[str, Any]:
     }
 
 
-def get_road_traffic_state(run_id: str = "", road_id: str = "", **kwargs) -> Dict[str, Any]:
-    """获取单条道路的交通状态。
+def get_road_traffic_state(run_id: str = "", road_id: str = "",
+                           snapshot_id: str = "", **kwargs) -> Dict[str, Any]:
+    """获取单条道路的交通状态（支持显式快照 ID）。
 
     Args:
         run_id: 仿真运行 ID
         road_id: 道路 ID
+        snapshot_id: 可选，指定快照 ID（默认 latest）
     """
     if not road_id:
         return {"error": "缺少 road_id 参数"}
     provider = get_demo_provider()
-    state = provider.get_road_state(run_id, road_id)
+    if snapshot_id:
+        snap = provider.get_snapshot_by_id(run_id, snapshot_id)
+        if snap is None:
+            return {"error": f"Snapshot '{snapshot_id}' 不存在", "simulated": True}
+        state = snap.road_states.get(road_id)
+    else:
+        state = provider.get_road_state(run_id, road_id)
     if state is None:
         return {"error": f"道路 '{road_id}' 在 Run '{run_id}' 中无状态数据", "simulated": True}
 
@@ -118,14 +132,16 @@ def get_event_spatial_context(run_id: str = "", event_id: str = "", **kwargs) ->
 
 
 def get_nearby_cameras(
-    run_id: str = "", longitude: float = 0.0, latitude: float = 0.0, **kwargs
+    run_id: str = "", longitude: float = 0.0, latitude: float = 0.0,
+    snapshot_id: str = "", **kwargs
 ) -> Dict[str, Any]:
-    """获取指定位置附近的模拟摄像头。
+    """获取指定位置附近的模拟摄像头（支持显式快照 ID）。
 
     Args:
         run_id: 仿真运行 ID
         longitude: 经度
         latitude: 纬度
+        snapshot_id: 可选，指定快照 ID
     """
     if not longitude or not latitude:
         return {"error": "缺少经纬度参数"}
@@ -176,12 +192,14 @@ def get_nearby_intersections(
     return {"intersections": result, "count": len(result), "simulated": True}
 
 
-def get_affected_roads(run_id: str = "", event_id: str = "", **kwargs) -> Dict[str, Any]:
-    """获取受事件影响的路段及其状态。
+def get_affected_roads(run_id: str = "", event_id: str = "",
+                       snapshot_id: str = "", **kwargs) -> Dict[str, Any]:
+    """获取受事件影响的路段及其状态（支持显式快照 ID）。
 
     Args:
         run_id: 仿真运行 ID
         event_id: 事件 ID
+        snapshot_id: 可选，指定快照 ID
     """
     if not event_id:
         return {"error": "缺少 event_id 参数"}
@@ -226,12 +244,12 @@ def get_affected_roads(run_id: str = "", event_id: str = "", **kwargs) -> Dict[s
     return {"affectedRoads": affected, "count": len(affected), "simulated": True}
 
 
-def get_simulation_snapshot(run_id: str = "", **kwargs) -> Dict[str, Any]:
-    """获取完整仿真快照摘要。
+def get_simulation_snapshot(run_id: str = "", snapshot_id: str = "", **kwargs) -> Dict[str, Any]:
+    """获取完整仿真快照摘要（同 get_traffic_map_state，支持显式快照 ID）。
 
     Agent 可用此工具获取当前交通全貌。
     """
-    return get_traffic_map_state(run_id=run_id, **kwargs)
+    return get_traffic_map_state(run_id=run_id, snapshot_id=snapshot_id, **kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -291,23 +309,23 @@ def _spatial_context_to_dict(ctx: TrafficSpatialContext) -> Dict[str, Any]:
 
 SIMULATION_READONLY_TOOLS: Dict[str, Dict[str, Any]] = {
     "get_traffic_map_state": {
-        "description": "获取当前仿真交通态势摘要（拥堵分布、活跃事件、快照信息）",
-        "params": {"run_id": "仿真运行 ID"},
+        "description": "获取仿真交通态势摘要（拥堵分布、活跃事件、快照信息）。支持 snapshot_id 指定快照。",
+        "params": {"run_id": "仿真运行 ID", "snapshot_id": "可选，指定快照 ID（默认 latest）"},
         "fn": get_traffic_map_state,
     },
     "get_road_traffic_state": {
-        "description": "获取单条道路的详细交通状态（速度、排队、占有率、通行能力）",
-        "params": {"run_id": "仿真运行 ID", "road_id": "道路 ID"},
+        "description": "获取单条道路详细交通状态（速度、排队、占有率、通行能力）。支持 snapshot_id 指定快照。",
+        "params": {"run_id": "仿真运行 ID", "road_id": "道路 ID", "snapshot_id": "可选"},
         "fn": get_road_traffic_state,
     },
     "get_event_spatial_context": {
-        "description": "获取事件的空间上下文（受影响路段、上下游、附近路口和摄像头）",
+        "description": "获取事件空间上下文（受影响路段、上下游、附近路口和摄像头）",
         "params": {"run_id": "仿真运行 ID", "event_id": "事件 ID"},
         "fn": get_event_spatial_context,
     },
     "get_nearby_cameras": {
-        "description": "获取指定位置附近的模拟摄像头实时观测",
-        "params": {"run_id": "仿真运行 ID", "longitude": "经度", "latitude": "纬度"},
+        "description": "获取指定位置附近的模拟摄像头实时观测。支持 snapshot_id 指定快照。",
+        "params": {"run_id": "仿真运行 ID", "longitude": "经度", "latitude": "纬度", "snapshot_id": "可选"},
         "fn": get_nearby_cameras,
     },
     "get_nearby_intersections": {
@@ -316,13 +334,13 @@ SIMULATION_READONLY_TOOLS: Dict[str, Dict[str, Any]] = {
         "fn": get_nearby_intersections,
     },
     "get_affected_roads": {
-        "description": "获取受事件影响的所有路段（受影响、上游、下游）及状态",
-        "params": {"run_id": "仿真运行 ID", "event_id": "事件 ID"},
+        "description": "获取受事件影响的所有路段（受影响、上游、下游）及状态。支持 snapshot_id 指定快照。",
+        "params": {"run_id": "仿真运行 ID", "event_id": "事件 ID", "snapshot_id": "可选"},
         "fn": get_affected_roads,
     },
     "get_simulation_snapshot": {
-        "description": "获取完整仿真快照摘要（同 get_traffic_map_state）",
-        "params": {"run_id": "仿真运行 ID"},
+        "description": "获取完整仿真快照摘要。支持 snapshot_id 指定快照。",
+        "params": {"run_id": "仿真运行 ID", "snapshot_id": "可选"},
         "fn": get_simulation_snapshot,
     },
 }

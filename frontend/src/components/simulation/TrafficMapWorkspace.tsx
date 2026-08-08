@@ -52,6 +52,8 @@ export const TrafficMapWorkspace: React.FC = () => {
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
 
   const runIdRef = useRef<string>('');
+  const [workflowRunId, setWorkflowRunId] = useState<string | null>(null);
+  const [workflowStatus, setWorkflowStatus] = useState<string | null>(null);
 
   // ── Load scenarios ───────────────────────────────────────────────
   useEffect(() => {
@@ -173,6 +175,75 @@ export const TrafficMapWorkspace: React.FC = () => {
     }
   };
 
+  const handleStartWorkflow = async () => {
+    if (!run || events.length === 0) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const activeEvent = events.find(e => e.status === 'active');
+      const eventId = activeEvent?.eventId || events[0]?.eventId;
+      const resp = await fetch(
+        `/api/traffic-map/simulations/${encodeURIComponent(run.runId)}/workflow`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventId, sessionId: '' }),
+        },
+      );
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({ detail: resp.statusText }));
+        throw new Error((errData as { detail?: string }).detail || `Workflow start failed: ${resp.status}`);
+      }
+      // Read SSE stream for workflow events
+      const reader = resp.body?.getReader();
+      if (!reader) throw new Error('No response body');
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamDone = false;
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        let currentEvent = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (currentEvent === 'workflow_started' && data.runId) {
+                setWorkflowRunId(data.runId);
+                setWorkflowStatus('running');
+                updateSnapshotAfterWorkflow();
+              } else if (currentEvent === 'approval_required') {
+                setWorkflowStatus('awaiting_approval');
+              } else if (currentEvent === 'workflow_completed') {
+                setWorkflowStatus('completed');
+                updateSnapshotAfterWorkflow();
+              } else if (currentEvent === 'done') {
+                streamDone = true;
+              }
+            } catch { /* skip unparseable */ }
+          }
+        }
+      }
+    } catch (err) {
+      setError(`Workflow 启动失败: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateSnapshotAfterWorkflow = async () => {
+    if (!run) return;
+    try {
+      const res = await getSnapshot(run.runId);
+      setSnapshot(res);
+    } catch { /* ignore */ }
+  };
+
   // ── Map callbacks ────────────────────────────────────────────────
 
   const handleRoadClick = useCallback((roadId: string, state: TrafficRoadState) => {
@@ -229,10 +300,13 @@ export const TrafficMapWorkspace: React.FC = () => {
           onSelectScenario={setSelectedScenarioId}
           onCreateSimulation={handleCreateSimulation}
           onInjectEvent={handleInjectEvent}
+          onStartWorkflow={handleStartWorkflow}
           onReset={handleReset}
           run={run}
           events={events}
           loading={loading}
+          workflowRunId={workflowRunId}
+          workflowStatus={workflowStatus}
         />
 
         {/* Right: Map + Detail */}

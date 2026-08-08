@@ -47,10 +47,16 @@ async def execute_human_approval(
         return {"approval_required": False, "status": "already_approved"}
 
     # 收集提议的动作
-    proposed_actions = state.proposed_actions or []
+    proposed_actions = list(state.proposed_actions or [])
 
-    # 如果没有提议动作，从 Agent 输出和建议中构建
-    if not proposed_actions:
+    # Phase 13: 若有结构化 proposal (actionType)，优先保留，不覆盖为文本摘要
+    has_structured = any(
+        isinstance(pa, dict) and "actionType" in pa
+        for pa in proposed_actions
+    )
+
+    # 如果没有结构化提议，从 Agent 输出和建议中构建文本摘要
+    if not has_structured:
         agent_outputs = state.agent_outputs or {}
         for name, output in agent_outputs.items():
             if isinstance(output, dict) and output.get("summary"):

@@ -126,6 +126,11 @@ class WorkflowExecutor:
         version = self._def_manager.create_version(definition, changelog="执行时自动快照")
 
         run_id = generate_run_id()
+        # Phase 13: simulation_refs are passed via initial_event metadata
+        sim_refs = {}
+        if isinstance(initial_event, dict) and initial_event.get("_simulation_refs"):
+            sim_refs = initial_event.pop("_simulation_refs")
+
         state = TrafficWorkflowState(
             workflow_run_id=run_id,
             workflow_definition_id=definition_id,
@@ -134,6 +139,7 @@ class WorkflowExecutor:
             event_thread_id=event_thread_id,
             current_event=initial_event or {},
             original_input=deepcopy(initial_event or {}),
+            simulation_refs=sim_refs,
             status=WorkflowRunStatus.PENDING,
             current_node=definition.entry_node_id,
         )
@@ -662,10 +668,17 @@ class WorkflowExecutor:
 
             try:
                 executor_fn = registry.get(node_type)
-                result = await asyncio.wait_for(
-                    executor_fn(state, node_config),
-                    timeout=node_config.timeout_seconds,
-                )
+                # 为 action 节点传入 repository，确保 ActionRecord 持久化
+                if node_config.node_type == NodeType.ACTION:
+                    result = await asyncio.wait_for(
+                        executor_fn(state, node_config, repository=self._repo),
+                        timeout=node_config.timeout_seconds,
+                    )
+                else:
+                    result = await asyncio.wait_for(
+                        executor_fn(state, node_config),
+                        timeout=node_config.timeout_seconds,
+                    )
                 if isinstance(result, dict) and result.get("error"):
                     raise RuntimeError(result["error"])
                 succeeded = True

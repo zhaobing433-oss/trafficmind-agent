@@ -327,7 +327,148 @@ async def reset_simulation(run_id: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SSE 流式端点（预留：后续 Action 执行 + Workflow 集成）
+# Phase 13 Round 2: Workflow Bridge
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class StartWorkflowRequest(BaseModel):
+    """启动 Workflow Bridge 请求。"""
+    eventId: str = ""
+    sessionId: str = ""
+
+    model_config = ConfigDict(extra="allow")
+
+
+@router.post("/simulations/{run_id}/workflow", summary="启动 TrafficMind 研判 (Workflow Bridge)")
+async def start_workflow_for_simulation(run_id: str, body: StartWorkflowRequest):
+    """为仿真事件创建 Workflow Run。
+
+    约束：
+      - 防重复：同一 simulationRunId + trafficEventId 已有 active Workflow 时拒绝
+      - current_event 仅保存事件事实
+      - simulation_refs 独立保存
+      - 返回 workflow_run_id 供前端关联
+    """
+    from backend.workflow.executor import get_executor
+    from backend.workflow.repository import SQLiteWorkflowRepository
+
+    run_data = _repo.get_run(run_id)
+    if not run_data:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' 不存在")
+
+    event_id = body.eventId
+    if not event_id:
+        raise HTTPException(status_code=400, detail="缺少 eventId")
+
+    # 获取空间上下文
+    try:
+        ctx = _provider.build_spatial_context(run_id, event_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    # 防重复：检查是否已有 active Workflow
+    import sqlite3 as _sq
+    import backend.config as _cfg
+    conn = _sq.connect(_cfg.DB_PATH)
+    conn.row_factory = _sq.Row
+    active_statuses = ("pending", "running", "paused", "awaiting_approval")
+    placeholders = ",".join("?" * len(active_statuses))
+    rows = conn.execute(
+        f"""SELECT wr.run_id, wr.state_json FROM workflow_runs wr
+            WHERE wr.status IN ({placeholders})
+            ORDER BY wr.updated_at DESC""",
+        active_statuses,
+    ).fetchall()
+    conn.close()
+
+    import json as _json
+    for row in rows:
+        try:
+            state_raw = row["state_json"]
+            if isinstance(state_raw, str):
+                state = _json.loads(state_raw)
+            else:
+                state = state_raw or {}
+            sim_refs = state.get("simulationRefs", state.get("simulation_refs", {}))
+            if sim_refs.get("simulationRunId") == run_id and sim_refs.get("trafficEventId") == event_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"该事件已有活跃 Workflow: {row['run_id']}。请等待其完成后重试。",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            continue
+
+    # 获取当前快照
+    snap = _provider.get_snapshot(run_id)
+
+    # 构建 current_event（仅事件事实）
+    affected_road = ctx.affected_road
+    event_road_id = ctx.event.road_id if ctx.event else ""
+    ts = ctx.current_traffic_state.get(event_road_id)
+    avg_speed = ts.avg_speed if ts else 0
+    queue_len = ts.queue_length if ts else 0
+    current_event = {
+        "eventId": ctx.event.event_id if ctx.event else event_id,
+        "eventType": ctx.event.event_type if ctx.event else "accident",
+        "roadName": affected_road.name if affected_road else "",
+        "avgSpeed": avg_speed,
+        "queueLength": queue_len,
+        "duration": 0,
+        "description": ctx.event.description if ctx.event else "",
+        "simulated": True,
+    }
+
+    # 构建 simulation_refs（独立于 current_event）
+    simulation_refs = {
+        "simulationRunId": run_id,
+        "trafficEventId": event_id,
+        "decisionSnapshotId": snap.snapshot_id,
+        "latestSnapshotId": snap.snapshot_id,
+        "spatialContextRef": {
+            "simulationRunId": run_id,
+            "trafficEventId": event_id,
+            "snapshotId": snap.snapshot_id,
+        },
+    }
+
+    # 启动 Workflow（simulation_refs 通过 _simulation_refs 元数据传递）
+    initial_event_with_refs = dict(current_event)
+    initial_event_with_refs["_simulation_refs"] = simulation_refs
+
+    executor = get_executor()
+
+    async def _stream():
+        try:
+            async for sse_str in executor.start(
+                definition_id="simulation_bridge",
+                session_id=body.sessionId or "",
+                event_thread_id="",
+                initial_event=initial_event_with_refs,
+                triggered_by="simulation",
+            ):
+                yield sse_str
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            from backend.agent.streaming import sse_error as _sse_err, sse_event as _sse_evt
+            yield _sse_err(str(e).split("\n")[0][:200])
+            yield _sse_evt("done", {"error": True})
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SSE 流式端点
 # ═══════════════════════════════════════════════════════════════════════════════
 
 

@@ -55,6 +55,19 @@ async def lifespan(app: FastAPI):
     # Phase 13: Simulation tables (idempotent)
     from backend.simulation.repository import init_simulation_tables
     init_simulation_tables()
+    # Phase 13 Round 2: Seed simulation_bridge template
+    from backend.workflow.templates import get_all_templates
+    from backend.workflow.repository import SQLiteWorkflowRepository
+    _wf_repo = SQLiteWorkflowRepository()
+    for build_fn in get_all_templates():
+        try:
+            definition = build_fn()
+            existing = _wf_repo.get_definition(definition.id)
+            if existing is None:
+                _wf_repo.save_definition(definition)
+                print(f"  [Workflow Seed] {definition.id}: {definition.name}")
+        except Exception:
+            pass  # 模板 seeding 失败不阻止启动
     # Phase 12: Wait Scheduler
     from backend.workflow.wait_scheduler import get_wait_scheduler
     wait_scheduler = get_wait_scheduler()

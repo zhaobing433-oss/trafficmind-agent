@@ -62,6 +62,22 @@ async def execute_action(
             if isinstance(approved, dict) and approved.get("actionType") == action_type:
                 action_params = approved.get("params", approved.get("action_params", approved))
                 break
+            # Phase 13: 结构化 proposal 直接使用自身作为 params
+            if isinstance(approved, dict) and approved.get("actionType"):
+                # 映射 agent proposal 格式到 action 格式
+                action_params = {
+                    "targetIds": approved.get("sourceRoadId", approved.get("targetRoadIds", [])),
+                    "parameters": {
+                        "diversionRatio": approved.get("diversionRatio", 0.35),
+                    },
+                }
+                if isinstance(action_params["targetIds"], str):
+                    action_params["targetIds"] = [action_params["targetIds"]]
+                # 添加 targetRoadIds
+                tr = approved.get("targetRoadIds", [])
+                if tr:
+                    action_params["targetIds"] = [approved.get("sourceRoadId", tr[0])] + tr
+                break
 
     # 幂等键
     idempotency_key = compute_action_idempotency_key(
@@ -299,7 +315,12 @@ async def _execute_simulation_action(
     )
 
     sim_refs = state.simulation_refs or {}
-    simulation_run_id = sim_refs.get("simulationRunId", "")
+    simulation_run_id = sim_refs.get("simulationRunId", "") or sim_refs.get(
+        "simulation_run_id", ""
+    )
+    decision_snapshot_id = sim_refs.get("decisionSnapshotId", "") or sim_refs.get(
+        "decision_snapshot_id", ""
+    )
     if not simulation_run_id:
         return {
             "error": "simulation_refs 缺少 simulationRunId，无法执行模拟动作",
@@ -356,12 +377,16 @@ async def _execute_simulation_action(
                     "congestionAfter": after_rs.congestion_level.value,
                 }
 
+        # 更新 simulation_refs: latestSnapshotId → after
+        state.simulation_refs["latestSnapshotId"] = new_snap.snapshot_id
+
         return {
             "action_id": sim_action.action_id,
             "action_type": action_type,
             "simulation": True,
             "status": "succeeded",
             "description": description,
+            "decisionSnapshotId": decision_snapshot_id,
             "beforeSnapshotId": before_snap.snapshot_id,
             "afterSnapshotId": new_snap.snapshot_id,
             "improvements": improvements,
@@ -375,4 +400,5 @@ async def _execute_simulation_action(
             "status": "failed",
             "error": str(e)[:500],
             "description": description,
+            "decisionSnapshotId": decision_snapshot_id,
         }

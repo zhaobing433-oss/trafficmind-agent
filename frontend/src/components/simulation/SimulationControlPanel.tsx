@@ -14,10 +14,13 @@ interface Props {
   onSelectScenario: (id: string) => void;
   onCreateSimulation: () => void;
   onInjectEvent: () => void;
+  onStartWorkflow: () => void;
   onReset: () => void;
   run: SimulationRun | null;
   events: TrafficEvent[];
   loading: boolean;
+  workflowRunId: string | null;
+  workflowStatus: string | null;
 }
 
 export const SimulationControlPanel: React.FC<Props> = ({
@@ -26,10 +29,13 @@ export const SimulationControlPanel: React.FC<Props> = ({
   onSelectScenario,
   onCreateSimulation,
   onInjectEvent,
+  onStartWorkflow,
   onReset,
   run,
   events,
   loading,
+  workflowRunId,
+  workflowStatus,
 }) => {
   const hasRun = run !== null;
   const activeEvents = events.filter(e => e.status === 'active');
@@ -111,6 +117,47 @@ export const SimulationControlPanel: React.FC<Props> = ({
             >
               {loading ? '注入中...' : '⚡ 注入事故 (演示大道R01)'}
             </button>
+
+            {/* Phase 13 Round 2: Workflow Bridge */}
+            {activeEvents.length > 0 && !workflowRunId && (
+              <button
+                onClick={onStartWorkflow}
+                disabled={loading}
+                style={{
+                  width: '100%', padding: '8px 0', borderRadius: 8,
+                  border: 'none', background: loading ? '#D1D5DB' : '#0F766E',
+                  color: '#FFF', cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize: 12, fontWeight: 600,
+                }}
+              >
+                {loading ? '启动中...' : '🧠 启动 TrafficMind 研判'}
+              </button>
+            )}
+
+            {/* Workflow Status */}
+            {workflowRunId && (
+              <div style={{
+                background: '#F0FDFA', borderRadius: 8, padding: 10,
+                border: '1px solid #0F766E30',
+              }}>
+                <div style={{ fontSize: 10, color: '#0F766E', fontWeight: 600, marginBottom: 4 }}>
+                  🧠 TrafficMind 研判
+                </div>
+                <div style={{ fontSize: 10, color: '#374151', lineHeight: 1.5 }}>
+                  <div>Workflow: <code style={{ fontSize: 9 }}>{workflowRunId.slice(0, 16)}...</code></div>
+                  <div>状态: <span style={{
+                    fontWeight: 600,
+                    color: workflowStatus === 'completed' ? '#0F766E' :
+                           workflowStatus === 'awaiting_approval' ? '#F59E0B' :
+                           workflowStatus === 'running' ? '#3B82F6' : '#6B7280',
+                  }}>
+                    {workflowStatus === 'awaiting_approval' ? '⏳ 等待审批' :
+                     workflowStatus === 'completed' ? '✅ 处置完成' :
+                     workflowStatus === 'running' ? '🔄 分析中' : workflowStatus}
+                  </span></div>
+                </div>
+              </div>
+            )}
 
             <button
               onClick={onReset}
