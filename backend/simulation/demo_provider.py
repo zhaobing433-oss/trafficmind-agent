@@ -301,6 +301,97 @@ class DemoSimulationProvider(TrafficSimulationProvider):
         self._events: Dict[str, Dict[str, TrafficEvent]] = {}   # run_id → {event_id: event}
         self._actions: Dict[str, list[TrafficSimulationAction]] = {}
 
+    # ── 持久化恢复 ────────────────────────────────────────────────────────
+
+    def _ensure_run_loaded(self, run_id: str) -> TrafficSimulationRun:
+        """确保 Run 已在 Provider 内存中。若不存在，从 Repository 恢复。
+
+        Backend 重启后 Provider 内存清空，但 Repository 仍有持久化数据。
+        通过此方法在首次访问时自动从 DB 恢复 in-memory state。
+        """
+        if run_id in self._runs:
+            return self._runs[run_id]
+
+        # 从 Repository 恢复
+        from backend.simulation.repository import SQLiteSimulationRepository
+        repo = SQLiteSimulationRepository()
+        db_run = repo.get_run(run_id)
+        if db_run is None:
+            raise ValueError(f"Run '{run_id}' 不存在")
+
+        # 恢复 Run
+        status_raw = db_run.get("status", "created")
+        try:
+            status = SimulationStatus(status_raw)
+        except ValueError:
+            status = SimulationStatus.CREATED
+
+        run = TrafficSimulationRun(
+            run_id=run_id,
+            scenario_id=db_run.get("scenario_id", ""),
+            status=status,
+            current_snapshot_id=db_run.get("current_snapshot_id", ""),
+            snapshot_count=db_run.get("snapshot_count", 0),
+            session_id=db_run.get("session_id", ""),
+            created_at=db_run.get("created_at", ""),
+        )
+        self._runs[run_id] = run
+        self._actions[run_id] = []
+
+        # 恢复 Snapshots
+        db_snaps = repo.list_run_snapshots(run_id)
+        snaps: list[TrafficSnapshot] = []
+        for s_raw in db_snaps:
+            import json as _json
+            road_states_raw = s_raw.get("road_states_json", "{}")
+            if isinstance(road_states_raw, str):
+                road_states_raw = _json.loads(road_states_raw)
+            intersection_raw = s_raw.get("intersection_states_json", "{}")
+            if isinstance(intersection_raw, str):
+                intersection_raw = _json.loads(intersection_raw)
+            active_ids_raw = s_raw.get("active_event_ids_json", "[]")
+            if isinstance(active_ids_raw, str):
+                active_ids_raw = _json.loads(active_ids_raw)
+
+            road_states: dict = {}
+            for rid, rs_dict in road_states_raw.items():
+                road_states[rid] = TrafficRoadState(**rs_dict)
+
+            snap = TrafficSnapshot(
+                snapshot_id=s_raw["snapshot_id"],
+                run_id=run_id,
+                sequence=s_raw["sequence"],
+                timestamp=s_raw.get("timestamp", ""),
+                road_states=road_states,
+                intersection_states=intersection_raw,
+                active_event_ids=active_ids_raw,
+                description=s_raw.get("description", ""),
+            )
+            snaps.append(snap)
+        self._snapshots[run_id] = snaps
+
+        # 恢复 Events
+        db_events = repo.list_run_events(run_id)
+        events: dict = {}
+        for e_raw in db_events:
+            evt = TrafficEvent(
+                event_id=e_raw["event_id"],
+                event_type=e_raw.get("event_type", ""),
+                severity=e_raw.get("severity", "medium"),
+                road_id=e_raw.get("road_id", ""),
+                intersection_id=e_raw.get("intersection_id", ""),
+                longitude=float(e_raw.get("longitude", 0)),
+                latitude=float(e_raw.get("latitude", 0)),
+                description=e_raw.get("description", ""),
+                started_at=e_raw.get("started_at", ""),
+                status=e_raw.get("status", "active"),
+                simulated=bool(e_raw.get("simulated", True)),
+            )
+            events[evt.event_id] = evt
+        self._events[run_id] = events
+
+        return run
+
     # ── 生命周期 ──────────────────────────────────────────────────────────
 
     def create_run(self, scenario_id: str) -> TrafficSimulationRun:
@@ -325,6 +416,7 @@ class DemoSimulationProvider(TrafficSimulationProvider):
         return run
 
     def reset_run(self, run_id: str) -> TrafficSimulationRun:
+        self._ensure_run_loaded(run_id)
         if run_id not in self._runs:
             raise ValueError(f"Run '{run_id}' 不存在")
 
@@ -350,12 +442,14 @@ class DemoSimulationProvider(TrafficSimulationProvider):
     # ── 快照查询 ──────────────────────────────────────────────────────────
 
     def get_snapshot(self, run_id: str) -> TrafficSnapshot:
+        self._ensure_run_loaded(run_id)
         snaps = self._snapshots.get(run_id, [])
         if not snaps:
             raise ValueError(f"Run '{run_id}' 无快照")
         return snaps[-1]
 
     def get_snapshot_by_id(self, run_id: str, snapshot_id: str) -> Optional[TrafficSnapshot]:
+        self._ensure_run_loaded(run_id)
         snaps = self._snapshots.get(run_id, [])
         for s in snaps:
             if s.snapshot_id == snapshot_id:
@@ -364,19 +458,23 @@ class DemoSimulationProvider(TrafficSimulationProvider):
 
     def get_all_snapshots(self, run_id: str) -> list[TrafficSnapshot]:
         """获取全部快照列表（append-only 顺序）。"""
+        self._ensure_run_loaded(run_id)
         return list(self._snapshots.get(run_id, []))
 
     # ── 道路/路口/摄像头状态 ──────────────────────────────────────────────
 
     def get_road_state(self, run_id: str, road_id: str) -> Optional[TrafficRoadState]:
+        self._ensure_run_loaded(run_id)
         snap = self.get_snapshot(run_id)
         return snap.road_states.get(road_id)
 
     def get_intersection_state(self, run_id: str, intersection_id: str) -> Optional[str]:
+        self._ensure_run_loaded(run_id)
         snap = self.get_snapshot(run_id)
         return snap.intersection_states.get(intersection_id)
 
     def get_camera_observation(self, run_id: str, camera_id: str) -> TrafficCameraObservation:
+        self._ensure_run_loaded(run_id)
         camera = self._network.get_camera(camera_id)
         if not camera:
             raise ValueError(f"Camera '{camera_id}' 不存在")
@@ -401,6 +499,7 @@ class DemoSimulationProvider(TrafficSimulationProvider):
 
     def inject_event(self, run_id: str, event: TrafficEvent) -> TrafficSnapshot:
         """注入事件，产生新快照。"""
+        self._ensure_run_loaded(run_id)
         current = self.get_snapshot(run_id)
         new_states = deepcopy(current.road_states)
         new_intersection = deepcopy(current.intersection_states)
@@ -430,6 +529,7 @@ class DemoSimulationProvider(TrafficSimulationProvider):
 
     def build_spatial_context(self, run_id: str, event_id: str) -> TrafficSpatialContext:
         """基于路网 Graph 计算空间上下文。"""
+        self._ensure_run_loaded(run_id)
         run_events = self._events.get(run_id, {})
         event = run_events.get(event_id)
         if not event:
@@ -535,6 +635,7 @@ class DemoSimulationProvider(TrafficSimulationProvider):
 
     def apply_action(self, run_id: str, action: TrafficSimulationAction) -> TrafficSnapshot:
         """执行受控动作，产生新快照。"""
+        self._ensure_run_loaded(run_id)
         current = self.get_snapshot(run_id)
 
         # 记录 before_snapshot_id

@@ -11,7 +11,7 @@ import { WorkflowNodeCard } from './WorkflowNodeCard';
 import { WorkflowApprovalCard } from './WorkflowApprovalCard';
 import { WorkflowActionRecordCard } from './WorkflowActionRecordCard';
 import { WorkflowErrorBoundary } from './WorkflowErrorBoundary';
-import { processApproval } from '../../api/workflowApi';
+import { processApproval, resumeRun } from '../../api/workflowApi';
 
 interface Props {
   runId: string;
@@ -49,8 +49,8 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
 
   const handleApprove = async (approvalId: string, comment: string) => {
     await processApproval(runId, approvalId, { action: 'approve', comment });
-    await load();
-    onRefresh?.();
+    // Resume execution after approval
+    resumeRun(runId, { onEvent: () => {}, onDone: () => { load(); onRefresh?.(); } });
   };
 
   const handleReject = async (approvalId: string, comment: string) => {

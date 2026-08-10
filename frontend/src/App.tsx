@@ -21,16 +21,20 @@ const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes
 };
 
 export default function App() {
-  // Read sessionId + workflowRunId from URL on mount for refresh persistence
+  // Read sessionId + workflowRunId + simulationRunId from URL on mount for refresh persistence
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const urlSessionId = urlParams.get('sessionId');
   const urlWorkflowRunId = urlParams.get('workflowRunId');
+  const urlSimulationRunId = urlParams.get('simulationRunId');
   const initialSessionId = urlSessionId || null;
   const initialWorkflowRunId = urlWorkflowRunId || null;
+  const initialSimulationRunId = urlSimulationRunId || null;
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId);
   const [pendingCreate, setPendingCreate] = useState(!initialSessionId);
-  const [view, setView] = useState(urlWorkflowRunId ? 'workflow' : 'home');
+  const [view, setView] = useState(
+    urlWorkflowRunId ? 'workflow' : (urlSimulationRunId ? 'simulation' : 'home')
+  );
   const [workflowRunId, setWorkflowRunId] = useState<string | null>(initialWorkflowRunId);
   const [draftInput, setDraftInput] = useState('');
   const [draftMode, setDraftMode] = useState('react');
@@ -143,14 +147,14 @@ export default function App() {
 
   return (
     <LayoutShell activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
-      <div style={{ maxWidth: 960, margin: '0 auto', width: '100%', padding: '0 24px 32px' }}>
+      <div style={view === 'simulation' ? { width: '100%', padding: '16px 24px 32px' } as React.CSSProperties : { maxWidth: 960, margin: '0 auto', width: '100%', padding: '0 24px 32px' }}>
         {view === 'alert' ? <AlertDashboard /> :
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard /> :
          view === 'qa' ? <QaDashboard onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
          view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> :
          view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> :
-         view === 'simulation' ? <TrafficMapWorkspace /> : (
+         view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} /> : (
           <>
             <HomeHero />
             <ScenarioGrid onSelect={handleScenario} />

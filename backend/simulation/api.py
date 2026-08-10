@@ -313,6 +313,17 @@ async def reset_simulation(run_id: str):
     if not run_data:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' 不存在")
 
+    # 将所有活跃事件标记为 resolved
+    import sqlite3 as _sq
+    import backend.config as _cfg
+    conn = _sq.connect(_cfg.DB_PATH)
+    conn.execute(
+        "UPDATE simulation_events SET status = 'resolved' WHERE run_id = ? AND status = 'active'",
+        (run_id,),
+    )
+    conn.commit()
+    conn.close()
+
     run = _provider.reset_run(run_id)
     _repo.save_run(run)
 

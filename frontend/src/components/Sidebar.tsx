@@ -141,7 +141,7 @@ export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick
           {workspaceOpen && (
             <div style={{ padding: '2px 8px 6px' }}>
               {NAV_ITEMS.map(item => (
-                <div key={item.key} onClick={() => onNavigate(item.key)}
+                <div key={item.key} data-nav={item.key} onClick={() => onNavigate(item.key)}
                   style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: activeView === item.key ? '#0F766E' : '#4B5563', background: activeView === item.key ? '#F0FDFA' : 'transparent', fontWeight: activeView === item.key ? 600 : 400, marginBottom: 1 }}>
                   <span style={{ fontSize: 14 }}>{item.icon}</span> {item.label}
                 </div>

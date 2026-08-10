@@ -208,7 +208,7 @@ export const SimulationControlPanel: React.FC<Props> = ({
           {activeEvents.map(evt => (
             <div key={evt.eventId} style={{ fontSize: 10, color: '#991B1B', lineHeight: 1.5 }}>
               <strong>{evt.eventType}</strong> · {evt.roadId}
-              <br />{evt.description.slice(0, 60)}
+              <br />{(evt.description ?? '').slice(0, 60)}
             </div>
           ))}
         </div>

@@ -134,7 +134,7 @@ class TestSimulationCreate:
         assert run.status.value == "running"
         snap = provider.get_snapshot(run.run_id)
         assert snap.sequence == 0
-        assert len(snap.road_states) == 12
+        assert len(snap.road_states) == 18
         for rs in snap.road_states.values():
             assert rs.congestion_level.value == "normal"
             assert rs.avg_speed > 20
@@ -163,10 +163,10 @@ class TestNetworkReading:
     """路网读取测试。"""
 
     def test_network_has_all_roads(self, network):
-        assert len(network.road_segments) == 12
+        assert len(network.road_segments) == 18
 
     def test_network_has_all_intersections(self, network):
-        assert len(network.intersections) == 6
+        assert len(network.intersections) == 9
 
     def test_network_has_all_cameras(self, network):
         assert len(network.cameras) == 6
@@ -179,7 +179,7 @@ class TestNetworkReading:
         assert resp.status_code == 200, f"网络API失败: {resp.text}"
         geo = resp.json()
         assert geo["type"] == "FeatureCollection"
-        assert len(geo["features"]) == 24  # 12 roads + 6 intersections + 6 cameras
+        assert len(geo["features"]) == 33  # 18 roads + 9 intersections + 6 cameras
 
     def test_network_geojson_feature_types(self, network):
         """GeoJSON feature 类型正确。"""
@@ -188,8 +188,8 @@ class TestNetworkReading:
         for f in geojson["features"]:
             ft = f["properties"]["featureType"]
             types[ft] = types.get(ft, 0) + 1
-        assert types.get("road") == 12
-        assert types.get("intersection") == 6
+        assert types.get("road") == 18
+        assert types.get("intersection") == 9
         assert types.get("camera") == 6
 
     def test_camera_simulated_flag(self, network):
@@ -360,8 +360,8 @@ class TestSpatialContext:
         provider.inject_event(run.run_id, event)
         ctx = provider.build_spatial_context(run.run_id, event.event_id)
         upstream_ids = {r.road_id for r in ctx.upstream_roads}
-        assert "R08" in upstream_ids  # 交通路 → I01
-        assert "R12" in upstream_ids  # 演示北路 → I01
+        assert "R02" in upstream_ids  # 演示大道东→西 → I01
+        assert "R07" in upstream_ids  # 交通路 → I01
 
     def test_spatial_context_downstream(self, provider):
         """下游路段计算正确。"""
@@ -375,8 +375,8 @@ class TestSpatialContext:
         provider.inject_event(run.run_id, event)
         ctx = provider.build_spatial_context(run.run_id, event.event_id)
         downstream_ids = {r.road_id for r in ctx.downstream_roads}
-        assert "R02" in downstream_ids
-        assert "R10" in downstream_ids
+        assert "R02" in downstream_ids  # I02→I01
+        assert "R03" in downstream_ids  # I02→I03
 
     def test_spatial_context_nearby_cameras(self, provider):
         """附近摄像头查询正确。"""

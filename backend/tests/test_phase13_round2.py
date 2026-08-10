@@ -742,3 +742,122 @@ class TestDecisionSnapshotConsistency:
         latest_snap = provider.get_snapshot(run.run_id)
         assert decision_snap.snapshot_id != latest_snap.snapshot_id
         assert decision_snap.road_states["R01"].congestion_level.value == "severe"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Restart Recovery (Rehydration Gap)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestRestartRecovery:
+    """Backend 重启后 Provider 从 Repository 恢复状态。"""
+
+    def test_cold_provider_rehydrates_from_repository(self):
+        """新 Provider 实例可以从 Repository 恢复旧 Run。"""
+        from backend.simulation.demo_provider import DemoSimulationProvider
+        from backend.simulation.repository import SQLiteSimulationRepository
+        from backend.simulation.models import TrafficEvent, generate_event_id
+
+        # Phase 1: Provider A creates run and persists
+        provider_a = DemoSimulationProvider()
+        repo = SQLiteSimulationRepository()
+        run = provider_a.create_run("scenario_c_accident")
+        repo.save_run(run)
+        snap_a = provider_a.get_snapshot(run.run_id)
+        repo.save_snapshot(snap_a)
+
+        event = TrafficEvent(
+            event_id=generate_event_id(),
+            event_type="accident", severity="high", road_id="R01",
+            longitude=116.397, latitude=39.907, description="Restart test",
+        )
+        repo.save_event(event, run_id=run.run_id)
+        provider_a.inject_event(run.run_id, event)
+        snap_a2 = provider_a.get_snapshot(run.run_id)
+        repo.save_snapshot(snap_a2)
+
+        # Phase 2: Simulate restart — new Provider B has empty memory
+        provider_b = DemoSimulationProvider()
+        assert run.run_id not in provider_b._runs
+        assert run.run_id not in provider_b._snapshots
+        assert run.run_id not in provider_b._events
+
+        # Phase 3: Provider B can operate on the recovered run
+        snap_b = provider_b.get_snapshot(run.run_id)
+        assert snap_b is not None
+        assert snap_b.sequence == snap_a2.sequence
+
+        # Inject works after recovery
+        event2 = TrafficEvent(
+            event_id=generate_event_id(),
+            event_type="congestion", severity="medium", road_id="R03",
+            longitude=116.3975, latitude=39.906, description="Recovery test",
+        )
+        repo.save_event(event2, run_id=run.run_id)
+        provider_b.inject_event(run.run_id, event2)
+        snap_b2 = provider_b.get_snapshot(run.run_id)
+        assert snap_b2.sequence == snap_a2.sequence + 1
+
+        # Reset works after recovery
+        provider_b.reset_run(run.run_id)
+        assert provider_b.get_snapshot(run.run_id) is not None
+
+    def test_cold_recovery_preserves_event_status(self):
+        """恢复后 event status 保持正确。"""
+        from backend.simulation.demo_provider import DemoSimulationProvider
+        from backend.simulation.repository import SQLiteSimulationRepository
+        from backend.simulation.models import TrafficEvent, generate_event_id
+
+        provider_a = DemoSimulationProvider()
+        repo = SQLiteSimulationRepository()
+        run = provider_a.create_run("scenario_c_accident")
+        repo.save_run(run)
+        repo.save_snapshot(provider_a.get_snapshot(run.run_id))
+
+        event = TrafficEvent(
+            event_id=generate_event_id(),
+            event_type="accident", severity="high", road_id="R01",
+            longitude=116.397, latitude=39.907, description="Status test",
+        )
+        repo.save_event(event, run_id=run.run_id)
+        provider_a.inject_event(run.run_id, event)
+
+        # Mark resolved in DB
+        import sqlite3, backend.config as cfg
+        conn = sqlite3.connect(cfg.DB_PATH)
+        conn.execute("UPDATE simulation_events SET status='resolved' WHERE event_id=?", (event.event_id,))
+        conn.commit()
+        conn.close()
+
+        # Cold recovery
+        provider_b = DemoSimulationProvider()
+        ctx = provider_b.build_spatial_context(run.run_id, event.event_id)
+        evts = provider_b._events[run.run_id]
+        assert evts[event.event_id].status == "resolved"
+
+    def test_spatial_context_works_after_recovery(self):
+        """恢复后空间上下文计算正常。"""
+        from backend.simulation.demo_provider import DemoSimulationProvider
+        from backend.simulation.repository import SQLiteSimulationRepository
+        from backend.simulation.models import TrafficEvent, generate_event_id
+
+        provider_a = DemoSimulationProvider()
+        repo = SQLiteSimulationRepository()
+        run = provider_a.create_run("scenario_c_accident")
+        repo.save_run(run)
+        repo.save_snapshot(provider_a.get_snapshot(run.run_id))
+
+        event = TrafficEvent(
+            event_id=generate_event_id(),
+            event_type="accident", severity="high", road_id="R01",
+            longitude=116.397, latitude=39.907, description="Spatial test",
+        )
+        repo.save_event(event, run_id=run.run_id)
+        provider_a.inject_event(run.run_id, event)
+
+        # Cold recovery
+        provider_b = DemoSimulationProvider()
+        ctx = provider_b.build_spatial_context(run.run_id, event.event_id)
+        assert ctx.affected_road is not None
+        assert len(ctx.upstream_roads) > 0
+        assert len(ctx.nearby_cameras) > 0
