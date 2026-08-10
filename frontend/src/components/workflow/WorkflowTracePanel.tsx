@@ -8,6 +8,7 @@ import { RUN_STATUS_COLORS } from '../../types/workflow';
 import type { WorkflowRunStatus, NodeType, NodeStatus, ApprovalDecision } from '../../types/workflow';
 import { WorkflowRunTimeline } from './WorkflowRunTimeline';
 import { WorkflowNodeCard } from './WorkflowNodeCard';
+import { WorkflowObservabilityView } from './WorkflowObservabilityView';
 import { WorkflowApprovalCard } from './WorkflowApprovalCard';
 import { WorkflowActionRecordCard } from './WorkflowActionRecordCard';
 import { WorkflowErrorBoundary } from './WorkflowErrorBoundary';
@@ -180,6 +181,11 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
             ) : (
               <Empty description="无外部动作记录" />
             ),
+          },
+          {
+            key: 'observability',
+            label: '概览',
+            children: <WorkflowObservabilityView runId={runId} />,
           },
         ]}
       />

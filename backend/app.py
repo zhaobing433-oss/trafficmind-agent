@@ -1573,6 +1573,13 @@ app.include_router(workflow_router)
 from backend.simulation.api import router as simulation_router
 app.include_router(simulation_router)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 14: Workflow Observability V1 Router
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from backend.observability.api import router as observability_router
+app.include_router(observability_router)
+
 
 def _safe_json(s: str):
     """安全解析 JSON 字符串。"""
