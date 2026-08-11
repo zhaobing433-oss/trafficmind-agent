@@ -10,6 +10,7 @@ import type { CollaborationRun, CollaborationTask, CollaborationAgentResult } fr
 import CollaborationRunView from './components/collaboration/CollaborationRunView';
 import { WorkflowWorkspace } from './components/workflow/WorkflowWorkspace';
 import { TrafficMapWorkspace } from './components/simulation/TrafficMapWorkspace';
+import { EvaluationDashboard } from './components/evaluation/EvaluationDashboard';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
@@ -21,20 +22,27 @@ const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes
 };
 
 export default function App() {
-  // Read sessionId + workflowRunId + simulationRunId from URL on mount for refresh persistence
+  // Read sessionId + workflowRunId + simulationRunId + view from URL on mount for refresh persistence
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const urlSessionId = urlParams.get('sessionId');
   const urlWorkflowRunId = urlParams.get('workflowRunId');
   const urlSimulationRunId = urlParams.get('simulationRunId');
+  const urlView = urlParams.get('view');
+  const urlReport = urlParams.get('report');
   const initialSessionId = urlSessionId || null;
   const initialWorkflowRunId = urlWorkflowRunId || null;
   const initialSimulationRunId = urlSimulationRunId || null;
 
+  const VALID_VIEWS = ['home','qa','report','multi','workflow','simulation','evaluation','alert','guide'];
   const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId);
   const [pendingCreate, setPendingCreate] = useState(!initialSessionId);
-  const [view, setView] = useState(
-    urlWorkflowRunId ? 'workflow' : (urlSimulationRunId ? 'simulation' : 'home')
-  );
+  const [view, setView] = useState(() => {
+    if (urlView && VALID_VIEWS.includes(urlView)) return urlView;
+    if (urlReport) return 'evaluation';  // legacy: ?report=xxx without ?view=
+    if (urlWorkflowRunId) return 'workflow';
+    if (urlSimulationRunId) return 'simulation';
+    return 'home';
+  });
   const [workflowRunId, setWorkflowRunId] = useState<string | null>(initialWorkflowRunId);
   const [draftInput, setDraftInput] = useState('');
   const [draftMode, setDraftMode] = useState('react');
@@ -71,6 +79,16 @@ export default function App() {
     updateUrl(activeSessionId, newRunId);
   }, [activeSessionId, updateUrl]);
 
+  // On mount: normalize legacy URLs (e.g. ?report=xxx without ?view=evaluation)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('report') && !params.get('view')) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', 'evaluation');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []);
+
   // On mount: if URL has sessionId, load it and set the correct view
   useEffect(() => {
     if (!initialSessionId) return;
@@ -87,7 +105,13 @@ export default function App() {
   const handleSessionCreated = useCallback((id: string) => { sessionIdRef.current = id; setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); updateUrl(id); }, []);
   const handleNewConversation = () => { sessionIdRef.current = null; setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); updateUrl(null); };
   const handleScenario = (prompt: string, mode: string, targetView: string) => { sessionIdRef.current = null; setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); updateUrl(null); };
-  const handleNavigate = (v: string) => { setView(v); };
+  const handleNavigate = (v: string) => {
+    setView(v);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', v);
+    if (v !== 'evaluation') url.searchParams.delete('report');
+    window.history.replaceState({}, '', url.toString());
+  };
   const handleRecentClick = async (id: string) => {
     // Fetch session to determine its mode, then route to correct workspace
     try {
@@ -154,7 +178,8 @@ export default function App() {
          view === 'qa' ? <QaDashboard onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
          view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> :
          view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> :
-         view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} /> : (
+         view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} /> :
+         view === 'evaluation' ? <EvaluationDashboard /> : (
           <>
             <HomeHero />
             <ScenarioGrid onSelect={handleScenario} />

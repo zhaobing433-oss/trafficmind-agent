@@ -106,6 +106,9 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
 
   const state = detail?.state || {};
   const pendingApproval = (state as Record<string, unknown>).pendingApproval as Record<string, unknown> | null;
+  const approvedActions = (state as Record<string, unknown>).approvedActions as Array<Record<string, unknown>> || [];
+  const approvalEvents = (detail?.events || []).filter((e: Record<string,unknown>) => String(e.eventType||'').includes('approval'));
+  const hasApprovalHistory = !pendingApproval && (approvedActions.length > 0 || approvalEvents.length > 0);
 
   return (
     <WorkflowErrorBoundary runId={runId}>
@@ -167,8 +170,13 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
                 onReject={(c) => handleReject((pendingApproval.approvalId as string) || '', c)}
                 onEditAndApprove={(a, c) => handleEditAndApprove((pendingApproval.approvalId as string) || '', a, c)}
               />
+            ) : hasApprovalHistory ? (
+              <HistoricalApproval
+                approvedActions={approvedActions}
+                approvalEvents={approvalEvents}
+              />
             ) : (
-              <Empty description="无待审批项" />
+              <Empty description="无审批记录" />
             ),
           },
           {
@@ -190,5 +198,39 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
         ]}
       />
     </WorkflowErrorBoundary>
+  );
+};
+
+/** Read-only historical approval display for completed/rejected runs. */
+const HistoricalApproval: React.FC<{
+  approvedActions: Array<Record<string, unknown>>;
+  approvalEvents: Array<Record<string, unknown>>;
+}> = ({ approvedActions, approvalEvents }) => {
+  const approvedEvt = approvalEvents.find(e => String(e.eventType || '').includes('approved'));
+  const rejectedEvt = approvalEvents.find(e => String(e.eventType || '').includes('rejected'));
+  const decision = approvedEvt ? 'approved' as const : rejectedEvt ? 'rejected' as const : null;
+  const decisionLabel = decision === 'approved' ? '已批准' : decision === 'rejected' ? '已驳回' : null;
+
+  return (
+    <div style={{ padding: 16, background: '#FFF', borderRadius: 8, border: '1px solid #E5E7EB' }}>
+      <div style={{ fontWeight: 600, marginBottom: 8, color: decision === 'approved' ? '#0F766E' : decision === 'rejected' ? '#EF4444' : '#6B7280' }}>
+        审批结果：{decisionLabel || '未知'}
+      </div>
+      {approvedActions.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: '#6B7280', marginBottom: 4 }}>已批准的动作</div>
+          {approvedActions.map((a, i) => (
+            <div key={i} style={{ fontSize: 11, background: '#F0FDFA', borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
+              <div><strong>{String(a.actionType || '—')}</strong></div>
+              <div style={{ color: '#6B7280' }}>{String(a.sourceRoadId || '')} → {(a.targetRoadIds as string[] || []).join(' / ')}</div>
+              <div style={{ fontSize: 10, color: '#9CA3AF' }}>分流: {String(Math.round((Number(a.diversionRatio) || 0) * 100))}%</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!decision && approvedActions.length === 0 && (
+        <div style={{ color: '#9CA3AF', fontSize: 11 }}>流程已通过人工审批，但历史审批详情未持久化。</div>
+      )}
+    </div>
   );
 };

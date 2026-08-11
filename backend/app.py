@@ -1580,6 +1580,10 @@ app.include_router(simulation_router)
 from backend.observability.api import router as observability_router
 app.include_router(observability_router)
 
+# Phase 14 Round 3: Evaluation Dashboard
+from backend.evaluation.eval_api import router as eval_router
+app.include_router(eval_router)
+
 
 def _safe_json(s: str):
     """安全解析 JSON 字符串。"""

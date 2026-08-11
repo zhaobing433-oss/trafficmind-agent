@@ -97,7 +97,9 @@ def run_evaluation(dataset_path: str, category: str = None, case_id: str = None)
             cs = score_case(case, actual)
         except Exception as e:
             cs = CaseScore(caseId=case.caseId, name=case.name, passed=False,
-                           scores={"overall": 0.0}, failedAssertions=[f"SYSTEM_ERROR: {e}"])
+                           scores={"overall": 0.0}, failedAssertions=[f"SYSTEM_ERROR: {e}"],
+                           diagnostics={"classification": {"type": "production_capability_gap",
+                               "reason": f"Evaluation runtime error: {str(e)[:200]}"}})
         results.append(cs)
 
     total = len(results)

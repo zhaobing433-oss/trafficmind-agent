@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { key: 'qa', label: '知识库', icon: '📖' },
   { key: 'report', label: '统计报告', icon: '📋' },
   { key: 'alert', label: '风险提醒', icon: '⚠' },
+  { key: 'evaluation', label: '评测中心', icon: '📊' },
 ];
 
 const MODE_LABELS: Record<string, string> = { react: '诊断', routed: '研判', rag: '知识库', hybrid: '相似', report: '报告', collaboration: '协同' };

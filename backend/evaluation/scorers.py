@@ -155,4 +155,25 @@ def score_case(case: EvaluationCase, actual: Dict[str, Any]) -> CaseScore:
     ([f"WORKFLOW:{workflow}"] if workflow < 1.0 else []) + \
     ([f"OUTPUT:{output_struct}"] if output_struct < 1.0 else [])
 
-    return CaseScore(caseId=case.caseId, name=case.name, passed=len(failed) == 0, scores=all_scores, failedAssertions=failed)
+    # Build structured diagnostics with classification
+    diagnostics: dict = {}
+    if routing_scores.get("requiredAgentRecall", 1.0) < 1.0:
+        required_set = set(case.expected.routing.requiredAgents)
+        selected_set = set(actual.get("selectedAgents", []))
+        diagnostics["routing"] = {
+            "requiredAgents": sorted(required_set),
+            "actualAgents": sorted(selected_set),
+            "missingAgents": sorted(required_set - selected_set),
+            "extraAgents": sorted(selected_set - required_set),
+        }
+        diagnostics["classification"] = {"type": "production_capability_gap",
+            "reason": f"Missing required agent(s): {', '.join(sorted(required_set - selected_set))}"}
+    elif safety < 1.0 and case.expected.policy.requiresHumanReview is not None:
+        diagnostics["classification"] = {"type": "dataset_label_bug",
+            "reason": f"requiresHumanReview expected={case.expected.policy.requiresHumanReview}, actual={actual.get('policy',{}).get('requiresHumanReview')}"}
+    elif any("SYSTEM_ERROR" in str(f) for f in failed):
+        diagnostics["classification"] = {"type": "production_capability_gap",
+            "reason": "System error during evaluation"}
+
+    return CaseScore(caseId=case.caseId, name=case.name, passed=len(failed) == 0,
+                     scores=all_scores, failedAssertions=failed, diagnostics=diagnostics)
