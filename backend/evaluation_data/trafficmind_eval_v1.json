@@ -1,0 +1,804 @@
+{
+  "version": "v1",
+  "description": "TrafficMind Agent Evaluation Dataset V1 — 30+ deterministic cases",
+  "cases": [
+    {
+      "caseId": "C01",
+      "name": "普通拥堵-主干道",
+      "category": "congestion",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "演示大道",
+        "avgSpeed": 18,
+        "queueLength": 85,
+        "isMainRoad": true
+      },
+      "expected": {
+        "event": {
+          "expectedFields": {
+            "eventType": "congestion",
+            "roadName": "演示大道"
+          },
+          "numericTolerance": {
+            "avgSpeed": 5.0,
+            "queueLength": 20.0
+          }
+        },
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "C02",
+      "name": "严重拥堵-主干道",
+      "category": "congestion",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "人民路",
+        "avgSpeed": 5,
+        "queueLength": 320,
+        "isMainRoad": true,
+        "duration": 900
+      },
+      "expected": {
+        "event": {
+          "expectedFields": {
+            "eventType": "congestion",
+            "roadName": "人民路"
+          },
+          "numericTolerance": {
+            "avgSpeed": 3.0,
+            "queueLength": 50.0
+          }
+        },
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ],
+          "optionalAgents": [
+            "DispatchAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C03",
+      "name": "交通事故-主干道",
+      "category": "accident",
+      "input": {
+        "eventType": "accident",
+        "roadName": "长江路",
+        "avgSpeed": 8,
+        "queueLength": 400,
+        "isMainRoad": true,
+        "duration": 600
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ],
+          "optionalAgents": [
+            "DispatchAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C04",
+      "name": "学校周边拥堵",
+      "category": "congestion",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "学府路",
+        "avgSpeed": 12,
+        "queueLength": 95,
+        "nearbySchool": true,
+        "timePeriod": "morning_peak"
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ],
+          "optionalAgents": [
+            "DispatchAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C05",
+      "name": "医院周边拥堵",
+      "category": "congestion",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "健康路",
+        "avgSpeed": 10,
+        "queueLength": 180,
+        "nearbyHospital": true,
+        "duration": 800
+      },
+      "expected": {
+        "event": {
+          "booleanFields": {
+            "nearbyHospital": true
+          }
+        },
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        },
+        "_note": "risk_score=45 < 61 hospital threshold per rule_router:86-90"
+      }
+    },
+    {
+      "caseId": "C06",
+      "name": "信号灯异常",
+      "category": "signal_fault",
+      "input": {
+        "eventType": "signal_fault",
+        "roadName": "中山路",
+        "avgSpeed": 20,
+        "queueLength": 60,
+        "isMainRoad": true,
+        "duration": 300
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "SignalAgent"
+          ],
+          "optionalAgents": [
+            "CongestionAgent"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "C07",
+      "name": "恶劣天气-大雨",
+      "category": "weather",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "滨江路",
+        "avgSpeed": 22,
+        "queueLength": 70,
+        "weather": "rain",
+        "isMainRoad": true
+      },
+      "expected": {
+        "event": {
+          "expectedFields": {
+            "weather": "rain"
+          }
+        },
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C08",
+      "name": "恶劣天气-大雾",
+      "category": "weather",
+      "input": {
+        "eventType": "accident",
+        "roadName": "机场高速",
+        "avgSpeed": 15,
+        "queueLength": 150,
+        "weather": "fog",
+        "isMainRoad": true
+      },
+      "expected": {
+        "event": {
+          "expectedFields": {
+            "weather": "fog"
+          }
+        },
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C09",
+      "name": "施工占道",
+      "category": "construction",
+      "input": {
+        "eventType": "construction_block",
+        "roadName": "建设路",
+        "avgSpeed": 25,
+        "queueLength": 55,
+        "duration": 1200,
+        "isMainRoad": false
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "C10",
+      "name": "车辆滞留-主干道",
+      "category": "vehicle_stopped",
+      "input": {
+        "eventType": "vehicle_stopped",
+        "roadName": "环城路",
+        "avgSpeed": 3,
+        "queueLength": 280,
+        "isMainRoad": true,
+        "duration": 500
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "DispatchAgent"
+          ],
+          "optionalAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C11",
+      "name": "逆行事件",
+      "category": "wrong_way",
+      "input": {
+        "eventType": "wrong_way",
+        "roadName": "快速路",
+        "avgSpeed": 30,
+        "queueLength": 40,
+        "isMainRoad": true,
+        "nearbySchool": false,
+        "nearbyHospital": false
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        },
+        "_note": "isMainRoad alone does not trigger approval per rule_router:86-90"
+      }
+    },
+    {
+      "caseId": "C12",
+      "name": "行人闯入",
+      "category": "pedestrian_intrusion",
+      "input": {
+        "eventType": "pedestrian_intrusion",
+        "roadName": "商业街",
+        "avgSpeed": 10,
+        "queueLength": 20,
+        "nearbySchool": true
+      },
+      "expected": {
+        "routing": {
+          "optionalAgents": [
+            "AccidentAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C13",
+      "name": "高峰时段-早",
+      "category": "peak_hour",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "通勤路",
+        "avgSpeed": 14,
+        "queueLength": 110,
+        "timePeriod": "morning_peak",
+        "isMainRoad": true
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "C14",
+      "name": "高峰时段-晚",
+      "category": "peak_hour",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "通勤路",
+        "avgSpeed": 11,
+        "queueLength": 130,
+        "timePeriod": "evening_peak",
+        "isMainRoad": true
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C15",
+      "name": "多Agent冲突-信号vs安全",
+      "category": "conflict",
+      "input": {
+        "eventType": "signal_fault",
+        "roadName": "学校路口",
+        "avgSpeed": 16,
+        "queueLength": 65,
+        "isMainRoad": true,
+        "nearbySchool": true,
+        "duration": 400
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "SignalAgent",
+            "CongestionAgent"
+          ]
+        },
+        "conflict": {
+          "required": false
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C16",
+      "name": "事故+学校周边",
+      "category": "accident",
+      "input": {
+        "eventType": "accident",
+        "roadName": "育才路",
+        "avgSpeed": 7,
+        "queueLength": 350,
+        "nearbySchool": true,
+        "duration": 600
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ],
+          "optionalAgents": [
+            "DispatchAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C17",
+      "name": "信息缺失-无速度",
+      "category": "missing_info",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "未知路段",
+        "avgSpeed": null,
+        "queueLength": null,
+        "duration": 0
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "C18",
+      "name": "信息缺失-无roadName",
+      "category": "missing_info",
+      "input": {
+        "eventType": "accident",
+        "roadName": "",
+        "avgSpeed": 20,
+        "queueLength": 50
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "C19",
+      "name": "低风险-无障碍",
+      "category": "low_risk",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "郊区路",
+        "avgSpeed": 40,
+        "queueLength": 15,
+        "isMainRoad": false,
+        "nearbySchool": false,
+        "nearbyHospital": false
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C20",
+      "name": "多轮上下文-同一事件",
+      "category": "multi_turn",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "演示大道",
+        "avgSpeed": 10,
+        "queueLength": 250,
+        "isMainRoad": true,
+        "duration": 800
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ],
+          "optionalAgents": [
+            "DispatchAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C21",
+      "name": "严重拥堵-排队300m+",
+      "category": "congestion",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "主干道A",
+        "avgSpeed": 6,
+        "queueLength": 310,
+        "isMainRoad": true,
+        "duration": 1500
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent",
+            "DispatchAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C22",
+      "name": "事故-高速",
+      "category": "accident",
+      "input": {
+        "eventType": "accident",
+        "roadName": "京沪高速",
+        "avgSpeed": 2,
+        "queueLength": 500,
+        "isMainRoad": true,
+        "duration": 1200
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C23",
+      "name": "信号灯异常-学校周边",
+      "category": "signal_fault",
+      "input": {
+        "eventType": "signal_fault",
+        "roadName": "文华路",
+        "avgSpeed": 18,
+        "queueLength": 70,
+        "nearbySchool": true,
+        "timePeriod": "morning_peak"
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "SignalAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C24",
+      "name": "拥堵-早高峰+医院",
+      "category": "congestion",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "仁爱路",
+        "avgSpeed": 9,
+        "queueLength": 140,
+        "nearbyHospital": true,
+        "timePeriod": "morning_peak"
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C25",
+      "name": "正常交通-无事件",
+      "category": "normal",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "普通路段",
+        "avgSpeed": 45,
+        "queueLength": 10,
+        "isMainRoad": false,
+        "nearbySchool": false,
+        "nearbyHospital": false
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C26",
+      "name": "事故+恶劣天气",
+      "category": "accident",
+      "input": {
+        "eventType": "accident",
+        "roadName": "盘山公路",
+        "avgSpeed": 12,
+        "queueLength": 180,
+        "weather": "snow",
+        "isMainRoad": false
+      },
+      "expected": {
+        "event": {
+          "expectedFields": {
+            "weather": "snow"
+          }
+        },
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C27",
+      "name": "施工+早高峰",
+      "category": "construction",
+      "input": {
+        "eventType": "construction_block",
+        "roadName": "主干道B",
+        "avgSpeed": 20,
+        "queueLength": 90,
+        "isMainRoad": true,
+        "timePeriod": "morning_peak"
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C28",
+      "name": "夜间非高峰拥堵",
+      "category": "congestion",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "住宅区路",
+        "avgSpeed": 25,
+        "queueLength": 45,
+        "timePeriod": "off_peak",
+        "isMainRoad": false
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C29",
+      "name": "模拟场景-ScenarioC事故",
+      "category": "simulation",
+      "input": {
+        "eventType": "accident",
+        "roadName": "演示大道",
+        "avgSpeed": 15,
+        "queueLength": 230,
+        "isMainRoad": true,
+        "simulated": true
+      },
+      "expected": {
+        "event": {
+          "expectedFields": {
+            "eventType": "accident"
+          },
+          "booleanFields": {
+            "simulated": true
+          },
+          "numericTolerance": {
+            "avgSpeed": 3.0,
+            "queueLength": 30.0
+          }
+        },
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    },
+    {
+      "caseId": "C30",
+      "name": "证据不足场景",
+      "category": "missing_info",
+      "input": {
+        "eventType": "accident",
+        "roadName": "未知路段",
+        "avgSpeed": null,
+        "queueLength": null,
+        "duration": null,
+        "weather": "clear",
+        "timePeriod": "off_peak"
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent"
+          ]
+        },
+        "output": {
+          "requiredFields": [
+            "finalDecision",
+            "selectedAgents"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "C31",
+      "name": "禁止Agent检测",
+      "category": "forbidden_test",
+      "input": {
+        "eventType": "congestion",
+        "roadName": "普通路",
+        "avgSpeed": 35,
+        "queueLength": 25
+      },
+      "expected": {
+        "routing": {
+          "forbiddenAgents": [
+            "AccidentAgent"
+          ]
+        }
+      }
+    },
+    {
+      "caseId": "C32",
+      "name": "多Agent精确匹配",
+      "category": "routing",
+      "input": {
+        "eventType": "accident",
+        "roadName": "演示大道",
+        "avgSpeed": 15,
+        "queueLength": 230,
+        "isMainRoad": true,
+        "duration": 600,
+        "nearbySchool": true
+      },
+      "expected": {
+        "routing": {
+          "requiredAgents": [
+            "AccidentAgent",
+            "CongestionAgent"
+          ]
+        },
+        "policy": {
+          "requiresHumanReview": false
+        }
+      }
+    }
+  ]
+}
