@@ -1,11 +1,12 @@
 """
-Workflow V1 API — Phase 12
+Workflow V1 API — Phase 12 + Workflow Center V2 Round 1
 
 FastAPI Router，提供 Workflow 相关的 REST + SSE 接口。
 
 端点：
   GET    /workflow/definitions                        — 列出所有 Definition
   GET    /workflow/definitions/{definitionId}          — 获取单个 Definition
+  GET    /workflow/runs                               — 列出 Run 历史（Workflow Center V2）
   POST   /workflow/runs                               — 创建并启动 Run（SSE 流式）
   GET    /workflow/runs/{runId}                        — 查询 Run 详情
   GET    /workflow/runs/{runId}/trace                  — 查询 Run Trace
@@ -30,6 +31,7 @@ from backend.workflow.models import (
     ApprovalDecision,
     DefinitionStatus,
     WorkflowApproval,
+    WorkflowRun,
     WorkflowRunStatus,
 )
 from backend.workflow.state import TrafficWorkflowState
@@ -88,6 +90,166 @@ class ApprovalRequest(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Workflow Center V2 Round 1 — RunSummary DTO Helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _extract_event_summary(state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """从 state_json 中提取事件摘要信息。
+
+    优先从 currentEvent 读取，回退到 originalInput。
+    不存在的字段为 None，不编造数据。
+    """
+    event = state.get("currentEvent") or state.get("originalInput") or {} if isinstance(state, dict) else {}
+    if not event or not isinstance(event, dict):
+        return None
+
+    road_name = event.get("roadName") or None
+    event_type = event.get("eventType") or None
+    event_type_cn = event.get("eventTypeCn") or None
+    description = event.get("description") or None
+
+    # 全部为 None 则返回 None
+    if not any([road_name, event_type, event_type_cn, description]):
+        return None
+
+    return {
+        "roadName": road_name,
+        "eventType": event_type,
+        "eventTypeCn": event_type_cn,
+        "description": description,
+    }
+
+
+def _derive_approval_status(
+    run_status: str,
+    state: Dict[str, Any],
+    approval_decisions: List[str],
+) -> str:
+    """从 Run 状态、state、审批记录综合推导审批状态。
+
+    优先级：
+      1. run status = awaiting_approval → "awaiting_approval"
+      2. run status = rejected → "rejected"
+      3. state.approvedActions 非空 → "approved"
+      4. approval_decisions 中有 approved/edited → "approved"
+      5. approval_decisions 中有 rejected → "rejected"
+      6. state 中无 human_approval 相关数据 → "not_required"
+
+    不单独依赖 pendingApproval（完成后为 null）。
+    """
+    if run_status == "awaiting_approval":
+        return "awaiting_approval"
+
+    if run_status == "rejected":
+        return "rejected"
+
+    # 检查 state 中的 approvedActions（持久化，完成后仍存在）
+    approved_actions = state.get("approvedActions") or state.get("approved_actions") or []
+    if isinstance(approved_actions, list) and len(approved_actions) > 0:
+        return "approved"
+
+    # 检查审批表中的决策
+    if approval_decisions:
+        if any(d in ("approved", "edited") for d in approval_decisions):
+            return "approved"
+        if any(d == "rejected" for d in approval_decisions):
+            return "rejected"
+        # pending 但 run 已终止 → 可能异常，仍按 pending 返回
+        if any(d == "pending" for d in approval_decisions):
+            return "awaiting_approval"
+
+    # 检查 state 中是否有审批相关数据
+    pending_approval = state.get("pendingApproval") or state.get("pending_approval")
+    if pending_approval and isinstance(pending_approval, dict):
+        return "awaiting_approval"
+
+    return "not_required"
+
+
+def _build_run_summary(
+    run: "WorkflowRun",
+    definition_name: Optional[str],
+    definition_node_count: Optional[int],
+    node_counts: Optional[Dict[str, int]],
+    action_counts: Optional[Dict[str, int]],
+    approval_decisions: Optional[List[str]],
+) -> Dict[str, Any]:
+    """构建单个 RunSummary DTO。
+
+    所有字段基于真实现有数据，不编造不存在的字段。
+
+    Args:
+        run: WorkflowRun 对象
+        definition_name: 模板名称（可能为 None）
+        definition_node_count: 模板定义的节点总数（可能为 None）
+        node_counts: workflow_node_runs 聚合统计
+        action_counts: workflow_action_records 聚合统计
+        approval_decisions: workflow_approvals 决策列表
+    """
+    state = run.state if isinstance(run.state, dict) else {}
+
+    # ── 基础字段 ──
+    summary: Dict[str, Any] = {
+        "runId": run.run_id,
+        "definitionId": run.definition_id,
+        "definitionName": definition_name,
+        "status": run.status.value,
+        "version": run.version,
+        "sessionId": run.session_id,
+        "eventThreadId": run.event_thread_id,
+        "currentNodeId": run.current_node_id,
+        "triggeredBy": run.triggered_by,
+        "startedAt": run.started_at or None,
+        "updatedAt": run.updated_at or None,
+        "completedAt": run.completed_at or None,
+        "isTerminal": run.is_terminal(),
+    }
+
+    # ── 事件摘要 ──
+    summary["eventSummary"] = _extract_event_summary(state)
+
+    # ── 节点进度 ──
+    # totalNodes     = Definition 定义的节点总数（来自 nodes_json 解析）
+    # executedNodes  = workflow_node_runs 中已有记录的节点数
+    # succeededNodes = 成功的节点数
+    # failedNodes    = 失败的节点数（含 timed_out）
+    progress: Dict[str, Any] = {
+        "totalNodes": definition_node_count,     # None if definition missing
+        "executedNodes": 0,
+        "succeededNodes": 0,
+        "failedNodes": 0,
+        "currentNode": run.current_node_id or None,
+    }
+    if node_counts:
+        progress["executedNodes"] = node_counts.get("total", 0)
+        progress["succeededNodes"] = node_counts.get("succeeded", 0)
+        progress["failedNodes"] = node_counts.get("failed", 0)
+    summary["progress"] = progress
+
+    # ── 审批摘要 ──
+    summary["approvalSummary"] = {
+        "status": _derive_approval_status(
+            run.status.value, state, approval_decisions or []
+        ),
+    }
+
+    # ── 动作摘要 ──
+    act: Dict[str, Any] = {
+        "total": 0,
+        "succeeded": 0,
+        "failed": 0,
+    }
+    if action_counts:
+        act["total"] = action_counts.get("total", 0)
+        act["succeeded"] = action_counts.get("succeeded", 0)
+        act["failed"] = action_counts.get("failed", 0)
+    summary["actionSummary"] = act
+
+    return summary
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 端点
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -116,6 +278,89 @@ async def get_definition(definition_id: str):
         "definition": definition.to_dict(),
         "versions": [v.to_dict() for v in versions],
         "versionCount": len(versions),
+    }
+
+
+@router.get("/runs", summary="列出 Workflow Run 历史（Workflow Center V2）")
+async def list_runs(
+    status: Optional[str] = Query(None, description="按状态筛选: pending/running/paused/awaiting_approval/completed/failed/cancelled/rejected"),
+    definition_id: Optional[str] = Query(None, description="按 Definition ID 筛选"),
+    session_id: Optional[str] = Query(None, description="按 Session ID 筛选"),
+    limit: int = Query(50, ge=1, le=200, description="每页条数（1-200）"),
+    offset: int = Query(0, ge=0, description="偏移量"),
+):
+    """列出 Workflow Run 历史记录（只读）。
+
+    支持按状态、Definition、Session 筛选；支持分页（limit/offset）。
+    排序：updated_at DESC, run_id DESC（稳定排序）。
+
+    返回 RunSummary DTO，包含：
+      - 基础字段（runId, definitionId, definitionName, status, ...）
+      - eventSummary（roadName, eventType, eventTypeCn, description）
+      - progress（totalNodes, succeededNodes, failedNodes, currentNode）
+      - approvalSummary（status: not_required/awaiting_approval/approved/rejected）
+      - actionSummary（total, succeeded, failed）
+    """
+    # ── 验证 status 参数 ──
+    if status is not None:
+        try:
+            WorkflowRunStatus(status)
+        except ValueError:
+            valid = [s.value for s in WorkflowRunStatus]
+            raise HTTPException(
+                status_code=400,
+                detail=f"无效的状态值 '{status}'。有效值: {valid}",
+            )
+
+    # ── 查询 Run 列表 + 总数 ──
+    runs = _repo.list_runs(
+        session_id=session_id or "",
+        definition_id=definition_id or "",
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    total = _repo.count_runs(
+        session_id=session_id or "",
+        definition_id=definition_id or "",
+        status=status,
+    )
+
+    # ── 批量加载关联数据（避免 N+1）──
+    run_ids = [r.run_id for r in runs]
+    definition_ids = list({r.definition_id for r in runs if r.definition_id})
+
+    # 批量: Definition Summaries（name + nodeCount）
+    def_summaries = _repo.batch_get_definition_summaries(definition_ids)
+
+    # 批量: Node 统计
+    node_counts = _repo.batch_get_node_counts(run_ids)
+
+    # 批量: Action 统计
+    action_counts = _repo.batch_get_action_counts(run_ids)
+
+    # 批量: Approval 决策
+    approval_decisions_map = _repo.batch_get_approval_decisions(run_ids)
+
+    # ── 构建 DTO ──
+    items = []
+    for run in runs:
+        def_summ = def_summaries.get(run.definition_id)
+        summary = _build_run_summary(
+            run=run,
+            definition_name=def_summ["name"] if def_summ else None,
+            definition_node_count=def_summ["nodeCount"] if def_summ else None,
+            node_counts=node_counts.get(run.run_id),
+            action_counts=action_counts.get(run.run_id),
+            approval_decisions=approval_decisions_map.get(run.run_id),
+        )
+        items.append(summary)
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "runs": items,
     }
 
 

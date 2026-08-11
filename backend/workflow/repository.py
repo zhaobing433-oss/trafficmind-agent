@@ -422,6 +422,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         definition_id: str = "",
         status: Optional[str] = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> List[WorkflowRun]:
         init_workflow_tables()
         conn = _get_conn()
@@ -436,11 +437,36 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         if status:
             query += " AND status=?"
             params.append(status)
-        query += " ORDER BY updated_at DESC LIMIT ?"
+        query += " ORDER BY updated_at DESC, run_id DESC LIMIT ? OFFSET ?"
         params.append(limit)
+        params.append(offset)
         rows = conn.execute(query, params).fetchall()
         conn.close()
         return [self._row_to_run(dict(r)) for r in rows]
+
+    def count_runs(
+        self,
+        session_id: str = "",
+        definition_id: str = "",
+        status: Optional[str] = None,
+    ) -> int:
+        """统计符合条件的 Run 总数（用于分页）。"""
+        init_workflow_tables()
+        conn = _get_conn()
+        query = "SELECT COUNT(*) as cnt FROM workflow_runs WHERE 1=1"
+        params: List[Any] = []
+        if session_id:
+            query += " AND session_id=?"
+            params.append(session_id)
+        if definition_id:
+            query += " AND definition_id=?"
+            params.append(definition_id)
+        if status:
+            query += " AND status=?"
+            params.append(status)
+        row = conn.execute(query, params).fetchone()
+        conn.close()
+        return row["cnt"] if row else 0
 
     def _row_to_run(self, d: Dict[str, Any]) -> WorkflowRun:
         state_raw = d.get("state_json", "{}")
@@ -710,3 +736,148 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             created_at=d.get("created_at", ""),
             completed_at=d.get("completed_at", ""),
         )
+
+    # ── Batch Read Helpers (Workflow Center V2 Round 1) ──────────────────
+
+    def batch_get_node_counts(
+        self, run_ids: List[str]
+    ) -> Dict[str, Dict[str, int]]:
+        """批量获取每个 Run 的节点执行统计。
+
+        返回: {run_id: {"total": N, "succeeded": N, "failed": N}}
+        不存在的 run_id 不出现在结果中。
+        """
+        if not run_ids:
+            return {}
+        init_workflow_tables()
+        conn = _get_conn()
+        placeholders = ",".join(["?" for _ in run_ids])
+        rows = conn.execute(
+            f"""SELECT run_id, status, COUNT(*) as cnt
+                FROM workflow_node_runs
+                WHERE run_id IN ({placeholders})
+                GROUP BY run_id, status""",
+            run_ids,
+        ).fetchall()
+        conn.close()
+
+        result: Dict[str, Dict[str, int]] = {}
+        for row in rows:
+            rid = row["run_id"]
+            st = row["status"]
+            cnt = row["cnt"]
+            if rid not in result:
+                result[rid] = {"total": 0, "succeeded": 0, "failed": 0,
+                               "running": 0, "pending": 0}
+            result[rid]["total"] += cnt
+            if st in ("succeeded",):
+                result[rid]["succeeded"] += cnt
+            elif st in ("failed", "timed_out"):
+                result[rid]["failed"] += cnt
+            elif st in ("running", "retrying", "awaiting_approval"):
+                result[rid]["running"] += cnt
+            elif st in ("pending",):
+                result[rid]["pending"] += cnt
+        return result
+
+    def batch_get_action_counts(
+        self, run_ids: List[str]
+    ) -> Dict[str, Dict[str, int]]:
+        """批量获取每个 Run 的 Action 执行统计。
+
+        返回: {run_id: {"total": N, "succeeded": N, "failed": N}}
+        不存在的 run_id 不出现在结果中。
+        """
+        if not run_ids:
+            return {}
+        init_workflow_tables()
+        conn = _get_conn()
+        placeholders = ",".join(["?" for _ in run_ids])
+        rows = conn.execute(
+            f"""SELECT run_id, status, COUNT(*) as cnt
+                FROM workflow_action_records
+                WHERE run_id IN ({placeholders})
+                GROUP BY run_id, status""",
+            run_ids,
+        ).fetchall()
+        conn.close()
+
+        result: Dict[str, Dict[str, int]] = {}
+        for row in rows:
+            rid = row["run_id"]
+            st = row["status"]
+            cnt = row["cnt"]
+            if rid not in result:
+                result[rid] = {"total": 0, "succeeded": 0, "failed": 0}
+            result[rid]["total"] += cnt
+            if st in ("succeeded",):
+                result[rid]["succeeded"] += cnt
+            elif st in ("failed",):
+                result[rid]["failed"] += cnt
+        return result
+
+    def batch_get_definition_summaries(
+        self, definition_ids: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        """批量获取 Definition ID → {name, nodeCount} 映射。
+
+        返回: {definition_id: {"name": str, "nodeCount": int}}
+        不存在的 definition_id 不出现在结果中。
+        """
+        if not definition_ids:
+            return {}
+        init_workflow_tables()
+        conn = _get_conn()
+        placeholders = ",".join(["?" for _ in definition_ids])
+        rows = conn.execute(
+            f"""SELECT id, name, nodes_json FROM workflow_definitions
+                WHERE id IN ({placeholders})""",
+            definition_ids,
+        ).fetchall()
+        conn.close()
+
+        result: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            nodes_raw = row["nodes_json"]
+            if isinstance(nodes_raw, str):
+                try:
+                    nodes_list = json.loads(nodes_raw) if nodes_raw else []
+                except json.JSONDecodeError:
+                    nodes_list = []
+            else:
+                nodes_list = nodes_raw or []
+            node_count = len(nodes_list) if isinstance(nodes_list, list) else 0
+            result[row["id"]] = {
+                "name": row["name"],
+                "nodeCount": node_count,
+            }
+        return result
+
+    def batch_get_approval_decisions(
+        self, run_ids: List[str]
+    ) -> Dict[str, List[str]]:
+        """批量获取每个 Run 的审批决策列表。
+
+        返回: {run_id: [decision, ...]}
+        用于判断 completed run 是否历史上经过审批。
+        """
+        if not run_ids:
+            return {}
+        init_workflow_tables()
+        conn = _get_conn()
+        placeholders = ",".join(["?" for _ in run_ids])
+        rows = conn.execute(
+            f"""SELECT run_id, decision FROM workflow_approvals
+                WHERE run_id IN ({placeholders})
+                ORDER BY created_at""",
+            run_ids,
+        ).fetchall()
+        conn.close()
+
+        result: Dict[str, List[str]] = {}
+        for row in rows:
+            rid = row["run_id"]
+            if rid not in result:
+                result[rid] = []
+            result[rid].append(row["decision"])
+        return result
