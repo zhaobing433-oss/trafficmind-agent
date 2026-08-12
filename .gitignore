@@ -43,3 +43,27 @@ frontend/dist/
 
 # pytest
 .pytest_cache/
+
+# RAG V2 运行数据
+backend/data/rag_v2/
+
+# 评估生成产物
+backend/tests/output/
+
+# TypeScript 构建缓存
+frontend/tsconfig.tsbuildinfo
+
+# 模型权重（禁止提交）
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# HuggingFace 缓存（不应在仓库内）
+.huggingface/
+models/
+
+# 截图（仅忽略截图目录，不误伤正式assets）
+**/screenshots/**
+**/Screenshots/**

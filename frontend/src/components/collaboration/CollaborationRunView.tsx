@@ -8,6 +8,9 @@ import AgentExecutionCard from './AgentExecutionCard';
 import ConflictPanel from './ConflictPanel';
 import BudgetUsagePanel from './BudgetUsagePanel';
 import FusionDecisionView from './FusionDecisionView';
+import MemoryTracePanel from './MemoryTracePanel';
+import MemoryPanelErrorBoundary from './MemoryPanelErrorBoundary';
+import { extractPreviousRunSummary } from '../../utils/previousRunContext';
 
 function safeArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
@@ -93,7 +96,9 @@ export default function CollaborationRunView({ run }: { run: CollaborationRun })
           <div style={{ fontSize: 10, color: '#92400E', marginBottom: 4 }}>
             Run: {String((run.previousRunContext as Record<string,unknown>).runId).slice(0, 20)}...
           </div>
-          <div style={{ fontSize: 11, color: '#78350F' }}>{String((run.previousRunContext as Record<string,unknown>).summary || '').slice(0, 150)}</div>
+          <div style={{ fontSize: 11, color: '#78350F' }}>
+            {extractPreviousRunSummary((run.previousRunContext as Record<string,unknown>).summary)}
+          </div>
         </div>
       )}
 
@@ -112,6 +117,9 @@ export default function CollaborationRunView({ run }: { run: CollaborationRun })
       <BudgetUsagePanel budget={run.budgetUsage} failedAgents={safeArray<string>(run.failedAgents)} />
 
       {(run.fusionSummary || run.finalDecision) && <FusionDecisionView run={run} />}
+      <MemoryPanelErrorBoundary runId={run.runId}>
+        <MemoryTracePanel runId={run.runId} visible={run.status === 'completed' || run.status === 'partial_success'} />
+      </MemoryPanelErrorBoundary>
     </div>
   );
 }

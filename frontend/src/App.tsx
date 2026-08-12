@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import LayoutShell from './components/LayoutShell';
 import HomeHero from './components/HomeHero';
 import ScenarioGrid from './components/ScenarioGrid';
@@ -8,18 +8,42 @@ import { reduceCollaborationEvent } from './utils/collaborationEventReducer';
 import { collabApi } from './api/collaborationApi';
 import type { CollaborationRun, CollaborationTask, CollaborationAgentResult } from './types/collaboration';
 import CollaborationRunView from './components/collaboration/CollaborationRunView';
+import { WorkflowWorkspace } from './components/workflow/WorkflowWorkspace';
+import { TrafficMapWorkspace } from './components/simulation/TrafficMapWorkspace';
+import { EvaluationDashboard } from './components/evaluation/EvaluationDashboard';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
   qa: { title: '知识库', sub: 'RAG交通知识库 · 规则/预案/经验检索 · 证据问答', showFullModes: false, defaultMode: 'rag' },
   report: { title: '统计报告', sub: '日报/周报 · 高风险路口 · 事件趋势 · 管理建议', showFullModes: false, defaultMode: 'report' },
   multi: { title: '协同分析', sub: '多Agent研判 + 冲突检测 + 融合处置建议', showFullModes: false, defaultMode: 'routed' },
+  workflow: { title: '工作流中心', sub: '查看运行记录、跟踪执行状态或从模板启动新的工作流', showFullModes: false, defaultMode: 'routed' },
+  simulation: { title: '交通态势', sub: '模拟交通环境 · 路网可视化 · 事件注入 · 态势感知', showFullModes: false, defaultMode: 'routed' },
 };
 
 export default function App() {
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [pendingCreate, setPendingCreate] = useState(true);
-  const [view, setView] = useState('home');
+  // Read sessionId + workflowRunId + simulationRunId + view from URL on mount for refresh persistence
+  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const urlSessionId = urlParams.get('sessionId');
+  const urlWorkflowRunId = urlParams.get('workflowRunId');
+  const urlSimulationRunId = urlParams.get('simulationRunId');
+  const urlView = urlParams.get('view');
+  const urlReport = urlParams.get('report');
+  const initialSessionId = urlSessionId || null;
+  const initialWorkflowRunId = urlWorkflowRunId || null;
+  const initialSimulationRunId = urlSimulationRunId || null;
+
+  const VALID_VIEWS = ['home','qa','report','multi','workflow','simulation','evaluation','alert','guide'];
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId);
+  const [pendingCreate, setPendingCreate] = useState(!initialSessionId);
+  const [view, setView] = useState(() => {
+    if (urlView && VALID_VIEWS.includes(urlView)) return urlView;
+    if (urlReport) return 'evaluation';  // legacy: ?report=xxx without ?view=
+    if (urlWorkflowRunId) return 'workflow';
+    if (urlSimulationRunId) return 'simulation';
+    return 'home';
+  });
+  const [workflowRunId, setWorkflowRunId] = useState<string | null>(initialWorkflowRunId);
   const [draftInput, setDraftInput] = useState('');
   const [draftMode, setDraftMode] = useState('react');
   const [recentRefresh, setRecentRefresh] = useState(0);
@@ -31,13 +55,73 @@ export default function App() {
   const sessionIdRef = useRef<string | null>(null);
   useEffect(() => { sessionIdRef.current = activeSessionId; }, [activeSessionId]);
 
+  // Update URL when active session or workflow run changes
+  const updateUrl = useCallback((sid: string | null, wfRunId?: string | null) => {
+    const url = new URL(window.location.href);
+    if (sid) {
+      url.searchParams.set('sessionId', sid);
+    } else {
+      url.searchParams.delete('sessionId');
+    }
+    if (wfRunId !== undefined) {
+      if (wfRunId) {
+        url.searchParams.set('workflowRunId', wfRunId);
+      } else {
+        url.searchParams.delete('workflowRunId');
+      }
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
+  // Handle workflowRunId changes (from WorkflowWorkspace)
+  const handleWorkflowRunIdChange = useCallback((newRunId: string | null) => {
+    setWorkflowRunId(newRunId);
+    updateUrl(activeSessionId, newRunId);
+  }, [activeSessionId, updateUrl]);
+
+  // On mount: normalize legacy URLs (e.g. ?report=xxx without ?view=evaluation)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('report') && !params.get('view')) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', 'evaluation');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []);
+
+  // On mount: if URL has sessionId, load it and set the correct view
+  useEffect(() => {
+    if (!initialSessionId) return;
+    chatApi.getSession(initialSessionId).then(detail => {
+      const m = detail.session.mode || 'react';
+      const vm: Record<string,string> = { react:'home',routed:'home',hybrid:'home',rag:'qa',collaboration:'multi',report:'report',simulation:'simulation' };
+      setView(vm[m] || 'home');
+    }).catch(() => setView('home'));
+  }, [initialSessionId]);
+
   useEffect(() => { chatApi.listSessions(30).then(setSessions).catch(() => {}); }, [recentRefresh]);
   const refreshSessions = useCallback(() => setRecentRefresh(Date.now()), []);
   // CRITICAL: session created via first send — do NOT reset the component (key stays same)
-  const handleSessionCreated = useCallback((id: string) => { sessionIdRef.current = id; setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); }, []);
-  const handleNewConversation = () => { sessionIdRef.current = null; setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); };
-  const handleScenario = (prompt: string, mode: string, targetView: string) => { sessionIdRef.current = null; setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); };
-  const handleNavigate = (v: string) => { setView(v); };
+  const handleSessionCreated = useCallback((id: string) => { sessionIdRef.current = id; setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); updateUrl(id); }, []);
+  const handleNewConversation = () => { sessionIdRef.current = null; setActiveSessionId(null); setPendingCreate(true); setDraftInput(''); setView('home'); setWorkspaceKey(k => k + 1); updateUrl(null); };
+  const handleScenario = (prompt: string, mode: string, targetView: string) => { sessionIdRef.current = null; setDraftInput(prompt); setDraftMode(mode); setView(targetView); setActiveSessionId(null); setPendingCreate(true); setWorkspaceKey(k => k + 1); updateUrl(null); };
+  const handleNavigate = (v: string) => {
+    setView(v);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', v);
+    if (v !== 'evaluation') url.searchParams.delete('report');
+    // Clear workflowRunId when explicitly navigating (not F5 restore)
+    if (v !== 'workflow' || !workflowRunId) {
+      // Navigating away from workflow, or to workflow without a run context -
+      // clear stale runId so user sees the center, not a leftover run detail
+    }
+    if (v === 'workflow') {
+      // Explicit nav to workflow → clear run detail, show center
+      setWorkflowRunId(null);
+      url.searchParams.delete('workflowRunId');
+    }
+    window.history.replaceState({}, '', url.toString());
+  };
   const handleRecentClick = async (id: string) => {
     // Fetch session to determine its mode, then route to correct workspace
     try {
@@ -46,17 +130,29 @@ export default function App() {
       const viewMap: Record<string, string> = {
         react: 'home', routed: 'home', hybrid: 'home',
         rag: 'qa', collaboration: 'multi', report: 'report',
+        simulation: 'simulation',
       };
       setView(viewMap[sessionMode] || 'home');
     } catch {
       setView('home');
     }
-    setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1);
+    setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1); updateUrl(id);
   };
   const handleRenameSession = async (id: string, t: string) => { try { await fetch(`/api/chat/sessions/${id}/title`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t }) }); refreshSessions(); } catch { /* ignore */ } };
   const handleDeleteSession = async (sessionId: string) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let deleted = false;
     try {
-      await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
+      const resp = await fetch(`/api/chat/sessions/${sessionId}`, {
+        method: 'DELETE',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      deleted = resp.ok || resp.status === 404;
+      if (!deleted) {
+        console.error(`Delete session ${sessionId} failed: HTTP ${resp.status}`);
+      }
       if (activeSessionId === sessionId) {
         sessionIdRef.current = null;
         setActiveSessionId(null);
@@ -64,8 +160,18 @@ export default function App() {
         setView('home');
         setWorkspaceKey(k => k + 1);
       }
-      refreshSessions();
-    } catch { /* ignore */ }
+    } catch (err: unknown) {
+      clearTimeout(timeoutId);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        console.error('Delete session timed out');
+      } else {
+        console.error('Delete session failed:', err);
+      }
+    } finally {
+      // Always refresh list (fire-and-forget — don't block modal close)
+      if (deleted) refreshSessions();
+      else setTimeout(() => refreshSessions(), 200); // slight delay so error can be seen
+    }
   };
   const info = WORKSPACE_INFO[view] || WORKSPACE_INFO.home;
   // Dedup by session ID — same sessionId = 1 sidebar entry
@@ -75,12 +181,15 @@ export default function App() {
 
   return (
     <LayoutShell activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
-      <div style={{ maxWidth: 960, margin: '0 auto', width: '100%', padding: '0 24px 32px' }}>
+      <div style={view === 'simulation' ? { width: '100%', padding: '16px 24px 32px' } as React.CSSProperties : { maxWidth: 960, margin: '0 auto', width: '100%', padding: '0 24px 32px' }}>
         {view === 'alert' ? <AlertDashboard /> :
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard /> :
-         view === 'qa' ? <QaDashboard onRefresh={refreshSessions} /> :
-         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> : (
+         view === 'qa' ? <QaDashboard onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
+         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> :
+         view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> :
+         view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} /> :
+         view === 'evaluation' ? <EvaluationDashboard /> : (
           <>
             <HomeHero />
             <ScenarioGrid onSelect={handleScenario} />
@@ -477,7 +586,7 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 
 // ========== Knowledge Base (QA) Dashboard ==========
 
-function QaDashboard({ onRefresh }: { onRefresh: () => void }) {
+function QaDashboard({ onRefresh, activeSessionId }: { onRefresh: () => void; activeSessionId?: string }) {
   const [ragStatus] = useState<Record<string,unknown>>({});
   useEffect(() => { fetch('/api/rag/status').then(r => r.json()).catch(() => {}); }, []);
   const quickQs = ['雨天早高峰拥堵有哪些处置原则？', '信号灯异常应该优先检索哪些预案？', '学校周边拥堵需要关注哪些安全因素？', '为什么证据不足时系统会拒答？', '高风险路口如何判定？'];
@@ -498,7 +607,7 @@ function QaDashboard({ onRefresh }: { onRefresh: () => void }) {
           <div key={q} onClick={() => { /* set input */ }} style={{ background: '#FFF', borderRadius: 10, padding: '6px 12px', border: '1px solid #E5E7EB', cursor: 'pointer', fontSize: 11, color: '#6B7280' }}>{q}</div>
         ))}
       </div>
-      <ChatWorkspace sessionId={undefined} pendingCreate={true} defaultMode="rag" showFullModes={false} onSessionCreated={(id) => { onRefresh(); }} onConversationUpdate={onRefresh} onNewConversation={() => {}} view="qa" />
+      <ChatWorkspace sessionId={activeSessionId} pendingCreate={!activeSessionId} defaultMode="rag" showFullModes={false} onSessionCreated={(id) => { onRefresh(); }} onConversationUpdate={onRefresh} onNewConversation={() => {}} view="qa" />
     </div>
   );
 }

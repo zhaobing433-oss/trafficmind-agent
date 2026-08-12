@@ -11,6 +11,8 @@ import { streamChat } from '../api/streamApi';
 import { Spin, Tag, Collapse } from 'antd';
 import { RobotOutlined, UserOutlined, WarningOutlined, SendOutlined, PlusOutlined } from '@ant-design/icons';
 import ThinkingAvatar from './ThinkingAvatar';
+import RagTracePanel from './rag/RagTracePanel';
+import type { RagEvidenceItem } from '../types/ragV2';
 
 type R = Record<string, unknown>;
 
@@ -59,10 +61,17 @@ export default function ChatWorkspace({
       const sessionMode = detail.session.mode || 'react';
       // Lock mode to the session's mode when recovering history
       setMode(sessionMode);
-      const msgs = (detail.messages || []).map((m: BackendMsg) => ({
-        id: m.id, role: m.role as Message['role'], content: m.content, mode: m.mode,
-        timestamp: new Date(m.created_at).getTime(), streaming: false,
-      } as Message));
+      const msgs = (detail.messages || []).map((m: BackendMsg) => {
+        let result: Record<string, unknown> | undefined;
+        if (m.result_summary) {
+          try { result = JSON.parse(m.result_summary); } catch { /* ignore */ }
+        }
+        return {
+          id: m.id, role: m.role as Message['role'], content: m.content, mode: m.mode,
+          timestamp: new Date(m.created_at).getTime(), streaming: false,
+          result,
+        } as Message;
+      });
       // Only update if we don't have local streaming messages
       setConv(prev => {
         if (prev.messages.some(m => m.streaming)) return prev;
@@ -128,8 +137,18 @@ export default function ChatWorkspace({
           onDone: (data) => {
             setConv(prev => ({
               ...prev,
-              messages: prev.messages.map(m =>
-                m.id === skelId ? { ...m, streaming: false, result: data as unknown as R } as Message : m),
+              messages: prev.messages.map(m => {
+                if (m.id !== skelId) return m;
+                // Use content from done event if no deltas arrived (e.g. abstain path)
+                const doneContent = (data.content || data.answer || '') as string;
+                const finalContent = m.content.replace(/^正在.*\.\.\./, '') || doneContent;
+                return {
+                  ...m,
+                  content: finalContent || doneContent || m.content,
+                  streaming: false,
+                  result: data as unknown as R,
+                } as Message;
+              }),
             }));
             onConversationUpdate?.();
           },
@@ -212,6 +231,46 @@ export default function ChatWorkspace({
               {msg.role === 'assistant' && !msg.streaming && msg.result && (
                 <Collapse size="small" ghost items={[{ key: 'detail', label: <span style={{ fontSize: 11, color: '#9CA3AF' }}>查看详情</span>,
                   children: <ResultTags result={msg.result as R} /> }]} />
+              )}
+              {msg.role === 'assistant' && !msg.streaming && msg.result && (
+                (() => {
+                  const res = msg.result as R;
+                  const traceId = (res.traceId || res.trace_id) as string | undefined;
+                  const evidenceRaw = (res.evidence) as unknown[];
+                  const evidence: RagEvidenceItem[] = (evidenceRaw || []).map((e: unknown) => {
+                    const item = e as Record<string, unknown>;
+                    const getStr = (k1: string, k2: string) => {
+                      const v = item[k1] ?? item[k2];
+                      return typeof v === 'string' ? v : undefined;
+                    };
+                    const getNum = (k1: string, k2: string) => {
+                      const v = item[k1] ?? item[k2];
+                      return typeof v === 'number' ? v : undefined;
+                    };
+                    return {
+                      evidenceId: String(item.evidenceId ?? item.evidence_id ?? ''),
+                      chunkId: String(item.chunkId ?? item.chunk_id ?? ''),
+                      documentId: String(item.documentId ?? item.document_id ?? ''),
+                      parentChunkId: getStr('parentChunkId', 'parent_chunk_id'),
+                      title: String(item.title ?? ''),
+                      sectionPath: String(item.sectionPath ?? item.section_path ?? ''),
+                      docType: (String(item.docType ?? item.doc_type ?? 'other')) as RagEvidenceItem['docType'],
+                      content: String(item.content ?? ''),
+                      contextualContent: String(item.contextualContent ?? item.contextual_content ?? ''),
+                      authorityLevel: (String(item.authorityLevel ?? item.authority_level ?? 'operational')) as RagEvidenceItem['authorityLevel'],
+                      effectiveFrom: getStr('effectiveFrom', 'effective_from'),
+                      effectiveTo: getStr('effectiveTo', 'effective_to'),
+                      retrievalChannels: (Array.isArray(item.retrievalChannels) ? item.retrievalChannels : Array.isArray(item.retrieval_channels) ? item.retrieval_channels : []) as string[],
+                      rrfScore: getNum('rrfScore', 'rrf_score'),
+                      rerankScore: getNum('rerankScore', 'rerank_score'),
+                      sourceUri: getStr('sourceUri', 'source_uri'),
+                    };
+                  });
+                  if (traceId) {
+                    return <RagTracePanel traceId={traceId} evidence={evidence} />;
+                  }
+                  return null;
+                })()
               )}
             </div>
           </div>

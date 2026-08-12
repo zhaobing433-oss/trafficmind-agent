@@ -98,6 +98,7 @@ export const collabApi = {
       const reader = response.body?.getReader();
       if (!reader) { onError?.('No stream'); return; }
       const decoder = new TextDecoder(); let buffer = '';
+      let receivedTerminal = false;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -107,10 +108,17 @@ export const collabApi = {
         for (const line of lines) {
           if (line.startsWith('event: ')) { currentEvent = line.slice(7).trim(); }
           else if (line.startsWith('data: ')) {
-            try { const raw = JSON.parse(line.slice(6)); const data = normalizeEvent(raw); data.eventType = data.eventType || currentEvent; onEvent?.(data); if (currentEvent === 'done') onDone?.(data); }
+            try { const raw = JSON.parse(line.slice(6)); const data = normalizeEvent(raw); data.eventType = data.eventType || currentEvent; onEvent?.(data);
+              if (['run_completed','run_partial_success','run_failed','run_interrupted','done'].includes(currentEvent)) receivedTerminal = true;
+              if (currentEvent === 'done') onDone?.(data); }
             catch { /* skip */ }
           }
         }
+      }
+      // Stream ended without terminal event → mark as interrupted
+      if (!receivedTerminal) {
+        const lastRunId = (body.runId as string) || '';
+        onEvent?.({ eventType: 'run_interrupted', runId: lastRunId, timestamp: new Date().toISOString() });
       }
     }).catch(e => { if (e.name !== 'AbortError') onError?.(e.message); });
   },

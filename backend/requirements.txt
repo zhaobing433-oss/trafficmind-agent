@@ -18,3 +18,8 @@ openai==1.58.1
 # 测试
 pytest==8.3.4
 httpx==0.28.1
+
+# RAG V2 (Phase 11)
+chromadb>=0.5,<2.0
+sentence-transformers>=3.0,<6.0
+jieba>=0.42,<1.0

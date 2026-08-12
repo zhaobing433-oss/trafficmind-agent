@@ -100,37 +100,108 @@ async def chat_stream_generator(
 
     # --- 2. Dispatch by mode ---
     if mode == "rag":
-        yield sse_event("step", {"stage": "intent", "text": "正在识别交通问题意图..."})
-        intent = classify_traffic_intent(content)
-        yield sse_event("step", {"stage": "retrieval", "text": "正在检索交通知识库..."})
-        raw = semantic_search(content, limit=10).get("results", [])
-        yield sse_event("step", {"stage": "rerank", "text": "正在重排证据..."})
-        reranked = domain_rerank_and_filter(content, raw)
-        evidence_items = reranked.get("evidence", [])
-        if evidence_items:
-            yield sse_event("evidence", {"items": evidence_items[:5]})
+        # Try RAG V2 first
+        rag_v2_available = False
+        try:
+            from backend.rag.v2.pipeline import get_pipeline
+            pipeline = get_pipeline()
+            if pipeline is not None:
+                rag_v2_available = True
+        except Exception:
+            pass
 
-        yield sse_event("step", {"stage": "llm", "text": "正在基于证据生成回答..."})
-        answer = ""
-        if LLM_ENABLED:
-            ev_text = "\n".join([f"[{e['docType']}] {e['content'][:300]}" for e in evidence_items[:5]])
-            prompt = f"基于以下知识库证据回答用户问题。只能基于证据回答，证据不足请明确说明。\n\n证据:\n{ev_text}\n\n用户问题: {content}\n\n请用中文简洁回答（格式：结论/依据/建议/不确定性说明）："
-            async for delta in _llm_stream_deltas(prompt):
-                answer += delta
-                yield sse_event("delta", {"text": delta})
+        if rag_v2_available:
+            # Use RAG V2 pipeline — preserves traceId, evidence, citations
+            from backend.rag.v2.pipeline import get_pipeline
+            pipeline = get_pipeline()
+            answer_text = ""
+            trace_id = ""
+            evidence_items = []
+            evidence_state = ""
+            citation_map = []
+            abstained = False
+
+            async for event in pipeline.ask_stream(question=content):
+                event_name = event.get("event", "message")
+                event_data = event.get("data", {})
+                # Collect metadata from pipeline events but DON'T yield duplicate done
+                if event_name == "delta":
+                    answer_text += event_data.get("text", "")
+                    yield sse_event(event_name, event_data)
+                elif event_name == "done":
+                    trace_id = event_data.get("traceId", event_data.get("trace_id", ""))
+                    evidence_items = event_data.get("evidence", [])
+                    evidence_state = event_data.get("evidence_state", "")
+                    citation_map = event_data.get("citation_map", [])
+                    abstained = event_data.get("abstained", False)
+                    pipeline_answer = event_data.get("answer", event_data.get("content", ""))
+                    # If no deltas were sent (abstain path), use pipeline's answer text
+                    if not answer_text and pipeline_answer:
+                        answer_text = pipeline_answer
+                    # DON'T yield — we'll send enriched done below
+                else:
+                    yield sse_event(event_name, event_data)
                 await asyncio.sleep(0.01)
 
-        if not answer:
-            ga = generate_grounded_answer(content, raw, memory_ctx, mode)
-            answer = ga.get("answer", "")
-            for chunk in _text_chunks(answer):
-                yield sse_event("delta", {"text": chunk})
-                await asyncio.sleep(0.02)
+            asst_id = f"am_{int(datetime.now().timestamp() * 1000)}"
+            result_data = {
+                "traceId": trace_id,
+                "evidence": evidence_items,
+                "evidence_state": evidence_state,
+                "citation_map": citation_map,
+                "abstained": abstained,
+            }
+            evidence_ids_list = [e.get("evidence_id", "") for e in evidence_items] if evidence_items else []
+            add_message(asst_id, session_id, "assistant", answer_text, mode,
+                        result_summary=result_data, evidence_ids=evidence_ids_list)
+            # Generate title (with timeout guard) before done
+            ti = {"title": "知识库问答", "titleUpdated": False}
+            try:
+                ti = _finalize_title_and_done(session_id, content, answer_text)
+            except Exception:
+                pass
+            yield sse_event("done", {
+                **ti, "sessionId": session_id, "assistantMessageId": asst_id,
+                "abstained": abstained, "usedLLM": False,
+                "traceId": trace_id, "trace_id": trace_id,
+                "evidence": evidence_items, "evidence_state": evidence_state,
+                "citation_map": citation_map,
+                "content": answer_text,
+            })
+            return  # CRITICAL: close generator immediately after done
+        else:
+            # Fallback to RAG V1
+            yield sse_event("step", {"stage": "intent", "text": "正在识别交通问题意图..."})
+            intent = classify_traffic_intent(content)
+            yield sse_event("step", {"stage": "retrieval", "text": "正在检索交通知识库..."})
+            raw = semantic_search(content, limit=10).get("results", [])
+            yield sse_event("step", {"stage": "rerank", "text": "正在重排证据..."})
+            reranked = domain_rerank_and_filter(content, raw)
+            evidence_items = reranked.get("evidence", [])
+            if evidence_items:
+                yield sse_event("evidence", {"items": evidence_items[:5]})
 
-        asst_id = f"am_{int(datetime.now().timestamp() * 1000)}"
-        add_message(asst_id, session_id, "assistant", answer, mode)
-        ti = _finalize_title_and_done(session_id, content, answer)
-        yield sse_event("done", {**ti, "sessionId": session_id, "assistantMessageId": asst_id, "abstained": len(evidence_items) == 0, "usedLLM": LLM_ENABLED and bool(answer)})
+            yield sse_event("step", {"stage": "llm", "text": "正在基于证据生成回答..."})
+            answer = ""
+            if LLM_ENABLED:
+                ev_text = "\n".join([f"[{e['docType']}] {e['content'][:300]}" for e in evidence_items[:5]])
+                prompt = f"基于以下知识库证据回答用户问题。只能基于证据回答，证据不足请明确说明。\n\n证据:\n{ev_text}\n\n用户问题: {content}\n\n请用中文简洁回答（格式：结论/依据/建议/不确定性说明）："
+                async for delta in _llm_stream_deltas(prompt):
+                    answer += delta
+                    yield sse_event("delta", {"text": delta})
+                    await asyncio.sleep(0.01)
+
+            if not answer:
+                ga = generate_grounded_answer(content, raw, memory_ctx, mode)
+                answer = ga.get("answer", "")
+                for chunk in _text_chunks(answer):
+                    yield sse_event("delta", {"text": chunk})
+                    await asyncio.sleep(0.02)
+
+            asst_id = f"am_{int(datetime.now().timestamp() * 1000)}"
+            add_message(asst_id, session_id, "assistant", answer, mode)
+            ti = _finalize_title_and_done(session_id, content, answer)
+            yield sse_event("done", {**ti, "sessionId": session_id, "assistantMessageId": asst_id, "abstained": len(evidence_items) == 0, "usedLLM": LLM_ENABLED and bool(answer)})
 
     elif mode == "react":
         # 智能诊断 — 受控 ReAct，不输出多 Agent 报告

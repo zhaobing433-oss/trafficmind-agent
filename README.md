@@ -4,6 +4,8 @@
 
 TrafficMind Agent 是一个智能交通事件分析系统，支持从事件研判、知识库问答、相似案例检索、日报周报生成到多 Agent 协同编排的全链路智慧交通工作台。后端基于 **FastAPI**，前端使用 **React + TypeScript**，集成 **DeepSeek LLM**、**Chroma 向量检索（RAG）**、**SSE 真流式**、**多 Agent DAG 编排**和 **SQLite 持久化**。LLM 不可用时具备完整的可控降级能力。
 
+**Phase 10 Memory V2** 将多轮交通研判转化为**可追踪、可纠正、可过期、按事件线程隔离并可按 Agent 最小权限注入**的结构化 Session Memory，包含 Event Thread 隔离、确定性意图分类、可解释过滤排序、用户纠正 Supersede 链、Proposal 确认绑定、Memory Trace 完整追踪和前端可观测面板。
+
 > **一句话简历版**：独立设计并实现 TrafficMind Agent — 基于 FastAPI + LangGraph + React 的智慧交通多 Agent 协同研判系统，支持自然语言事件解析、动态 Agent 路由、DAG 任务编排、冲突检测仲裁、SSE 流式推送和历史会话完整恢复。
 
 ---

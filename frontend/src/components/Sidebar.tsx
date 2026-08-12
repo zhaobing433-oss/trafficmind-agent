@@ -7,9 +7,12 @@ import { Tag, Input, Modal } from 'antd';
 
 const NAV_ITEMS = [
   { key: 'multi', label: '协同分析', icon: '🤝' },
+  { key: 'workflow', label: '工作流', icon: '🔀' },
+  { key: 'simulation', label: '交通态势', icon: '🗺' },
   { key: 'qa', label: '知识库', icon: '📖' },
   { key: 'report', label: '统计报告', icon: '📋' },
   { key: 'alert', label: '风险提醒', icon: '⚠' },
+  { key: 'evaluation', label: '评测中心', icon: '📊' },
 ];
 
 const MODE_LABELS: Record<string, string> = { react: '诊断', routed: '研判', rag: '知识库', hybrid: '相似', report: '报告', collaboration: '协同' };
@@ -139,7 +142,7 @@ export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick
           {workspaceOpen && (
             <div style={{ padding: '2px 8px 6px' }}>
               {NAV_ITEMS.map(item => (
-                <div key={item.key} onClick={() => onNavigate(item.key)}
+                <div key={item.key} data-nav={item.key} onClick={() => onNavigate(item.key)}
                   style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: activeView === item.key ? '#0F766E' : '#4B5563', background: activeView === item.key ? '#F0FDFA' : 'transparent', fontWeight: activeView === item.key ? 600 : 400, marginBottom: 1 }}>
                   <span style={{ fontSize: 14 }}>{item.icon}</span> {item.label}
                 </div>

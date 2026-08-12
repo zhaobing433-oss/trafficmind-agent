@@ -38,11 +38,46 @@ from backend.config import EVENT_STATUSES, LLM_ENABLED
 async def lifespan(app: FastAPI):
     """应用启动时初始化数据库。"""
     init_db()
+    # Phase 6: Chat tables
+    from backend.chat.chat_db import init_chat_tables
+    init_chat_tables()
+    # Phase 9: Collaboration tables (idempotent)
+    from backend.agent.collaboration.db_repository import init_collaboration_tables
+    init_collaboration_tables()
+    # Phase 10: Memory V2 tables (idempotent)
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    # Phase 12: Workflow V1 tables (idempotent)
+    from backend.workflow.repository import init_workflow_tables
+    init_workflow_tables()
+    from backend.workflow.wait_scheduler import _migrate_wait_columns
+    _migrate_wait_columns()
+    # Phase 13: Simulation tables (idempotent)
+    from backend.simulation.repository import init_simulation_tables
+    init_simulation_tables()
+    # Phase 13 Round 2: Seed simulation_bridge template
+    from backend.workflow.templates import get_all_templates
+    from backend.workflow.repository import SQLiteWorkflowRepository
+    _wf_repo = SQLiteWorkflowRepository()
+    for build_fn in get_all_templates():
+        try:
+            definition = build_fn()
+            existing = _wf_repo.get_definition(definition.id)
+            if existing is None:
+                _wf_repo.save_definition(definition)
+                print(f"  [Workflow Seed] {definition.id}: {definition.name}")
+        except Exception:
+            pass  # 模板 seeding 失败不阻止启动
+    # Phase 12: Wait Scheduler
+    from backend.workflow.wait_scheduler import get_wait_scheduler
+    wait_scheduler = get_wait_scheduler()
+    await wait_scheduler.start()
     llm_status = "已启用 (DeepSeek)" if LLM_ENABLED else "未配置，将使用本地模板"
     print(f"TrafficMind Agent 启动完成")
     print(f"  LLM 状态: {llm_status}")
     print(f"  API 文档: http://localhost:8000/docs")
     yield
+    await wait_scheduler.stop()
 
 
 # -------------------- 创建 FastAPI 应用 --------------------
@@ -353,6 +388,198 @@ async def rag_ask_endpoint(body: AskRequest):
 @app.get("/rag/status", summary="查看向量库状态")
 async def rag_status():
     return get_collection_stats()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 11: RAG V2 生产化升级
+# ═══════════════════════════════════════════════════════════════════════════════
+
+try:
+    from backend.rag.v2.pipeline import get_pipeline
+    from backend.rag.v2.indexer import IncrementalIndexer, load_all_documents
+    from backend.rag.v2.providers import get_embedding_provider, get_reranker_provider
+    from backend.rag.v2.document_repository import (
+        get_trace, get_latest_index_version,
+    )
+    from backend.rag.v2.models import (
+        EvidenceState,
+        IndexJobResult,
+        RagAnswer,
+        RagTrace,
+    )
+    _RAG_V2_AVAILABLE = True
+except ImportError as e:
+    _RAG_V2_AVAILABLE = False
+    _rag_v2_import_error = str(e)
+
+
+class RagV2SearchRequest(BaseModel):
+    query: str
+    top_k: Optional[int] = 10
+    filters: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None
+    event_thread_id: Optional[str] = None
+    agent_id: Optional[str] = None
+
+
+class RagV2AskRequest(BaseModel):
+    question: str
+    session_id: Optional[str] = None
+    event_thread_id: Optional[str] = None
+    include_trace: Optional[bool] = True
+
+
+@app.post("/rag/v2/search", summary="[Phase 11] RAG V2 混合检索")
+async def rag_v2_search(body: RagV2SearchRequest):
+    """Dense + BM25 + Structured → RRF → Reranker 完整检索管线。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    pipeline = get_pipeline()
+    result = pipeline.search(
+        query=body.query,
+        top_k=body.top_k or 10,
+        filters=body.filters,
+    )
+    return result
+
+
+@app.post("/rag/v2/ask", summary="[Phase 11] RAG V2 知识库问答")
+async def rag_v2_ask(body: RagV2AskRequest):
+    """端到端 RAG V2 问答：检索→重排→证据评估→生成带引用答案。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    pipeline = get_pipeline()
+    answer: RagAnswer = pipeline.ask(question=body.question)
+    resp = answer.model_dump(mode="json")
+    if body.include_trace and answer.trace_id:
+        try:
+            trace = get_trace(answer.trace_id)
+            if trace:
+                resp["trace"] = trace.model_dump(mode="json")
+        except Exception:
+            pass
+    return resp
+
+
+@app.post("/rag/v2/index", summary="[Phase 11] RAG V2 增量索引")
+async def rag_v2_index():
+    """增量索引：加载所有知识源文档，checksum 去重，仅更新变化部分。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    try:
+        docs = load_all_documents()
+        emb_provider = get_embedding_provider()
+        indexer = IncrementalIndexer(emb_provider)
+        job: IndexJobResult = indexer.index_documents(docs)
+        return job.model_dump(mode="json")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"索引失败: {e}")
+
+
+@app.get("/rag/v2/status", summary="[Phase 11] RAG V2 索引状态")
+async def rag_v2_status():
+    """返回最新索引版本信息和文档统计。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    try:
+        ver = get_latest_index_version()
+        emb = get_embedding_provider()
+        reranker = get_reranker_provider()
+        from backend.rag.v2.dense_index import get_collection_count, get_active_collection_name
+        active_coll = get_active_collection_name()
+        return {
+            "rag_v2_enabled": True,
+            "index_version": ver.model_dump(mode="json") if ver else None,
+            "configured_embedding_model": emb.get_model_name(),
+            "resolved_embedding_model": emb.get_resolved_model_name(),
+            "embedding_dimension": emb.get_dimension(),
+            "embedding_provider_class": type(emb).__name__,
+            "embedding_degraded": emb.is_degraded(),
+            "embedding_degraded_reason": emb.get_degraded_reason(),
+            "configured_reranker_model": reranker.get_model_name(),
+            "resolved_reranker_model": reranker.get_resolved_model_name(),
+            "reranker_degraded": reranker.is_degraded(),
+            "reranker_degraded_reason": reranker.get_degraded_reason(),
+            "active_collection": active_coll,
+            "chunks_in_chroma": get_collection_count(active_coll),
+            "v1_collection_preserved": True,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"状态查询失败: {e}")
+
+
+@app.get("/rag/v2/traces/{trace_id}", summary="[Phase 11] RAG V2 查询 Trace")
+async def rag_v2_get_trace(trace_id: str):
+    """查询指定 trace_id 的完整 RAG 追踪记录。"""
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    trace: Optional[RagTrace] = get_trace(trace_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail=f"Trace {trace_id} 不存在")
+    return trace.model_dump(mode="json")
+
+
+@app.post("/rag/v2/ask/stream", summary="[Phase 11] RAG V2 流式问答（SSE）")
+async def rag_v2_ask_stream(body: RagV2AskRequest):
+    """SSE 流式 RAG V2 问答。
+
+    事件类型: rag_route_done → rag_query_rewritten → rag_candidates_retrieved
+    → rag_rerank_done → rag_evidence_selected → rag_abstained (if insufficient)
+    → delta → rag_trace_ready → done
+    """
+    if not _RAG_V2_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=f"RAG V2 不可用: {_rag_v2_import_error}",
+        )
+    from backend.agent.streaming import sse_event
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    async def _stream():
+        try:
+            pipeline = get_pipeline()
+            async for event in pipeline.ask_stream(question=body.question):
+                event_name = event.get("event", "message")
+                event_data = event.get("data", {})
+                yield sse_event(event_name, event_data)
+                await asyncio.sleep(0.01)
+        except Exception as e:
+            import traceback
+            # Log full traceback server-side only, never send to client
+            print(f"[RAG SSE ERROR] {traceback.format_exc()}")
+            # Send safe error to client: no traceback, no local paths
+            error_msg = str(e).split("\n")[0][:200]  # first line only, capped
+            yield sse_event("error", {
+                "message": error_msg,
+                "details": "An internal error occurred during RAG processing."
+            })
+            yield sse_event("done", {"error": True, "degraded": True})
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/similar_cases_hybrid/{event_id}", summary="混合相似案例检索")
@@ -671,6 +898,133 @@ async def routed_analyze_stream(body: RoutedStreamRequest):
     return await _legacy_analyze_stream(body)
 
 
+async def _run_memory_extraction(
+    session_id: str, run_id: str,
+    user_message_id: str, assistant_message_id: str,
+    user_input: str, current_event: Dict[str, Any],
+    selected_agents: List[str],
+    conflicts: List[Dict], arbitration_results: List[Dict],
+    fusion_summary: str, final_decision: Any,
+    requires_human_review: bool, run_status: str,
+    degraded: bool = False,
+    event_thread_id: str = "",
+    is_first_round: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Phase 10 Memory V2: 运行抽取并写入结构化记忆。
+
+    从 CollaborationRepository 读取 Run 最终状态，不依赖 SSE 字符串解析。
+    即使无候选也写入 Trace（no_op），失败时发送 memory_write_failed。
+    """
+    try:
+        from backend.memory.coordinator import MemoryCoordinator
+        from backend.memory.factory import create_memory_repository
+        from backend.memory.models import MemoryTrace
+        from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+
+        # === Read Run state from collaboration repository (source of truth) ===
+        collab_repo = SQLiteCollaborationRepository()
+        run_data = collab_repo.get_run(run_id)
+
+        # Derive fields from repository data
+        _run_status = run_data.get("status", run_status) if run_data else run_status
+
+        # Parse final_decision from repository
+        _fd = final_decision
+        if run_data and not _fd:
+            raw_fd = run_data.get("final_decision", "")
+            if isinstance(raw_fd, str) and raw_fd:
+                try:
+                    _fd = json.loads(raw_fd)
+                except Exception:
+                    _fd = {"fusionSummary": raw_fd}
+        tasks = []
+        conflict_records = []
+        try:
+            import sqlite3 as _sq
+            from backend.config import DB_PATH as _dbp
+            conn = _sq.connect(_dbp)
+            conn.row_factory = _sq.Row
+            trows = conn.execute(
+                "SELECT * FROM collaboration_tasks WHERE run_id=? AND status='succeeded'",
+                (run_id,),
+            ).fetchall()
+            tasks = [dict(r) for r in trows]
+            crows = conn.execute(
+                "SELECT * FROM collaboration_conflicts WHERE run_id=?", (run_id,)
+            ).fetchall()
+            conflict_records = [dict(r) for r in crows]
+            conn.close()
+        except Exception:
+            pass
+
+        # Build agent_results from tasks
+        agent_results = []
+        for t in tasks:
+            output = t.get("output_snapshot", "{}")
+            if isinstance(output, str):
+                try:
+                    output = json.loads(output)
+                except Exception:
+                    output = {}
+            if output:
+                agent_results.append({
+                    "agentName": t.get("agent_name", ""),
+                    "suggestion": output.get("suggestion", ""),
+                    "findings": output.get("findings", []),
+                    "urgency": output.get("urgency", "low"),
+                    "confidence": output.get("confidence", 0),
+                })
+
+        # Use repository-derived final_decision if not already captured
+        fd = _fd
+
+        coordinator = MemoryCoordinator()
+        result = coordinator.extract_and_write(
+            session_id=session_id,
+            run_id=run_id,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            user_input=user_input,
+            current_event=current_event,
+            selected_agents=selected_agents,
+            agent_results=agent_results,
+            conflicts=conflicts or [],
+            arbitration_results=arbitration_results or [],
+            fusion_summary=fusion_summary or "",
+            final_decision=fd or {},
+            requires_human_review=requires_human_review,
+            run_status=_run_status or run_status,
+            degraded=degraded,
+            is_first_round=is_first_round,
+            event_thread_id=event_thread_id,
+        )
+        return result
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        # Write a no_op trace so the run is never without a trace record
+        try:
+            repo = create_memory_repository()
+            repo.merge_trace(MemoryTrace(
+                trace_id=f"memtrace_{run_id}", run_id=run_id,
+                session_id=session_id, recall_intent="write_failed",
+                write_results_json=json.dumps([
+                    {"action": "no_op", "reason": f"memory_extraction_error: {str(e)[:100]}"}
+                ], ensure_ascii=False),
+                write_latency_ms=0, event_thread_id=event_thread_id,
+            ), phase="write")
+        except Exception:
+            pass
+        return {
+            "runId": run_id, "sessionId": session_id,
+            "candidateCount": 0, "createdCount": 0, "deduplicatedCount": 0,
+            "supersededCount": 0, "rejectedCount": 0, "confirmedCount": 0,
+            "latencyMs": 0, "traceId": "", "writeResults": [
+                {"action": "no_op", "reason": f"memory_extraction_error: {str(e)[:100]}"}
+            ], "error": str(e)[:200],
+        }
+
+
 async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
     """使用 CollaborationOrchestrator 执行协同分析。"""
     import asyncio as _asyncio
@@ -680,6 +1034,7 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
     from backend.agent.collaboration.budget import ExecutionBudget
 
     async def agent_stream():
+        from backend.memory.coordinator import MemoryCoordinator
         from backend.agent.collaboration.event_parser import parse_content_to_event, build_current_event
         from backend.agent.collaboration.db_repository import load_previous_run_context
 
@@ -754,9 +1109,77 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
         routing = route_agents(info)
         selected = routing["selectedAgents"][:4]  # Cap at 4 agents
 
+        # ===== Phase 10 M3: Memory Recall Pipeline =====
+        import copy as _copy
+        _current_event_before_recall = _copy.deepcopy(info)
+
+        yield sse_event("memory_recall_started", {
+            "runId": run_id, "sessionId": sid, "timestamp": datetime.now().isoformat(),
+        })
+
+        _mem_coordinator = MemoryCoordinator()
+        _recall_result = _mem_coordinator.recall_and_inject(
+            session_id=sid, run_id=run_id,
+            user_input=query_text or content_text or "",
+            current_event=info,
+            agent_targets=selected,
+            context_policy=context_policy,
+        )
+
+        yield sse_event("memory_recall_completed", {
+            "runId": run_id, "sessionId": sid,
+            "eventThreadId": _recall_result.get("eventThreadId", ""),
+            "intent": _recall_result.get("intent", ""),
+            "candidateCount": _recall_result.get("candidateCount", 0),
+            "selectedCount": _recall_result.get("selectedCount", 0),
+            "rejectedCount": _recall_result.get("rejectedCount", 0),
+            "latencyMs": _recall_result.get("latencyMs", 0),
+            "tokenEstimate": _recall_result.get("tokenEstimate", 0),
+        })
+
+        # Verify currentEvent immutability
+        assert _current_event_before_recall == info, (
+            "currentEvent was mutated during recall — CRITICAL BUG"
+        )
+
+        # Build routingContext from recall result
+        _routing_ctx = _recall_result.get("routingContext", {})
+        if _routing_ctx:
+            # Use routing-enhanced info for route_agents if available
+            _routing_info = dict(info)
+            for k, v in _routing_ctx.items():
+                if k not in ("fieldSources",):
+                    if _routing_info.get(k) in (None, "", False) and v is not None:
+                        _routing_info[k] = v
+            routing = route_agents(_routing_info)
+            selected = routing["selectedAgents"][:4]
+
+        # Build agent injection map stats for SSE
+        _agent_map = _recall_result.get("agentInjectionMap", {})
+        yield sse_event("memory_injection_ready", {
+            "runId": run_id,
+            "agentTargets": selected,
+            "injectedItemCountByAgent": {
+                a: m.get("itemCount", 0) for a, m in _agent_map.items()
+            },
+        })
+
+        if _recall_result.get("error"):
+            yield sse_event("memory_recall_failed", {
+                "runId": run_id, "sessionId": sid,
+                "errorCode": "recall_error",
+                "safeMessage": "Memory recall encountered an error, continuing with empty context",
+            })
+
         degraded = False
         fallback_reason = ""
         fusion_summary = ""
+        # Phase 10 Memory V2 tracking
+        run_status = "unknown"
+        conflicts_list = []
+        arbitration_list = []
+        final_decision_for_memory = None
+        requires_human_review_for_memory = False
         try:
             orchestrator = CollaborationOrchestrator()
             budget = ExecutionBudget(max_agents=4, max_agent_calls=2, max_retries=1, max_total_seconds=90)
@@ -771,24 +1194,74 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
                     import re as _re
                     match = _re.search(r'\"fusionSummary\":\s*\"([^\"]+)\"', event_str)
                     if match: fusion_summary = match.group(1)
+                # Phase 10 Memory tracking
+                if 'event: run_completed' in event_str:
+                    run_status = "completed"
+                elif 'event: run_partial_success' in event_str:
+                    run_status = "partial_success"
+                elif 'event: run_failed' in event_str:
+                    run_status = "failed"
                 yield event_str
             # Orchestrator handles its own done event — wrapper does NOT send duplicate
         except Exception as e:
             # Non-retryable: don't silently fallback
             if any(kw in str(e) for kw in ["ValidationError", "缺少", "未注册", "非法"]):
-                yield sse_error(str(e))
+                run_status = "failed"
+                yield sse_event("run_failed", {"runId": run_id, "reason": str(e)[:200], "errorCode": "agent_not_registered"})
                 return
             # System error: degraded fallback
             degraded = True; fallback_reason = str(e)
             yield sse_event("fallback_started", {"reason": fallback_reason, "fallbackFrom": "orchestrator"})
             async for ev in _legacy_analyze_stream_inner(body, sid):
                 yield ev
+        finally:
+            # Guard: ensure collaboration_runs.status is never left in "running" if we crash
+            if run_status == "unknown":
+                try:
+                    from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+                    repo = SQLiteCollaborationRepository()
+                    run_data = repo.get_run(run_id)
+                    if run_data and run_data.get("status") not in ("completed", "partial_success", "failed", "interrupted"):
+                        run_data["status"] = "failed"
+                        run_data["updated_at"] = datetime.now().isoformat()
+                        repo.update_run(run_data)
+                except Exception:
+                    pass
 
         # Save assistant message with REAL fusion summary (not placeholder)
         assistant_content = fusion_summary or "协同分析已完成，请查看运行详情获取融合决策。"
         am_id = f"am_{int(datetime.now().timestamp() * 1000)}"
         add_message(am_id, sid, "assistant", assistant_content, "collaboration",
                     {"runId": run_id, "executionEngine": "orchestrator", "degraded": degraded, "fusionSummary": assistant_content})
+
+        # ===== Phase 10 Memory V2: 写入侧 =====
+        if run_status != "failed":
+            yield sse_event("memory_write_started", {
+                "runId": run_id, "sessionId": sid,
+                "timestamp": datetime.now().isoformat(),
+            })
+            _mem_result = await _run_memory_extraction(
+                sid, run_id, um_id, am_id,
+                query_text, info, selected,
+                conflicts_list, arbitration_list,
+                fusion_summary, final_decision_for_memory,
+                requires_human_review_for_memory,
+                run_status, degraded,
+                event_thread_id=_recall_result.get("eventThreadId", ""),
+                is_first_round=(previous_run_context is None),
+            )
+            if _mem_result:
+                yield sse_event("memory_write_completed", {
+                    "runId": _mem_result["runId"],
+                    "sessionId": _mem_result["sessionId"],
+                    "candidateCount": _mem_result["candidateCount"],
+                    "createdCount": _mem_result["createdCount"],
+                    "deduplicatedCount": _mem_result["deduplicatedCount"],
+                    "supersededCount": _mem_result["supersededCount"],
+                    "rejectedCount": _mem_result["rejectedCount"],
+                    "confirmedCount": _mem_result["confirmedCount"],
+                    "latencyMs": _mem_result["latencyMs"],
+                })
 
     return StreamingResponse(agent_stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -886,6 +1359,11 @@ async def health():
         "collaborationProtocolVersion": "1.0",
         "collaborationRepositoryType": "sqlite",
         "collaborationFallbackEnabled": True,
+        "memoryV2Enabled": True,
+        "memoryV2RepositoryType": "sqlite",
+        "ragV2Enabled": bool(globals().get("_RAG_V2_AVAILABLE", False)),
+        "ragV2EmbeddingModel": get_embedding_provider().get_model_name() if globals().get("_RAG_V2_AVAILABLE", False) else None,
+        "ragV2RerankerModel": get_reranker_provider().get_model_name() if globals().get("_RAG_V2_AVAILABLE", False) else None,
     }
 
 
@@ -958,3 +1436,162 @@ async def get_session_collaboration_runs(session_id: str):
     rows = conn.execute("SELECT * FROM collaboration_runs WHERE session_id=? ORDER BY started_at ASC, run_id ASC", (session_id,)).fetchall()
     conn.close()
     return {"runs": [dict(r) for r in rows]}
+
+
+# ==================== Phase 10 Memory V2 API ====================
+
+@app.get("/memory/sessions/{session_id}", summary="查询会话结构化记忆")
+async def get_session_memory(session_id: str):
+    """返回 Session 的结构化 Memory 视图。零 SQLite 直连。"""
+    from backend.memory.factory import create_memory_repository
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    repo = create_memory_repository()
+
+    from backend.chat.chat_db import get_session
+    sess = get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail=f"会话 {session_id} 不存在")
+
+    return repo.get_session_memory_view(session_id)
+
+
+@app.get("/memory/runs/{run_id}/trace", summary="查询 Run 的 Memory Trace")
+async def get_memory_trace(run_id: str):
+    """返回 Run 的 Memory Trace 完整记录。零 SQLite 直连。"""
+    from backend.memory.factory import create_memory_repository
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    repo = create_memory_repository()
+
+    trace = repo.get_trace_by_run(run_id)
+    if not trace:
+        from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+        collab = SQLiteCollaborationRepository()
+        run = collab.get_run(run_id)
+        if run:
+            return {
+                "runId": run_id,
+                "hasTrace": False,
+                "message": "该运行创建于 Memory V2 之前，无记忆追踪数据。",
+            }
+        raise HTTPException(status_code=404, detail=f"Run {run_id} 不存在")
+
+    return {
+        "runId": run_id,
+        "hasTrace": True,
+        "traceId": trace.trace_id,
+        "sessionId": trace.session_id,
+        "eventThreadId": getattr(trace, "event_thread_id", ""),
+        "recallIntent": trace.recall_intent,
+        "recallDecision": _safe_json(trace.recall_decision_json),
+        "recallPlan": _safe_json(trace.recall_plan_json),
+        "candidates": _safe_json(trace.candidates_json),
+        "selected": _safe_json(trace.selected_json),
+        "rejected": _safe_json(trace.rejected_json),
+        "injectionMap": _safe_json(trace.injection_map_json),
+        "writeCandidates": _safe_json(trace.write_candidates_json),
+        "writeResults": _safe_json(trace.write_results_json),
+        "tokenEstimate": trace.token_estimate,
+        "recallLatencyMs": trace.recall_latency_ms,
+        "writeLatencyMs": trace.write_latency_ms,
+        "createdAt": trace.created_at,
+        "updatedAt": trace.updated_at,
+    }
+
+
+@app.get("/memory/items/{memory_id}", summary="查询单条 Memory")
+async def get_memory_item(memory_id: str):
+    """返回单条 Memory 及来源链。零 SQLite 直连。"""
+    from backend.memory.factory import create_memory_repository
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    repo = create_memory_repository()
+
+    item = repo.get_item(memory_id)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Memory {memory_id} 不存在")
+
+    supersedes = None
+    if item.supersedes_id:
+        old = repo.get_item(item.supersedes_id)
+        if old:
+            supersedes = old.to_dict()
+    superseded_by = repo.get_item_superseded_by(memory_id)
+
+    thread = None
+    if item.event_thread_id:
+        t = repo.get_event_thread(item.event_thread_id)
+        thread = t.to_dict() if t else None
+
+    return {
+        "item": item.to_dict(),
+        "supersedes": supersedes,
+        "supersededBy": superseded_by.to_dict() if superseded_by else None,
+        "sourceRunId": item.source_run_id,
+        "sourceMessageId": item.source_message_id,
+        "eventThread": thread,
+        "provenance": {
+            "sourceType": item.source_type,
+            "sourceRunId": item.source_run_id,
+            "authorityLevel": item.authority_level,
+            "confidence": item.confidence,
+        },
+    }
+
+
+@app.get("/memory/sessions/{session_id}/threads", summary="查询 Event Thread 列表")
+async def list_event_threads(session_id: str):
+    """返回 Session 的 Event Thread 列表。零 SQLite 直连。"""
+    from backend.memory.factory import create_memory_repository
+    from backend.memory.store import init_memory_tables
+    init_memory_tables()
+    repo = create_memory_repository()
+
+    raw_threads = repo.list_event_threads(session_id)
+    threads = []
+    for t in raw_threads:
+        td = t.to_dict()
+        td["itemCount"] = repo.count_event_thread_items(session_id, t.id)
+        td["runCount"] = repo.count_event_thread_runs(session_id, t.id)
+        threads.append(td)
+
+    return {"sessionId": session_id, "threads": threads}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 12: Workflow V1 Router
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from backend.workflow.api import router as workflow_router
+app.include_router(workflow_router)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 13: Traffic Map & Simulation V1 Router
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from backend.simulation.api import router as simulation_router
+app.include_router(simulation_router)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 14: Workflow Observability V1 Router
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from backend.observability.api import router as observability_router
+app.include_router(observability_router)
+
+# Phase 14 Round 3: Evaluation Dashboard
+from backend.evaluation.eval_api import router as eval_router
+app.include_router(eval_router)
+
+
+def _safe_json(s: str):
+    """安全解析 JSON 字符串。"""
+    if not s:
+        return {} if s in ("", "{}") else []
+    try:
+        import json as _j
+        return _j.loads(s)
+    except Exception:
+        return s
+

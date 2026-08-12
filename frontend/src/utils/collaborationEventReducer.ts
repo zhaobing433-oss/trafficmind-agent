@@ -205,5 +205,68 @@ export function reduceCollaborationEvent(state: CollaborationRun, event: Event):
         // NEVER overwrite tasks from done — task lifecycle events are authoritative
       };
   }
+
+  // ===== Phase 10 Memory V2 SSE events =====
+  if (evType === "memory_recall_started") {
+    return { ...state, memoryPhase: "recalling" as const };
+  }
+  if (evType === "memory_recall_completed") {
+    return {
+      ...state,
+      memoryPhase: "recalled" as const,
+      memoryStats: {
+        candidateCount: (event.candidateCount as number) || 0,
+        selectedCount: (event.selectedCount as number) || 0,
+        rejectedCount: (event.rejectedCount as number) || 0,
+        intent: (event.intent as string) || "",
+        eventThreadId: (event.eventThreadId as string) || "",
+        latencyMs: (event.latencyMs as number) || 0,
+        tokenEstimate: (event.tokenEstimate as number) || 0,
+      },
+    };
+  }
+  if (evType === "memory_injection_ready") {
+    return {
+      ...state,
+      memoryPhase: "injected" as const,
+      memoryInjection: {
+        agentTargets: (event.agentTargets as string[]) || [],
+        injectedItemCountByAgent: (event.injectedItemCountByAgent as Record<string, number>) || {},
+      },
+    };
+  }
+  if (evType === "memory_recall_failed") {
+    return {
+      ...state,
+      memoryPhase: "recall_failed" as const,
+      memoryError: { errorCode: (event.errorCode as string) || "", safeMessage: (event.safeMessage as string) || "" },
+    };
+  }
+  if (evType === "memory_write_started") {
+    return { ...state, memoryPhase: "writing" as const };
+  }
+  if (evType === "memory_write_completed") {
+    return {
+      ...state,
+      memoryPhase: "written" as const,
+      memoryWriteStats: {
+        candidateCount: (event.candidateCount as number) || 0,
+        createdCount: (event.createdCount as number) || 0,
+        deduplicatedCount: (event.deduplicatedCount as number) || 0,
+        supersededCount: (event.supersededCount as number) || 0,
+        rejectedCount: (event.rejectedCount as number) || 0,
+        confirmedCount: (event.confirmedCount as number) || 0,
+        latencyMs: (event.latencyMs as number) || 0,
+      },
+    };
+  }
+  if (evType === "memory_write_failed") {
+    return {
+      ...state,
+      memoryPhase: "write_failed" as const,
+      memoryError: { errorCode: (event.errorCode as string) || "", safeMessage: (event.safeMessage as string) || "" },
+    };
+  }
+
   return state;
 }

@@ -87,3 +87,11 @@ NOTIFY_ENABLED = bool(
     or DINGTALK_WEBHOOK_URL
     or (SMTP_HOST and SMTP_TO)
 )
+
+# -------------------- Memory V2 配置 (Phase 10) --------------------
+
+# 存储后端: sqlite (当前) | postgres (Phase 11 预留)
+MEMORY_STORAGE_BACKEND = os.getenv("MEMORY_STORAGE_BACKEND", "sqlite")
+
+# PostgreSQL 连接串（Phase 11 启用，当前不读取）
+MEMORY_DATABASE_URL = os.getenv("MEMORY_DATABASE_URL", "")

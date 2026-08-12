@@ -1,0 +1,706 @@
+"""
+Memory V2 协调器 — Phase 10 里程碑二
+
+编排完整的 Memory 写入流程：
+Extractor → Policy → WriteGate → ConflictResolver → Store(tx) → Trace
+"""
+
+import json
+import time
+import logging
+from typing import Any, Dict, List, Optional
+
+from backend.memory.models import (
+    MemoryItem,
+    MemoryTrace,
+    MemoryWriteCandidate,
+    MemoryWriteResult,
+)
+from backend.memory.repository import MemoryStore
+from backend.memory.extractor import MemoryExtractor, MemoryExtractionResult
+from backend.memory.write_gate import MemoryWriteGate, GateDecision
+from backend.memory.conflict_resolver import ConflictResolver
+from backend.memory.constants import (
+    MemoryType,
+    MemoryStatus,
+    MemorySourceType,
+    AuthorityLevel,
+)
+from backend.memory.policy import DEFAULT_POLICY
+
+logger = logging.getLogger(__name__)
+
+
+class MemoryCoordinator:
+    """Memory V2 写入协调器。
+
+    协调 Extractor → Policy → WriteGate → ConflictResolver → Store → Trace
+    的完整流程。
+
+    Repository 通过依赖注入获得，默认使用 factory。
+    """
+
+    def __init__(self, repo: Optional[MemoryStore] = None):
+        """
+        Args:
+            repo: MemoryStore 实现。为 None 时使用默认 factory。
+        """
+        if repo is None:
+            from backend.memory.factory import create_memory_repository
+            repo = create_memory_repository()
+        self.repo: MemoryStore = repo
+        self.extractor = MemoryExtractor()
+        self.gate = MemoryWriteGate()
+        self.resolver = ConflictResolver()
+
+    def extract_and_write(
+        self,
+        session_id: str,
+        run_id: str,
+        user_message_id: str,
+        assistant_message_id: str,
+        user_input: str,
+        current_event: Dict[str, Any],
+        selected_agents: List[str],
+        agent_results: List[Dict[str, Any]],
+        conflicts: List[Dict[str, Any]],
+        arbitration_results: List[Dict[str, Any]],
+        fusion_summary: str,
+        final_decision: Any,
+        requires_human_review: bool,
+        run_status: str,
+        degraded: bool = False,
+        is_first_round: bool = False,
+        event_thread_id: str = "",
+    ) -> Dict[str, Any]:
+        """执行完整的 Memory 抽取和写入流程。
+
+        Returns:
+            {
+                "runId": str,
+                "sessionId": str,
+                "candidateCount": int,
+                "createdCount": int,
+                "deduplicatedCount": int,
+                "supersededCount": int,
+                "rejectedCount": int,
+                "confirmedCount": int,
+                "latencyMs": int,
+                "traceId": str,
+                "writeResults": List[Dict],
+                "error": Optional[str],
+            }
+        """
+        start_time = time.time()
+        trace_id = f"memtrace_{run_id}"
+        write_results: List[Dict[str, Any]] = []
+
+        try:
+            # ============ Step 1: Extract ============
+            extraction: MemoryExtractionResult = self.extractor.extract(
+                session_id=session_id,
+                run_id=run_id,
+                user_message_id=user_message_id,
+                assistant_message_id=assistant_message_id,
+                user_input=user_input,
+                current_event=current_event,
+                selected_agents=selected_agents,
+                agent_results=agent_results,
+                conflicts=conflicts,
+                arbitration_results=arbitration_results,
+                fusion_summary=fusion_summary,
+                final_decision=final_decision,
+                requires_human_review=requires_human_review,
+                run_status=run_status,
+                degraded=degraded,
+                is_first_round=is_first_round,
+            )
+
+            candidates = extraction.all_candidates()
+            if not candidates:
+                # Save trace with no_op even when no candidates
+                self.repo.merge_trace(MemoryTrace(
+                    trace_id=trace_id, run_id=run_id, session_id=session_id,
+                    write_results_json=json.dumps(
+                        [{"action": "no_op", "reason": "no_memory_candidates"}],
+                        ensure_ascii=False,
+                    ),
+                    write_latency_ms=int((time.time() - start_time) * 1000),
+                    event_thread_id=event_thread_id,
+                ), phase="write")
+                return {
+                    "runId": run_id, "sessionId": session_id,
+                    "candidateCount": 0, "createdCount": 0, "deduplicatedCount": 0,
+                    "supersededCount": 0, "rejectedCount": 0, "confirmedCount": 0,
+                    "latencyMs": int((time.time() - start_time) * 1000),
+                    "traceId": trace_id,
+                    "writeResults": [
+                        {"action": "no_op", "reason": "no_memory_candidates"}
+                    ], "error": None,
+                }
+
+            # ============ Step 2: Load existing items for conflict check ============
+            existing_items = self.repo.list_session_items(session_id, limit=500)
+
+            # ============ Step 3: Gate decisions ============
+            gate_decisions = []
+            for candidate in candidates:
+                decision = self.gate.decide(candidate, existing_items, self.repo)
+                gate_decisions.append(decision)
+
+            # ============ Step 4: Conflict resolve ============
+            resolved = self.resolver.resolve(candidates, gate_decisions,
+                                             existing_items)
+
+            # ============ Step 5: Transactional write ============
+            counts = {"created": 0, "deduplicated": 0, "superseded": 0,
+                      "rejected": 0, "confirmed": 0, "no_op": 0}
+
+            with self.repo.transaction() as tx:
+                for candidate, action, reason, superseded_id in resolved:
+                    wr = self._execute_action(
+                        candidate, action, reason, superseded_id,
+                        session_id, run_id, event_thread_id,
+                    )
+                    write_results.append(wr)
+                    if action in counts:
+                        counts[action] += 1
+
+                # If all were rejected/filtered, write a no_op result
+                if not write_results:
+                    write_results.append({
+                        "action": "no_op", "reason": "all_candidates_rejected",
+                        "memoryType": "", "memoryKey": "",
+                    })
+
+                # Save trace (write phase — merge with recall fields)
+                _write_results_json = json.dumps(write_results, ensure_ascii=False)
+                trace = MemoryTrace(
+                    trace_id=trace_id,
+                    run_id=run_id,
+                    session_id=session_id,
+                    write_candidates_json=json.dumps(
+                        [{"memoryType": c.memory_type, "memoryKey": c.memory_key,
+                          "sourceType": c.source_type, "sourceRunId": c.source_run_id}
+                         for c in candidates], ensure_ascii=False),
+                    write_results_json=_write_results_json,
+                    write_latency_ms=int((time.time() - start_time) * 1000),
+                    event_thread_id=event_thread_id,
+                )
+                self.repo.merge_trace(trace, phase="write")
+
+                tx.commit()
+
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            return {
+                "runId": run_id,
+                "sessionId": session_id,
+                "candidateCount": len(candidates),
+                "createdCount": counts.get("created", 0),
+                "deduplicatedCount": counts.get("deduplicated", 0),
+                "supersededCount": counts.get("superseded", 0),
+                "rejectedCount": counts.get("rejected", 0),
+                "confirmedCount": counts.get("confirmed", 0),
+                "latencyMs": latency_ms,
+                "traceId": trace_id,
+                "writeResults": write_results,
+                "error": None,
+            }
+
+        except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.error(f"Memory write failed for run {run_id}: {e}", exc_info=True)
+            return {
+                "runId": run_id,
+                "sessionId": session_id,
+                "candidateCount": 0,
+                "createdCount": 0,
+                "deduplicatedCount": 0,
+                "supersededCount": 0,
+                "rejectedCount": 0,
+                "confirmedCount": 0,
+                "latencyMs": latency_ms,
+                "traceId": trace_id,
+                "writeResults": write_results,
+                "error": str(e),
+            }
+
+    def _execute_action(
+        self,
+        candidate: MemoryWriteCandidate,
+        action: str,
+        reason: Optional[str],
+        superseded_id: Optional[str],
+        session_id: str,
+        run_id: str,
+        event_thread_id: str = "",
+    ) -> Dict[str, Any]:
+        """执行单个写入操作。"""
+        result = {
+            "memoryType": candidate.memory_type,
+            "memoryKey": candidate.memory_key,
+            "action": action,
+            "reason": reason or "",
+        }
+
+        try:
+            if action == "create":
+                item = self.repo.create_item(
+                    memory_type=candidate.memory_type,
+                    session_id=session_id,
+                    memory_key=candidate.memory_key,
+                    value=candidate.value,
+                    text_content=candidate.text_content,
+                    status=candidate.status,
+                    confidence=candidate.confidence,
+                    authority_level=candidate.authority_level,
+                    source_type=candidate.source_type,
+                    source_id=candidate.source_id,
+                    source_run_id=candidate.source_run_id,
+                    source_message_id=candidate.source_message_id,
+                    valid_until=candidate.valid_until,
+                    event_thread_id=event_thread_id,
+                )
+                result["itemId"] = item.id
+
+            elif action == "supersede" and superseded_id:
+                new_item = MemoryItem(
+                    id="",  # auto-generated
+                    memory_type=candidate.memory_type,
+                    session_id=session_id,
+                    memory_key=candidate.memory_key,
+                    value=candidate.value,
+                    text_content=candidate.text_content,
+                    status=candidate.status,
+                    confidence=candidate.confidence,
+                    authority_level=candidate.authority_level,
+                    source_type=candidate.source_type,
+                    source_id=candidate.source_id,
+                    source_run_id=candidate.source_run_id,
+                    source_message_id=candidate.source_message_id,
+                    valid_until=candidate.valid_until,
+                    scope_type="session",
+                    scope_id=session_id,
+                    event_thread_id=event_thread_id,
+                )
+                old_item, new_created = self.repo.supersede_item(
+                    superseded_id, new_item
+                )
+                result["itemId"] = new_created.id
+                result["supersededId"] = superseded_id
+
+            elif action == "confirm":
+                # Find existing item with same key and type, confirm it
+                existing = self.repo.find_active_by_key(
+                    session_id, candidate.memory_key
+                )
+                if existing and existing.memory_type == candidate.memory_type:
+                    self.repo.confirm_item(existing.id)
+                    result["itemId"] = existing.id
+                else:
+                    # Create as confirmed
+                    item = self.repo.create_item(
+                        memory_type=candidate.memory_type,
+                        session_id=session_id,
+                        memory_key=candidate.memory_key,
+                        value=candidate.value,
+                        text_content=candidate.text_content,
+                        status=MemoryStatus.CONFIRMED.value,
+                        confidence=1.0,
+                        authority_level=candidate.authority_level,
+                        source_type=candidate.source_type,
+                        source_id=candidate.source_id,
+                        source_run_id=run_id,
+                        source_message_id=candidate.source_message_id,
+                        event_thread_id=event_thread_id,
+                    )
+                    result["itemId"] = item.id
+
+            elif action == "deduplicated":
+                result["action"] = "deduplicated"
+
+            elif action == "reject":
+                result["action"] = "rejected"
+
+            elif action == "no_op":
+                result["action"] = "no_op"
+
+        except Exception as e:
+            result["action"] = "error"
+            result["error"] = str(e)
+            logger.error(f"Memory action '{action}' failed for "
+                         f"{candidate.memory_key}: {e}")
+
+        return result
+
+    # ================================================================
+    # User Correction (atomic transaction)
+    # ================================================================
+
+    def apply_user_correction(
+        self,
+        session_id: str,
+        run_id: str,
+        user_message_id: str,
+        old_value: str,
+        new_value: str,
+        memory_key: str = "road.name",
+        field_name: str = "roadName",
+    ) -> Dict[str, Any]:
+        """在单个事务中执行用户纠正：
+
+        1. 查询并 supersede 旧事实
+        2. 创建新事实
+        3. 创建 user_correction 审计记录
+        4. 保存 MemoryTrace
+
+        Returns:
+            {
+                "success": bool,
+                "supersededId": str,
+                "newItemId": str,
+                "correctionId": str,
+                "traceId": str,
+                "error": Optional[str],
+            }
+        """
+        trace_id = f"memtrace_correction_{run_id}"
+        result = {
+            "success": False,
+            "supersededId": "",
+            "newItemId": "",
+            "correctionId": "",
+            "traceId": trace_id,
+            "error": None,
+        }
+
+        try:
+            with self.repo.transaction() as tx:
+                # 1. Find old active fact
+                old_item = self.repo.find_active_by_key(session_id, memory_key)
+
+                if old_item and old_item.memory_type == MemoryType.STABLE_FACT.value:
+                    # 2. Supersede old + create new
+                    new_value_dict = {"value": new_value}
+                    new_item = MemoryItem(
+                        id="",
+                        memory_type=MemoryType.STABLE_FACT.value,
+                        session_id=session_id,
+                        memory_key=memory_key,
+                        value=new_value_dict,
+                        text_content=f"{field_name}: {new_value}",
+                        status=MemoryStatus.ACTIVE.value,
+                        confidence=1.0,
+                        authority_level=AuthorityLevel.USER_CORRECTION,
+                        source_type=MemorySourceType.USER_CORRECTION.value,
+                        source_id=user_message_id,
+                        source_run_id=run_id,
+                        source_message_id=user_message_id,
+                        scope_type="session",
+                        scope_id=session_id,
+                    )
+                    old_upd, new_created = self.repo.supersede_item(
+                        old_item.id, new_item
+                    )
+                    result["supersededId"] = old_item.id
+                    result["newItemId"] = new_created.id
+                else:
+                    # No old fact to supersede — just create
+                    new_value_dict = {"value": new_value}
+                    new_created = self.repo.create_item(
+                        memory_type=MemoryType.STABLE_FACT.value,
+                        session_id=session_id,
+                        memory_key=memory_key,
+                        value=new_value_dict,
+                        text_content=f"{field_name}: {new_value}",
+                        status=MemoryStatus.ACTIVE.value,
+                        confidence=1.0,
+                        authority_level=AuthorityLevel.USER_CORRECTION,
+                        source_type=MemorySourceType.USER_CORRECTION.value,
+                        source_id=user_message_id,
+                        source_run_id=run_id,
+                        source_message_id=user_message_id,
+                    )
+                    result["newItemId"] = new_created.id
+
+                # 3. Create user_correction audit record
+                correction = self.repo.create_item(
+                    memory_type=MemoryType.USER_CORRECTION.value,
+                    session_id=session_id,
+                    memory_key=memory_key,
+                    value={"oldValue": old_value, "newValue": new_value},
+                    text_content=f"纠正: {old_value} → {new_value}",
+                    status=MemoryStatus.CONFIRMED.value,
+                    confidence=1.0,
+                    authority_level=AuthorityLevel.USER_CORRECTION,
+                    source_type=MemorySourceType.USER_CORRECTION.value,
+                    source_id=user_message_id,
+                    source_run_id=run_id,
+                    source_message_id=user_message_id,
+                )
+                result["correctionId"] = correction.id
+
+                # 4. Save trace
+                trace = MemoryTrace(
+                    trace_id=trace_id,
+                    run_id=run_id,
+                    session_id=session_id,
+                    recall_intent=f"user_correction: {old_value} → {new_value}",
+                )
+                self.repo.merge_trace(trace, phase="write")
+
+                tx.commit()
+                result["success"] = True
+
+        except Exception as e:
+            logger.error(f"User correction failed for {memory_key}: {e}",
+                         exc_info=True)
+            result["error"] = str(e)
+
+        return result
+
+    def recall_and_inject(
+        self,
+        session_id: str,
+        run_id: str,
+        user_input: str,
+        current_event: Dict[str, Any],
+        agent_targets: List[str],
+        context_policy: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """执行完整的 Recall 流程。
+
+        classify → resolve thread → plan → retrieve → filter → rerank → inject
+        """
+        import copy
+        start_time = time.time()
+
+        # Save immutable copy of current_event
+        event_before = copy.deepcopy(current_event)
+
+        try:
+            from backend.memory.recall_classifier import RecallClassifier
+            from backend.memory.recall_planner import RecallPlanner
+            from backend.memory.retriever import MemoryRetriever
+            from backend.memory.reranker import MemoryReranker
+            from backend.memory.injector import MemoryInjector
+
+            # --- Step 1: Get session state ---
+            session_state = self.repo.get_session_memory_state(session_id)
+            active_thread_id = ""
+            active_thread = None
+            if session_state:
+                active_thread_id = session_state.active_event_thread_id
+            if active_thread_id:
+                active_thread = self.repo.get_event_thread(active_thread_id)
+
+            # --- Step 2: Classify ---
+            classifier = RecallClassifier()
+            decision = classifier.classify(
+                user_input=user_input,
+                current_event=current_event,
+                session_state=session_state.to_dict() if session_state else None,
+                active_thread=active_thread.to_dict() if active_thread else None,
+                context_policy=context_policy,
+            )
+
+            # --- Step 3: Resolve Event Thread ---
+            if decision.starts_new_event or decision.primary_intent == "fresh_event":
+                if active_thread:
+                    self.repo.close_event_thread(active_thread_id)
+                from backend.memory.event_thread import build_thread_title
+                title = build_thread_title(user_input, current_event)
+                new_thread = self.repo.create_event_thread(
+                    session_id=session_id, title=title, started_run_id=run_id,
+                )
+                active_thread_id = new_thread.id
+            elif not active_thread_id:
+                # First round — create thread
+                from backend.memory.event_thread import build_thread_title
+                title = build_thread_title(user_input, current_event)
+                new_thread = self.repo.create_event_thread(
+                    session_id=session_id, title=title, started_run_id=run_id,
+                )
+                active_thread_id = new_thread.id
+            else:
+                # Continue using current thread
+                self.repo.update_event_thread_last_run(active_thread_id, run_id)
+
+            decision.current_event_thread_id = active_thread_id
+
+            # --- Step 4: Build plan ---
+            planner = RecallPlanner()
+            plan = planner.build_plan(decision, session_id, active_thread_id, agent_targets)
+
+            # --- Step 5: Retrieve ---
+            retriever = MemoryRetriever(self.repo)
+            retrieval_result = retriever.retrieve(plan, current_event, session_id)
+
+            # --- Step 6: Rerank ---
+            reranker = MemoryReranker()
+            selected = reranker.rerank(retrieval_result["selected"], plan, current_event)
+
+            # --- Step 7: Inject ---
+            injector = MemoryInjector()
+            injection = injector.build_injection_context(
+                selected, agent_targets, current_event, run_id, session_id,
+            )
+
+            # --- Step 8: Build routing context ---
+            routing_context = self._build_routing_context(
+                current_event, injection.get("injectionContext", {})
+            )
+
+            # --- Step 9: Verify currentEvent immutability ---
+            assert event_before == current_event, \
+                "currentEvent was mutated during recall — CRITICAL BUG"
+
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            # --- Save recall-phase trace ---
+            import json as _json
+            _all_candidates = retrieval_result.get("candidates", [])
+            _trace = MemoryTrace(
+                trace_id=f"memtrace_{run_id}",
+                run_id=run_id,
+                session_id=session_id,
+                recall_intent=decision.primary_intent,
+                recall_decision_json=_json.dumps(decision.to_dict(), ensure_ascii=False),
+                recall_plan_json=_json.dumps(plan.to_dict(), ensure_ascii=False),
+                candidates_json=_json.dumps([
+                    {"memoryId": fi.item.id, "memoryType": fi.item.memory_type,
+                     "memoryKey": fi.item.memory_key, "status": fi.item.status}
+                    for fi in _all_candidates
+                ], ensure_ascii=False),
+                selected_json=_json.dumps([
+                    {"memoryId": fi.item.id, "memoryType": fi.item.memory_type,
+                     "memoryKey": fi.item.memory_key, "value": fi.item.value,
+                     "status": fi.item.status, "sourceType": fi.item.source_type,
+                     "sourceRunId": fi.item.source_run_id,
+                     "eventThreadId": getattr(fi.item, "event_thread_id", ""),
+                     "confidence": fi.item.confidence,
+                     "authorityLevel": fi.item.authority_level,
+                     "score": fi.score, "reason": getattr(fi, "selected_reason", "")}
+                    for fi in selected
+                ], ensure_ascii=False),
+                rejected_json=_json.dumps(
+                    [{"memoryType": fi.item.memory_type, "memoryKey": fi.item.memory_key,
+                      "reason": fi.rejection_reason, "sourceRunId": fi.item.source_run_id,
+                      "eventThreadId": getattr(fi.item, "event_thread_id", "")}
+                     for fi in retrieval_result.get("rejected", [])],
+                    ensure_ascii=False,
+                ),
+                injection_map_json=_json.dumps(
+                    injection.get("agentInjectionMap", {}),
+                    ensure_ascii=False, default=str,
+                ),
+                token_estimate=0,
+                recall_latency_ms=latency_ms,
+                event_thread_id=active_thread_id,
+            )
+            _trace.token_estimate = sum(
+                len(str(fi.item.value)) + len(fi.item.text_content)
+                for fi in selected
+            )
+            self.repo.merge_trace(_trace, phase="recall")
+
+            # Estimate tokens
+            token_estimate = sum(
+                len(str(fi.item.value)) + len(fi.item.text_content)
+                for fi in selected
+            )
+
+            return {
+                "runId": run_id,
+                "sessionId": session_id,
+                "eventThreadId": active_thread_id,
+                "intent": decision.primary_intent,
+                "recallDecision": decision.to_dict(),
+                "recallPlan": plan.to_dict(),
+                "candidateCount": len(_all_candidates),
+                "selectedCount": retrieval_result["selected_count"],
+                "rejectedCount": retrieval_result["rejected_count"],
+                "selected": selected,
+                "injectionContext": injection["injectionContext"],
+                "agentInjectionMap": injection["agentInjectionMap"],
+                "routingContext": routing_context,
+                "latencyMs": latency_ms,
+                "tokenEstimate": token_estimate,
+                "error": None,
+            }
+
+        except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.error(f"Memory recall failed for run {run_id}: {e}", exc_info=True)
+            return {
+                "runId": run_id,
+                "sessionId": session_id,
+                "eventThreadId": "",
+                "intent": "failed",
+                "recallDecision": {},
+                "candidateCount": 0,
+                "selectedCount": 0,
+                "rejectedCount": 0,
+                "selected": [],
+                "injectionContext": {},
+                "agentInjectionMap": {},
+                "routingContext": {},
+                "latencyMs": latency_ms,
+                "tokenEstimate": 0,
+                "error": str(e),
+            }
+
+    def _build_routing_context(
+        self,
+        current_event: Dict[str, Any],
+        injection_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """构建安全的 routingContext（不修改 currentEvent）。"""
+        routing = {}
+        routing["fieldSources"] = {}
+
+        safe_fields = {
+            "road.name": "roadName",
+            "school.nearby": "nearbySchool",
+            "hospital.nearby": "nearbyHospital",
+            "road.is_main": "isMainRoad",
+            "road.direction": "direction",
+        }
+
+        for fact in injection_context.get("stableFacts", []):
+            mk = fact.get("memoryKey", "")
+            if mk in safe_fields:
+                event_key = safe_fields[mk]
+                val = fact.get("value", {}).get("value")
+                if val is not None and event_key not in routing:
+                    routing[event_key] = val
+                    routing["fieldSources"][event_key] = "memory_session"
+
+        # Current event values always override
+        for key in current_event:
+            if key not in routing and key not in ("fieldSources", "memoryInjectedFields"):
+                val = current_event[key]
+                if val is not None:
+                    routing[key] = val
+
+        return routing
+
+    @staticmethod
+    def _empty_result(
+        run_id: str, session_id: str, trace_id: str, latency_ms: int,
+    ) -> Dict[str, Any]:
+        return {
+            "runId": run_id,
+            "sessionId": session_id,
+            "candidateCount": 0,
+            "createdCount": 0,
+            "deduplicatedCount": 0,
+            "supersededCount": 0,
+            "rejectedCount": 0,
+            "confirmedCount": 0,
+            "latencyMs": latency_ms,
+            "traceId": trace_id,
+            "writeResults": [],
+            "error": None,
+        }

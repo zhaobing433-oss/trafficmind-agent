@@ -63,28 +63,37 @@ async function consumeSSE(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  let streamDone = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-    let currentEvent = '';
-    for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7).trim();
-      } else if (line.startsWith('data: ')) {
-        const dataStr = line.slice(6);
-        try {
-          const data = JSON.parse(dataStr);
-          dispatchEvent(currentEvent, data, callbacks);
-        } catch { /* skip malformed JSON */ }
+      let currentEvent = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6);
+          try {
+            const data = JSON.parse(dataStr);
+            dispatchEvent(currentEvent, data, callbacks);
+            // Stop reading immediately when done/error received
+            if (currentEvent === 'done' || currentEvent === 'error') {
+              streamDone = true;
+            }
+          } catch { /* skip malformed JSON */ }
+        }
       }
-      // Ignore comments (lines starting with ':')
+      if (streamDone) break;
     }
+  } finally {
+    reader.cancel().catch(() => {});
   }
 }
 
@@ -97,6 +106,14 @@ function dispatchEvent(event: string, data: Record<string, unknown>, cbs: Stream
     case 'delta': cbs.onDelta?.(data.text as string); break;
     case 'done': cbs.onDone?.(data); break;
     case 'error': cbs.onError?.(data.message as string); break;
+    // RAG V2 events — consumed by RagTracePanel via persisted result
+    case 'rag_route_done': break;
+    case 'rag_query_rewritten': break;
+    case 'rag_candidates_retrieved': break;
+    case 'rag_rerank_done': break;
+    case 'rag_evidence_selected': break;
+    case 'rag_abstained': break;
+    case 'rag_trace_ready': break;
     case 'agent_start': cbs.onAgentStart?.(data.agentName as string, data.text as string); break;
     case 'agent_result': cbs.onAgentResult?.(data); break;
     case 'fusion_delta': cbs.onFusionDelta?.(data.text as string); break;

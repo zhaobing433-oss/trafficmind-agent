@@ -38,11 +38,16 @@ def _get_event_info(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class CongestionAgent:
-    """拥堵研判 Agent"""
+    """拥堵研判 Agent — Phase 13: 支持 Simulation Context"""
+
     def analyze(self, info: Dict[str, Any]) -> Dict[str, Any]:
-        findings = []; urgency = "low"
-        spd = info["avgSpeed"]
-        qlen = info["queueLength"]
+        findings: list = []
+        urgency = "low"
+        proposed_actions: list = []
+        evidence_refs: list = []
+        spd = info.get("avgSpeed")
+        qlen = info.get("queueLength")
+        sim_ctx = info.get("simulation_context")
 
         if spd is not None and spd < 10:
             findings.append(f"平均车速仅 {spd} km/h，严重拥堵"); urgency = "high"
@@ -58,15 +63,65 @@ class CongestionAgent:
         elif qlen is None:
             findings.append("未提供具体排队长度数据")
 
-        if info["timePeriod"] in ("morning_peak", "evening_peak"):
+        if info.get("timePeriod") in ("morning_peak", "evening_peak"):
             findings.append("高峰时段，建议调整信号配时")
-        if info["isMainRoad"]: findings.append("主干道，影响范围广")
+        if info.get("isMainRoad"): findings.append("主干道，影响范围广")
         if info.get("nearbySchool"): findings.append("邻近学校，需关注行人安全")
         if info.get("pedestrianRisk") == "high": findings.append("存在行人/学生横穿风险")
-        return {"agentName": "CongestionAgent",
-                "relevant": info["eventType"] in ("拥堵", "congestion") or (spd is not None and spd < 15),
-                "findings": findings, "urgency": urgency,
-                "suggestion": "通知交警+信号中心，上游分流" if findings else "正常监控"}
+
+        # Phase 13: Simulation Spatial Context → ActionProposal
+        if sim_ctx and isinstance(sim_ctx, dict):
+            affected = sim_ctx.get("affectedRoad") or {}
+            traffic = sim_ctx.get("currentTrafficState") or {}
+            upstream = sim_ctx.get("upstreamRoads") or []
+            sim_refs = info.get("simulation_refs") or {}
+
+            # 证据引用
+            evidence_refs.append({
+                "type": "spatial_context",
+                "simulationRunId": sim_refs.get("simulationRunId"),
+                "snapshotId": sim_refs.get("decisionSnapshotId"),
+            })
+
+            # 拥堵严重时生成分流提议
+            if urgency == "high" and upstream:
+                affected_road_id = affected.get("roadId", "")
+                upstream_ids = [r.get("roadId", "") for r in upstream[:2] if r.get("roadId")]
+                if affected_road_id and upstream_ids:
+                    proposed_actions.append({
+                        "actionType": "traffic_diversion",
+                        "sourceRoadId": affected_road_id,
+                        "targetRoadIds": upstream_ids,
+                        "diversionRatio": 0.35,
+                        "simulation": True,
+                        "rationale": (
+                            f"{affected.get('name', affected_road_id)}严重拥堵"
+                            f"(speed={spd}km/h, queue={qlen}m)，"
+                            f"建议分流至{len(upstream_ids)}条上游道路"
+                        ),
+                        "evidenceRefs": [
+                            "spatial_context",
+                            "current_traffic_state",
+                        ],
+                    })
+                    findings.append(
+                        f"基于仿真空间上下文生成分流建议: "
+                        f"{affected_road_id}→{', '.join(upstream_ids)}"
+                    )
+
+        return {
+            "agentName": "CongestionAgent",
+            "relevant": (
+                info.get("eventType") in ("拥堵", "congestion")
+                or (spd is not None and spd < 15)
+            ),
+            "findings": findings,
+            "urgency": urgency,
+            "suggestion": "通知交警+信号中心，上游分流" if findings else "正常监控",
+            "proposed_actions": proposed_actions,
+            "evidence_refs": evidence_refs,
+            "simulation_refs": info.get("simulation_refs", {}),
+        }
 
 
 class AccidentAgent:

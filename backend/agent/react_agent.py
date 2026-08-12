@@ -65,6 +65,42 @@ READONLY_TOOLS: Dict[str, Dict[str, Any]] = {
         "params": ["limit"],
         "fn": None,
     },
+    # ── Phase 13: Simulation Read-Only Tools ──
+    "get_traffic_map_state": {
+        "description": "获取仿真交通态势摘要（拥堵分布、活跃事件、快照信息）。支持 snapshot_id 指定快照。",
+        "params": ["run_id", "snapshot_id"],
+        "fn": None,
+    },
+    "get_road_traffic_state": {
+        "description": "获取单条道路详细交通状态（速度、排队、占有率、通行能力）。支持 snapshot_id 指定快照。",
+        "params": ["run_id", "road_id", "snapshot_id"],
+        "fn": None,
+    },
+    "get_event_spatial_context": {
+        "description": "获取事件空间上下文（受影响路段、上下游、附近路口和摄像头）",
+        "params": ["run_id", "event_id"],
+        "fn": None,
+    },
+    "get_nearby_cameras": {
+        "description": "获取指定位置附近的模拟摄像头实时观测。支持 snapshot_id 指定快照。",
+        "params": ["run_id", "longitude", "latitude", "snapshot_id"],
+        "fn": None,
+    },
+    "get_nearby_intersections": {
+        "description": "获取指定位置附近的路口信息",
+        "params": ["longitude", "latitude"],
+        "fn": None,
+    },
+    "get_affected_roads": {
+        "description": "获取受事件影响的所有路段及状态。支持 snapshot_id 指定快照。",
+        "params": ["run_id", "event_id", "snapshot_id"],
+        "fn": None,
+    },
+    "get_simulation_snapshot": {
+        "description": "获取完整仿真快照摘要。支持 snapshot_id 指定快照。",
+        "params": ["run_id", "snapshot_id"],
+        "fn": None,
+    },
 }
 
 # ======== 禁止的工具（黑名单） ========
@@ -110,6 +146,41 @@ def _init_tool_functions():
     )
     READONLY_TOOLS["get_history"]["fn"] = lambda **kw: get_history(limit=int(kw.get("limit", 50)))
 
+    # ── Phase 13: Simulation Read-Only Tool Bindings ──
+    from backend.simulation.tools import (
+        get_traffic_map_state, get_road_traffic_state,
+        get_event_spatial_context, get_nearby_cameras,
+        get_nearby_intersections, get_affected_roads,
+        get_simulation_snapshot,
+    )
+    READONLY_TOOLS["get_traffic_map_state"]["fn"] = lambda **kw: get_traffic_map_state(
+        run_id=kw.get("run_id", ""), snapshot_id=kw.get("snapshot_id", ""), **kw
+    )
+    READONLY_TOOLS["get_road_traffic_state"]["fn"] = lambda **kw: get_road_traffic_state(
+        run_id=kw.get("run_id", ""), road_id=kw.get("road_id", ""),
+        snapshot_id=kw.get("snapshot_id", ""), **kw
+    )
+    READONLY_TOOLS["get_event_spatial_context"]["fn"] = lambda **kw: get_event_spatial_context(
+        run_id=kw.get("run_id", ""), event_id=kw.get("event_id", ""), **kw
+    )
+    READONLY_TOOLS["get_nearby_cameras"]["fn"] = lambda **kw: get_nearby_cameras(
+        run_id=kw.get("run_id", ""),
+        longitude=float(kw.get("longitude", 0)),
+        latitude=float(kw.get("latitude", 0)),
+        snapshot_id=kw.get("snapshot_id", ""), **kw
+    )
+    READONLY_TOOLS["get_nearby_intersections"]["fn"] = lambda **kw: get_nearby_intersections(
+        longitude=float(kw.get("longitude", 0)),
+        latitude=float(kw.get("latitude", 0)), **kw
+    )
+    READONLY_TOOLS["get_affected_roads"]["fn"] = lambda **kw: get_affected_roads(
+        run_id=kw.get("run_id", ""), event_id=kw.get("event_id", ""),
+        snapshot_id=kw.get("snapshot_id", ""), **kw
+    )
+    READONLY_TOOLS["get_simulation_snapshot"]["fn"] = lambda **kw: get_simulation_snapshot(
+        run_id=kw.get("run_id", ""), snapshot_id=kw.get("snapshot_id", ""), **kw
+    )
+
 
 def _select_tools_rule_based(question: str) -> List[str]:
     """
@@ -145,6 +216,15 @@ def _select_tools_rule_based(question: str) -> List[str]:
     # 历史记录
     if any(w in q for w in ["历史", "记录", "所有事件"]):
         tools.append("get_history")
+    # Phase 13: Simulation 交通态势
+    if any(w in q for w in ["仿真", "模拟", "交通态势", "模拟路网", "地图", "路况", "拥堵状态"]):
+        tools.append("get_traffic_map_state")
+    if any(w in q for w in ["路段", "道路", "排队", "通行能力", "车速"]):
+        tools.append("get_road_traffic_state")
+    if any(w in q for w in ["空间上下文", "上下游", "附近路口", "受影响"]):
+        tools.append("get_event_spatial_context")
+    if any(w in q for w in ["摄像头", "监控", "cam"]):
+        tools.append("get_nearby_cameras")
 
     # 如果没有匹配，默认检索知识库
     if not tools:
