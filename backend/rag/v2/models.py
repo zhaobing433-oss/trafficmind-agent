@@ -32,6 +32,7 @@ class DocStatus(str, Enum):
     EXPIRED = "expired"
     DRAFT = "draft"
     DELETED = "deleted"
+    FAILED = "failed"
 
 
 class AuthorityLevel(str, Enum):

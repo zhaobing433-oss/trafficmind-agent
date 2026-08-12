@@ -1564,7 +1564,9 @@ async def list_event_threads(session_id: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from backend.workflow.api import router as workflow_router
+from backend.knowledge.api import router as knowledge_router
 app.include_router(workflow_router)
+app.include_router(knowledge_router)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Phase 13: Traffic Map & Simulation V1 Router
