@@ -66,7 +66,7 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
     onRefresh?.();
   };
 
-  if (loading && !trace) return <Spin tip="加载 Trace..." />;
+  if (loading && !trace) return <div style={{textAlign:'center',padding:40}}><Spin /><div style={{fontSize:12,color:'#9CA3AF',marginTop:8}}>加载 Trace...</div></div>;
   if (error) return <Alert type="error" message={error} />;
   if (!trace && !detail) return <Empty description="无 Trace 数据" />;
 

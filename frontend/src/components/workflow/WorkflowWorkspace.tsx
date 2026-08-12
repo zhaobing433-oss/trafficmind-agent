@@ -43,6 +43,10 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
     const url = new URL(window.location.href);
     url.searchParams.set('workflowTab', tab);
     url.searchParams.delete('workflowRunId');
+    if (tab === 'templates') {
+      url.searchParams.delete('workflowStatus');
+      url.searchParams.delete('workflowPage');
+    }
     window.history.replaceState({}, '', url.toString());
   }, []);
 

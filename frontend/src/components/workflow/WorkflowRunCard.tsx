@@ -65,7 +65,13 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
   }
 
   // ── 审批 ──
-  const approvalLabel = APPROVAL_STATUS_LABELS[run.approvalSummary.status] || run.approvalSummary.status;
+  // 当 run status 本身就是 awaiting_approval 时，避免与 badge 重复
+  let approvalLabel: string;
+  if (run.status === 'awaiting_approval' && run.approvalSummary.status === 'awaiting_approval') {
+    approvalLabel = '等待人工审批';
+  } else {
+    approvalLabel = APPROVAL_STATUS_LABELS[run.approvalSummary.status] || run.approvalSummary.status;
+  }
 
   // ── 动作 ──
   let actionText = '';
@@ -77,6 +83,9 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
     if (a.failed > 0) parts2.push(`失败 ${a.failed}`);
     actionText = parts2.join(' · ');
   }
+
+  // ── 失败节点 ──
+  const failedNodeInfo = p.failedNodes > 0 ? `失败节点 ${p.failedNodes}` : '';
 
   // ── 时间 ──
   const timeLabel = run.updatedAt
@@ -126,6 +135,7 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
       {/* Row 4: Meta row */}
       <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#6B7280', flexWrap: 'wrap', marginBottom: 6 }}>
         {progressText && <span>{progressText}</span>}
+        {failedNodeInfo && <span style={{ color: '#DC2626' }}>{failedNodeInfo}</span>}
         {run.approvalSummary.status !== 'not_required' && (
           <span>⍂ 审批: {approvalLabel}</span>
         )}
