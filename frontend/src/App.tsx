@@ -17,7 +17,7 @@ const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes
   qa: { title: '知识库', sub: 'RAG交通知识库 · 规则/预案/经验检索 · 证据问答', showFullModes: false, defaultMode: 'rag' },
   report: { title: '统计报告', sub: '日报/周报 · 高风险路口 · 事件趋势 · 管理建议', showFullModes: false, defaultMode: 'report' },
   multi: { title: '协同分析', sub: '多Agent研判 + 冲突检测 + 融合处置建议', showFullModes: false, defaultMode: 'routed' },
-  workflow: { title: '工作流', sub: '受控流程执行交通事件研判、审批与处置', showFullModes: false, defaultMode: 'routed' },
+  workflow: { title: '工作流中心', sub: '查看运行记录、跟踪执行状态或从模板启动新的工作流', showFullModes: false, defaultMode: 'routed' },
   simulation: { title: '交通态势', sub: '模拟交通环境 · 路网可视化 · 事件注入 · 态势感知', showFullModes: false, defaultMode: 'routed' },
 };
 
@@ -110,6 +110,16 @@ export default function App() {
     const url = new URL(window.location.href);
     url.searchParams.set('view', v);
     if (v !== 'evaluation') url.searchParams.delete('report');
+    // Clear workflowRunId when explicitly navigating (not F5 restore)
+    if (v !== 'workflow' || !workflowRunId) {
+      // Navigating away from workflow, or to workflow without a run context -
+      // clear stale runId so user sees the center, not a leftover run detail
+    }
+    if (v === 'workflow') {
+      // Explicit nav to workflow → clear run detail, show center
+      setWorkflowRunId(null);
+      url.searchParams.delete('workflowRunId');
+    }
     window.history.replaceState({}, '', url.toString());
   };
   const handleRecentClick = async (id: string) => {

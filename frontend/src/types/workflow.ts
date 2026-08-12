@@ -204,3 +204,76 @@ export const RUN_STATUS_COLORS: Record<WorkflowRunStatus, string> = {
   awaiting_approval: '#722ed1', completed: '#52c41a',
   failed: '#ff4d4f', rejected: '#fa541c', cancelled: '#8c8c8c',
 };
+
+/** Run 状态中文标签 */
+export const RUN_STATUS_LABELS: Record<WorkflowRunStatus, string> = {
+  pending: '待启动', running: '运行中', paused: '已暂停',
+  awaiting_approval: '待审批', completed: '已完成',
+  failed: '失败', rejected: '已驳回', cancelled: '已取消',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Workflow Center V2 Round 2 — RunSummary types (match Round 1 contract)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type ApprovalSummaryStatus = 'not_required' | 'awaiting_approval' | 'approved' | 'rejected';
+
+export interface EventSummary {
+  roadName: string | null;
+  eventType: string | null;
+  eventTypeCn: string | null;
+  description: string | null;
+}
+
+export interface RunProgress {
+  totalNodes: number | null;
+  executedNodes: number;
+  succeededNodes: number;
+  failedNodes: number;
+  currentNode: string | null;
+}
+
+export interface ApprovalSummary {
+  status: ApprovalSummaryStatus;
+}
+
+export interface ActionSummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
+export interface RunSummary {
+  runId: string;
+  definitionId: string;
+  definitionName: string | null;
+  status: WorkflowRunStatus;
+  version: number;
+  sessionId: string;
+  eventThreadId: string;
+  currentNodeId: string;
+  triggeredBy: string;
+  startedAt: string | null;
+  updatedAt: string | null;
+  completedAt: string | null;
+  isTerminal: boolean;
+  eventSummary: EventSummary | null;
+  progress: RunProgress;
+  approvalSummary: ApprovalSummary;
+  actionSummary: ActionSummary;
+}
+
+export interface RunListResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  runs: RunSummary[];
+}
+
+/** 审批状态中文标签 */
+export const APPROVAL_STATUS_LABELS: Record<ApprovalSummaryStatus, string> = {
+  not_required: '无需审批',
+  awaiting_approval: '待审批',
+  approved: '已批准',
+  rejected: '已驳回',
+};

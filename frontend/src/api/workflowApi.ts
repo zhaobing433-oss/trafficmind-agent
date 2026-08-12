@@ -1,4 +1,6 @@
-/** Workflow V1 API 客户端 */
+/** Workflow V1 + Workflow Center V2 API 客户端 */
+
+import type { RunListResponse } from '../types/workflow';
 
 const API = '/api';
 
@@ -153,6 +155,26 @@ export async function getRunStream(
     signal,
   });
   await consumeWorkflowSSE(resp, callbacks);
+}
+
+/** 列出 Run 历史（Workflow Center V2） */
+export async function listRuns(params?: {
+  status?: string; definition_id?: string; session_id?: string;
+  limit?: number; offset?: number;
+}): Promise<RunListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set('status', params.status);
+  if (params?.definition_id) qs.set('definition_id', params.definition_id);
+  if (params?.session_id) qs.set('session_id', params.session_id);
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  const query = qs.toString();
+  const resp = await fetch(`${API}/workflow/runs${query ? '?' + query : ''}`);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error((err as { detail?: string }).detail || `Failed to list runs: ${resp.status}`);
+  }
+  return resp.json();
 }
 
 /** 通用 SSE 消费器 */
