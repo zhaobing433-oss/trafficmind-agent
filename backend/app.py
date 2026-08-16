@@ -479,7 +479,7 @@ async def rag_v2_index():
         docs = load_all_documents()
         emb_provider = get_embedding_provider()
         indexer = IncrementalIndexer(emb_provider)
-        job: IndexJobResult = indexer.index_documents(docs)
+        job: IndexJobResult = indexer.index_documents(docs, cleanup_stale=True)
         return job.model_dump(mode="json")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"索引失败: {e}")

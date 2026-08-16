@@ -83,15 +83,38 @@ class IncrementalIndexer:
     def index_documents(
         self,
         documents: List[RagDocument],
+        cleanup_stale: bool = False,
     ) -> IndexJobResult:
         """增量索引一批文档。
 
         自动检测兼容性：模型/维度不一致时创建新 versioned collection 并全量重建。
         成功时切换到 active；失败时保留 previous active。
+
+        Args:
+            documents: 要索引的文档。
+            cleanup_stale: 是否软删除 source 已消失的 stale 文档。
+                - full rebuild (load_all_documents) → True
+                - single-document create/reindex → False (避免误删其他文档)
         """
         t0 = time.time()
         job = create_index_job()
         job.status = IndexJobStatus.RUNNING
+
+        # Phase 16 Round 2: fail-closed — refuse to index when the production
+        # embedding provider is degraded (e.g. Qwen3 failed to load) and hash
+        # fallback is disabled. Prevents hash vectors from polluting the
+        # production active collection.
+        if self.embedding_provider.is_degraded():
+            from backend.rag.v2.config import RAG_ALLOW_HASH_FALLBACK
+            if not RAG_ALLOW_HASH_FALLBACK:
+                job.status = IndexJobStatus.FAILED
+                job.errors.append(
+                    f"Embedding provider degraded: "
+                    f"{self.embedding_provider.get_degraded_reason()}. "
+                    "Refusing to index (production fail-closed)."
+                )
+                update_index_job(job)
+                return job
 
         try:
             # ── Determine embedding metadata ──
@@ -187,8 +210,8 @@ class IncrementalIndexer:
             )
             self._prev_active = None  # Success — clear rollback reference
 
-            # ── Cleanup stale (only for normal incremental) ──
-            if compat == "ok" and documents:
+            # ── Cleanup stale (only for full rebuild) ──
+            if cleanup_stale and documents:
                 self._cleanup_stale(source_ids_seen, documents[0].doc_type if documents else None)
 
             job.status = IndexJobStatus.COMPLETED

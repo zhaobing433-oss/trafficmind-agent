@@ -124,11 +124,22 @@ const RagTracePanel: React.FC<Props> = ({
     };
   }, [traceId, visible]);
 
-  // Scroll to evidence on click
+  // Scroll to evidence on click — also support document navigation
   const handleEvidenceClick = useCallback(
-    (evidenceId: string) => {
+    (evidenceId: string, documentId?: string, chunkId?: string) => {
       setHighlightedEvidence(evidenceId);
       onEvidenceClick?.(evidenceId);
+
+      // Phase 16 Round 2: Navigate to Knowledge document detail
+      if (documentId) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', 'qa');
+        url.searchParams.set('knowledgeTab', 'documents');
+        url.searchParams.set('knowledgeDocumentId', documentId);
+        if (chunkId) url.searchParams.set('knowledgeChunkId', chunkId);
+        window.location.href = url.toString();
+        return;
+      }
 
       setTimeout(() => {
         const el = document.getElementById(`evidence-${evidenceId}`);
@@ -400,7 +411,7 @@ const RagTracePanel: React.FC<Props> = ({
                 key={ev.evidenceId}
                 evidence={ev}
                 highlighted={highlightedEvidence === ev.evidenceId}
-                onClick={() => handleEvidenceClick(ev.evidenceId)}
+                onClick={() => handleEvidenceClick(ev.evidenceId, ev.documentId as string | undefined, ev.chunkId as string | undefined)}
               />
             ))
           )}

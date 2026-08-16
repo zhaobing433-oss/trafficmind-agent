@@ -72,7 +72,8 @@ def list_documents(
     include_deleted: bool = False,
 ) -> Dict[str, Any]:
     """列出文档（分页）。"""
-    all_docs = list_active_documents()
+    from backend.rag.v2.document_repository import list_all_documents
+    all_docs = list_all_documents() if include_deleted else list_active_documents()
 
     # ── Filter ──
     filtered = []
@@ -176,7 +177,7 @@ def create_document(
             return _doc_to_summary(existing)  # idempotent: return existing
         # Content changed: will re-index below (version bump)
 
-    # ── Register document (status=active initially, will be updated) ──
+    # ── Register document (status=processing until indexing completes) ──
     now = utcnow()
     doc = RagDocument(
         document_id=doc_id,
@@ -186,7 +187,7 @@ def create_document(
         content=content,
         authority_level=AuthorityLevel(meta.get("authority_level", "operational")),
         version=(existing.version + 1) if existing else 1,
-        status=DocStatus.ACTIVE,
+        status=DocStatus.PROCESSING,
         event_type=meta.get("event_type"),
         road_name=meta.get("road_name"),
         risk_level=meta.get("risk_level"),
@@ -196,15 +197,16 @@ def create_document(
         updated_at=now,
     )
 
-    # ── Persist document ──
+    # ── Persist document as PROCESSING ──
     try:
         upsert_document(doc)
     except Exception as e:
         raise KnowledgeError(f"文档持久化失败: {e}", 500)
 
-    # ── Chunk + Index ──
+    # ── Chunk + Index (synchronous; flips PROCESSING → ACTIVE on success) ──
     try:
         _index_single_document(doc)
+        _mark_active(doc_id)
     except Exception as e:
         # Mark as failed but don't lose the document
         try:
@@ -227,6 +229,28 @@ def _index_single_document(doc: RagDocument) -> None:
         raise KnowledgeError(f"索引失败: {errors}", 500)
     if result.status == IndexJobStatus.ROLLED_BACK:
         raise KnowledgeError("索引已回滚", 500)
+
+    # Phase 16 Round 2: guard against silent 0-chunk indexing.
+    # A document with no chunks/vectors must NOT be marked active/indexed.
+    from backend.rag.v2.document_repository import get_chunks_by_document
+    chunks = get_chunks_by_document(doc.document_id, active_only=True)
+    if not chunks:
+        raise KnowledgeError(
+            f"索引未生成任何分块（内容过短或分块失败）", 500
+        )
+
+
+def _mark_active(doc_id: str) -> None:
+    """标记文档为索引完成（active），不动 source_uri。"""
+    import sqlite3
+    from backend.rag.v2.config import RAG_V2_DB_PATH
+    conn = sqlite3.connect(RAG_V2_DB_PATH)
+    conn.execute(
+        "UPDATE rag_documents SET status='active', updated_at=? WHERE document_id=?",
+        (utcnow().isoformat(), doc_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def _mark_failed(doc_id: str, error_msg: str) -> None:
@@ -260,10 +284,14 @@ def delete_document(doc_id: str) -> Dict[str, str]:
     soft_delete_document(doc_id)
     delete_chunks_by_document(doc_id)
 
-    # Delete from Chroma
+    # Delete from Chroma (active versioned collection — NOT the base default)
     try:
-        from backend.rag.v2.dense_index import delete_by_document
-        delete_by_document(doc_id)
+        from backend.rag.v2.dense_index import delete_by_document, get_active_collection_name
+        active_coll = get_active_collection_name()
+        if active_coll:
+            delete_by_document(doc_id, active_coll)
+        else:
+            delete_by_document(doc_id)
     except Exception as e:
         logger.warning(f"Failed to delete Chroma vectors for {doc_id}: {e}")
         # Non-fatal: SQLite is canonical
@@ -323,6 +351,11 @@ def get_index_status() -> Dict[str, Any]:
         except Exception:
             pass
 
+    # Phase 16 Round 2: production provider degradation must surface as unhealthy
+    provider_degraded = provider.is_degraded()
+    provider_resolved = provider.get_resolved_model_name()
+    provider_degraded_reason = provider.get_degraded_reason() if provider_degraded else None
+
     is_healthy = (
         active is not None
         and active.status == "active"
@@ -331,6 +364,8 @@ def get_index_status() -> Dict[str, Any]:
         and vector_count > 0
         and active.embedding_model
         and "fake" not in active.embedding_model.lower()
+        and "hash-fallback" not in active.embedding_model.lower()
+        and not provider_degraded
     )
 
     return {
@@ -344,6 +379,9 @@ def get_index_status() -> Dict[str, Any]:
         "status": active.status if active else "no_index",
         "lastIndexedAt": active.committed_at.isoformat() if active and active.committed_at else None,
         "healthy": is_healthy,
+        "providerResolved": provider_resolved,
+        "providerDegraded": provider_degraded,
+        "providerDegradedReason": provider_degraded_reason,
     }
 
 
@@ -380,6 +418,14 @@ def check_consistency() -> Dict[str, Any]:
         issues.append(
             f"活跃索引使用测试模型: {active.embedding_model}。"
             f"运行 POST /rag/v2/index 修复。"
+        )
+
+    # 4b. Active index must NOT be hash-fallback (production pollution)
+    is_hash_fallback = "hash-fallback" in (active.embedding_model or "").lower()
+    if is_hash_fallback:
+        issues.append(
+            f"活跃索引使用 hash-fallback (生产污染)。"
+            f"应恢复为 Qwen/Qwen3-Embedding-0.6B 并运行 POST /rag/v2/index。"
         )
 
     # 5. SQLite active chunk count

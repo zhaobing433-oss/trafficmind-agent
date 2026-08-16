@@ -57,13 +57,18 @@ def reciprocal_rank_fusion(
                 entry["retrieval_channels"].append(ch_name)
 
             # CRITICAL: merge in any fields that exist in the new item but are None/missing in existing entry
-            # This preserves metadata like effective_to that only appears in one channel
+            # This preserves metadata like effective_to that only appears in one channel.
+            # Dense results store doc_type/section_path/etc in the `metadata` sub-dict,
+            # so check BOTH top-level and metadata sub-dict.
             for field in ("effective_from", "effective_to", "status", "version",
                           "authority_level", "doc_type", "title", "section_path",
                           "document_id", "parent_chunk_id", "event_type", "road_name",
                           "risk_level", "source_uri"):
-                if item.get(field) is not None and entry.get(field) is None:
-                    entry[field] = item[field]
+                val = item.get(field)
+                if val is None and isinstance(item.get("metadata"), dict):
+                    val = item.get("metadata", {}).get(field)
+                if val is not None and entry.get(field) is None:
+                    entry[field] = val
             # Also merge metadata sub-dict fields
             for field in ("effective_from", "effective_to", "status", "version", "authority_level"):
                 item_meta = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}

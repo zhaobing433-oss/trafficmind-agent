@@ -136,21 +136,23 @@ const RagEvidenceCard: React.FC<Props> = ({ evidence, highlighted, onClick }) =>
         )}
       </Space>
 
-      {/* Content preview */}
-      <Paragraph
-        ellipsis={{ rows: 3, expandable: true, symbol: "展开" }}
-        style={{
-          fontSize: 13,
-          color: "#555",
-          background: "#fafafa",
-          padding: 8,
-          borderRadius: 4,
-          marginBottom: 0,
-          whiteSpace: "pre-wrap",
-        }}
-      >
-        {e.content?.slice(0, 500) || e.contextualContent?.slice(0, 500) || "（无内容）"}
-      </Paragraph>
+      {/* Content preview — stopPropagation so "展开"/"收起" doesn't trigger card navigation */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <Paragraph
+          ellipsis={{ rows: 3, expandable: true, symbol: "展开" }}
+          style={{
+            fontSize: 13,
+            color: "#555",
+            background: "#fafafa",
+            padding: 8,
+            borderRadius: 4,
+            marginBottom: 0,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {e.content?.slice(0, 500) || e.contextualContent?.slice(0, 500) || "（无内容）"}
+        </Paragraph>
+      </div>
 
       {/* Source URI */}
       {e.sourceUri && (

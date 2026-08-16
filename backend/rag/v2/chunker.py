@@ -176,7 +176,9 @@ class TrafficKnowledgeChunker:
                         idx += 1
                         current_text = ""
 
-        if len(current_text.strip()) >= self.child_min // 2:
+        # Emit the final chunk for ANY non-empty content — short documents
+        # must still produce at least one retrievable chunk (Phase 16 Round 2).
+        if current_text.strip():
             children.append(self._make_child(doc, current_text.strip(), parent_path, idx))
 
         return children

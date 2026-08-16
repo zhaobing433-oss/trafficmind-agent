@@ -7,6 +7,7 @@ Stages: query_analysis → query_rewrite → hybrid_retrieval → rrf_fusion
 完整 Trace 记录：各阶段 latency、degraded 状态、candidates/accepted/rejected。
 """
 from __future__ import annotations
+import asyncio
 import logging
 import time
 import uuid
@@ -35,8 +36,17 @@ from backend.rag.v2.reranker import Reranker
 from backend.rag.v2.evidence_evaluator import EvidenceEvaluator
 from backend.rag.v2.context_packer import ContextPacker
 from backend.rag.v2.grounded_generator import GroundedGenerator
+from backend.rag.v2.config import RAG_STAGE_TIMEOUT_SECONDS, RAG_OVERALL_TIMEOUT_SECONDS, RAG_RERANK_TIMEOUT_SECONDS
 
 logger = logging.getLogger("rag.v2.pipeline")
+
+
+class RAGStageTimeout(Exception):
+    """RAG 单 stage 超时。"""
+    def __init__(self, stage: str, elapsed_ms: float):
+        super().__init__(f"RAG stage '{stage}' timed out after {elapsed_ms:.0f}ms")
+        self.stage = stage
+        self.elapsed_ms = elapsed_ms
 
 
 class RagPipeline:
@@ -56,6 +66,23 @@ class RagPipeline:
         self.evidence_evaluator = EvidenceEvaluator()
         self.context_packer = ContextPacker()
         self.grounded_generator = GroundedGenerator(self.context_packer)
+
+    async def _run_stage(self, fn, stage: str, *args, timeout: Optional[float] = None):
+        """在独立线程运行同步 stage，并施加单 stage 超时。
+
+        Returns:
+            fn 的返回值。
+        Raises:
+            RAGStageTimeout: stage 超过 timeout（默认 RAG_STAGE_TIMEOUT_SECONDS）。
+        """
+        t0 = time.time()
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(fn, *args),
+                timeout=timeout if timeout is not None else RAG_STAGE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise RAGStageTimeout(stage, (time.time() - t0) * 1000)
 
     # ── Main API ────────────────────────────────────────────────────────────
 
@@ -353,7 +380,7 @@ class RagPipeline:
 
         # 1. Analyze
         t1 = time.time()
-        analysis = self.query_analyzer.analyze(question, event_info)
+        analysis = await self._run_stage(self.query_analyzer.analyze, "analyze", question, event_info)
         trace.required_facets = analysis.required_facets
         trace.stages.append(TraceStage(
             stage="query_analysis", duration_ms=(time.time()-t1)*1000,
@@ -377,7 +404,7 @@ class RagPipeline:
 
         # 2. Rewrite
         t2 = time.time()
-        rewritten = self.query_rewriter.rewrite(question, analysis, memory_context, event_info, session_context)
+        rewritten = await self._run_stage(self.query_rewriter.rewrite, "rewrite", question, analysis, memory_context, event_info, session_context)
         trace.rewritten_query = rewritten
         trace.stages.append(TraceStage(
             stage="query_rewrite", duration_ms=(time.time()-t2)*1000,
@@ -387,7 +414,7 @@ class RagPipeline:
 
         # 3. Retrieve
         t3 = time.time()
-        candidates = self.hybrid_retriever.retrieve(question, rewritten, analysis)
+        candidates = await self._run_stage(self.hybrid_retriever.retrieve, "retrieve", question, rewritten, analysis)
         trace.candidates_total = len(candidates)
         trace.stages.append(TraceStage(
             stage="hybrid_retrieval", duration_ms=(time.time()-t3)*1000,
@@ -401,19 +428,37 @@ class RagPipeline:
             )),
         }}
 
-        # 4. Rerank
+        # 4. Rerank (optional — fallback to retrieval ranking on timeout/unavailable)
         t4 = time.time()
-        accepted, rejected, rerank_degraded = self.reranker.rerank(rewritten, candidates)
+        rerank_applied = True
+        rerank_fallback_reason: Optional[str] = None
+        try:
+            accepted, rejected, rerank_degraded = await self._run_stage(
+                self.reranker.rerank, "rerank", rewritten, candidates,
+                timeout=RAG_RERANK_TIMEOUT_SECONDS,
+            )
+            if rerank_degraded:
+                rerank_applied = False
+                rerank_fallback_reason = "degraded"
+        except RAGStageTimeout:
+            # Reranker cold-load/timeout → fallback to retrieval ranking (RRF)
+            accepted, rejected, rerank_degraded = self.reranker.fallback_rerank(candidates)
+            rerank_applied = False
+            rerank_fallback_reason = "timeout"
         trace.accepted_total = len(accepted)
         trace.rejected_total = len(rejected)
         trace.stages.append(TraceStage(
             stage="rerank_and_policy", duration_ms=(time.time()-t4)*1000,
             degraded=rerank_degraded,
-            output={"accepted": len(accepted), "rejected": len(rejected)},
+            output={"accepted": len(accepted), "rejected": len(rejected),
+                    "rerank_applied": rerank_applied, "fallback_reason": rerank_fallback_reason},
         ))
         yield {"event": "rag_rerank_done", "data": {
             "accepted": len(accepted), "rejected": len(rejected),
             "degraded": rerank_degraded,
+            "rerankApplied": rerank_applied,
+            "rerankFallbackUsed": not rerank_applied,
+            "rerankFallbackReason": rerank_fallback_reason,
         }}
 
         # 5. Evidence
@@ -421,6 +466,7 @@ class RagPipeline:
         trace.evidence_total = len(evidence_items)
         ev_state, ev_reason = self.evidence_evaluator.evaluate(
             evidence_items, analysis.required_facets, question,
+            rerank_applied=rerank_applied,
         )
         trace.evidence_state = ev_state
         trace.stages.append(TraceStage(
@@ -458,12 +504,55 @@ class RagPipeline:
             }}
             return
 
-        # 6. Generate
+        # 6. Generate (streaming)
         t5 = time.time()
         memory_str = self._build_memory_string(memory_context)
-        answer = self.grounded_generator.generate(
-            question, evidence_items, ev_state, trace_id, memory_str,
-        )
+
+        # Stream LLM deltas from a worker thread via an asyncio queue
+        delta_queue: asyncio.Queue = asyncio.Queue()
+
+        def _generate_worker():
+            def _on_delta(d: str):
+                delta_queue.put_nowait(("delta", d))
+            try:
+                result = self.grounded_generator.stream_answer(
+                    question, evidence_items, ev_state, memory_str, _on_delta,
+                )
+                delta_queue.put_nowait(("done", result))
+            except Exception as e:
+                delta_queue.put_nowait(("error", str(e)))
+
+        asyncio.create_task(asyncio.to_thread(_generate_worker))
+
+        answer_text = ""
+        citations: List = []
+        used_llm = False
+        while True:
+            msg = await delta_queue.get()
+            if msg[0] == "delta":
+                answer_text += msg[1]
+                yield {"event": "delta", "data": {"text": msg[1]}}
+            else:
+                if msg[0] == "done" and msg[1]:
+                    answer_text, citations, used_llm = msg[1]
+                break
+
+        # Build RagAnswer (template fallback if streaming failed)
+        if not used_llm or not answer_text.strip():
+            t_text, t_citations = self.grounded_generator._template_generate(
+                question, evidence_items, ev_state,
+            )
+            answer = self.grounded_generator._build_answer(
+                question, t_text, evidence_items, ev_state, t_citations,
+                trace_id, [], used_llm=False, degraded=True,
+                degraded_reasons=["LLM generation failed, using template fallback"],
+            )
+        else:
+            answer = self.grounded_generator._build_answer(
+                question, answer_text, evidence_items, ev_state, citations,
+                trace_id, [], used_llm=True, degraded=False,
+            )
+
         answer.index_version = self._get_latest_index_version()
         answer.embedding_model = self.embedding_provider.get_model_name()
         answer.reranker_model = self.reranker_provider.get_model_name()
@@ -480,8 +569,6 @@ class RagPipeline:
             stage="generation", duration_ms=(time.time()-t5)*1000,
             output={"answer_length": len(answer.answer), "evidence_count": len(evidence_items)},
         ))
-
-        yield {"event": "delta", "data": {"text": answer.answer}}
         # Save trace, then yield trace_ready + done
         self._save_trace_safe(trace)
         yield {"event": "rag_trace_ready", "data": {"traceId": trace_id}}

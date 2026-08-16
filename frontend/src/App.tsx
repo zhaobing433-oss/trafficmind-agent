@@ -11,6 +11,7 @@ import CollaborationRunView from './components/collaboration/CollaborationRunVie
 import { WorkflowWorkspace } from './components/workflow/WorkflowWorkspace';
 import { TrafficMapWorkspace } from './components/simulation/TrafficMapWorkspace';
 import { EvaluationDashboard } from './components/evaluation/EvaluationDashboard';
+import { KnowledgeWorkspace } from './components/knowledge/KnowledgeWorkspace';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
@@ -110,20 +111,25 @@ export default function App() {
     const url = new URL(window.location.href);
     url.searchParams.set('view', v);
     if (v !== 'evaluation') url.searchParams.delete('report');
-    // Clear workflowRunId when explicitly navigating (not F5 restore)
-    if (v !== 'workflow' || !workflowRunId) {
-      // Navigating away from workflow, or to workflow without a run context -
-      // clear stale runId so user sees the center, not a leftover run detail
-    }
     if (v === 'workflow') {
       // Explicit nav to workflow → clear run detail, show center
       setWorkflowRunId(null);
       url.searchParams.delete('workflowRunId');
     }
+    if (v === 'qa') {
+      // Explicit nav to 知识库 → enter default Documents tab, clear stale RAG session
+      setActiveSessionId(null);
+      setPendingCreate(true);
+      url.searchParams.delete('sessionId');
+      url.searchParams.delete('knowledgeTab');
+      url.searchParams.delete('knowledgeDocumentId');
+      url.searchParams.delete('knowledgeChunkId');
+    }
     window.history.replaceState({}, '', url.toString());
   };
   const handleRecentClick = async (id: string) => {
     // Fetch session to determine its mode, then route to correct workspace
+    let targetView = 'home';
     try {
       const detail = await chatApi.getSession(id);
       const sessionMode = detail.session.mode || 'react';
@@ -132,11 +138,20 @@ export default function App() {
         rag: 'qa', collaboration: 'multi', report: 'report',
         simulation: 'simulation',
       };
-      setView(viewMap[sessionMode] || 'home');
+      targetView = viewMap[sessionMode] || 'home';
     } catch {
-      setView('home');
+      targetView = 'home';
     }
-    setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1); updateUrl(id);
+    setView(targetView);
+    setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1);
+    // Update URL atomically: view + sessionId + knowledgeTab (for RAG ask tab)
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', targetView);
+    url.searchParams.set('sessionId', id);
+    if (targetView === 'qa') {
+      url.searchParams.set('knowledgeTab', 'ask');
+    }
+    window.history.replaceState({}, '', url.toString());
   };
   const handleRenameSession = async (id: string, t: string) => { try { await fetch(`/api/chat/sessions/${id}/title`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t }) }); refreshSessions(); } catch { /* ignore */ } };
   const handleDeleteSession = async (sessionId: string) => {
@@ -185,7 +200,7 @@ export default function App() {
         {view === 'alert' ? <AlertDashboard /> :
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard /> :
-         view === 'qa' ? <QaDashboard onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
+         view === 'qa' ? <KnowledgeWorkspace onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
          view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> :
          view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> :
          view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} /> :
@@ -585,32 +600,6 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 }
 
 // ========== Knowledge Base (QA) Dashboard ==========
-
-function QaDashboard({ onRefresh, activeSessionId }: { onRefresh: () => void; activeSessionId?: string }) {
-  const [ragStatus] = useState<Record<string,unknown>>({});
-  useEffect(() => { fetch('/api/rag/status').then(r => r.json()).catch(() => {}); }, []);
-  const quickQs = ['雨天早高峰拥堵有哪些处置原则？', '信号灯异常应该优先检索哪些预案？', '学校周边拥堵需要关注哪些安全因素？', '为什么证据不足时系统会拒答？', '高风险路口如何判定？'];
-  return (
-    <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>知识库</h2>
-      <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 8px' }}>RAG交通知识库 · 规则/预案/经验检索 · 证据问答</p>
-      <div style={{ background: '#F0FDFA', borderRadius: 12, padding: '10px 14px', border: '1px solid #0F766E20', marginBottom: 10, fontSize: 12, color: '#374151', lineHeight: 1.7 }}>
-        <strong>知识库用于：</strong>查询交通处置规则、信号异常预案、拥堵治理经验、事故处置原则、高风险路口判定依据、RAG检索策略和拒答原因。
-        <br /><strong>不适用：</strong>知识库不直接代表实时路况，不负责真实派单，不用于生成具体事件闭环结果。具体事件处置请使用输入框能力「事件研判」或进入「协同分析」。
-      </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <button onClick={async () => { try { await fetch('/api/rag/rebuild_index', { method: 'POST' }); alert('索引重建完成'); } catch { alert('重建失败'); } }} style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFF', cursor: 'pointer', fontSize: 12 }}>🔄 重建索引</button>
-        <span style={{ fontSize: 11, color: '#9CA3AF', padding: '5px 0' }}>阈值: &lt;0.35拒答 | 0.35-0.55低置信度 | 0.55-0.75中 | ≥0.75高</span>
-      </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-        {quickQs.map(q => (
-          <div key={q} onClick={() => { /* set input */ }} style={{ background: '#FFF', borderRadius: 10, padding: '6px 12px', border: '1px solid #E5E7EB', cursor: 'pointer', fontSize: 11, color: '#6B7280' }}>{q}</div>
-        ))}
-      </div>
-      <ChatWorkspace sessionId={activeSessionId} pendingCreate={!activeSessionId} defaultMode="rag" showFullModes={false} onSessionCreated={(id) => { onRefresh(); }} onConversationUpdate={onRefresh} onNewConversation={() => {}} view="qa" />
-    </div>
-  );
-}
 
 // ========== Report Dashboard ==========
 

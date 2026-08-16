@@ -14,6 +14,8 @@ from backend.rag.grounded_answer import generate_grounded_answer
 from backend.rag.domain_retrieval_policy import domain_rerank_and_filter
 from backend.rag.intent_router import classify_traffic_intent
 from backend.agent.streaming import sse_event
+from backend.rag.v2.pipeline import RAGStageTimeout
+from backend.rag.v2.config import RAG_STAGE_TIMEOUT_SECONDS
 
 
 def _generate_title(content: str, answer: str = "") -> str:
@@ -121,27 +123,44 @@ async def chat_stream_generator(
             citation_map = []
             abstained = False
 
-            async for event in pipeline.ask_stream(question=content):
-                event_name = event.get("event", "message")
-                event_data = event.get("data", {})
-                # Collect metadata from pipeline events but DON'T yield duplicate done
-                if event_name == "delta":
-                    answer_text += event_data.get("text", "")
-                    yield sse_event(event_name, event_data)
-                elif event_name == "done":
-                    trace_id = event_data.get("traceId", event_data.get("trace_id", ""))
-                    evidence_items = event_data.get("evidence", [])
-                    evidence_state = event_data.get("evidence_state", "")
-                    citation_map = event_data.get("citation_map", [])
-                    abstained = event_data.get("abstained", False)
-                    pipeline_answer = event_data.get("answer", event_data.get("content", ""))
-                    # If no deltas were sent (abstain path), use pipeline's answer text
-                    if not answer_text and pipeline_answer:
-                        answer_text = pipeline_answer
-                    # DON'T yield — we'll send enriched done below
-                else:
-                    yield sse_event(event_name, event_data)
-                await asyncio.sleep(0.01)
+            try:
+                async for event in pipeline.ask_stream(question=content):
+                    event_name = event.get("event", "message")
+                    event_data = event.get("data", {})
+                    # Collect metadata from pipeline events but DON'T yield duplicate done
+                    if event_name == "delta":
+                        answer_text += event_data.get("text", "")
+                        yield sse_event(event_name, event_data)
+                    elif event_name == "done":
+                        trace_id = event_data.get("traceId", event_data.get("trace_id", ""))
+                        evidence_items = event_data.get("evidence", [])
+                        evidence_state = event_data.get("evidence_state", "")
+                        citation_map = event_data.get("citation_map", [])
+                        abstained = event_data.get("abstained", False)
+                        pipeline_answer = event_data.get("answer", event_data.get("content", ""))
+                        # If no deltas were sent (abstain path), use pipeline's answer text
+                        if not answer_text and pipeline_answer:
+                            answer_text = pipeline_answer
+                        # DON'T yield — we'll send enriched done below
+                    else:
+                        yield sse_event(event_name, event_data)
+                    await asyncio.sleep(0.01)
+            except RAGStageTimeout as e:
+                # Guarantee terminal event on RAG stage timeout (Phase 16 Round 2)
+                timeout_msg = f"知识问答超时（{e.stage} 阶段超过 {RAG_STAGE_TIMEOUT_SECONDS} 秒未完成），请稍后重试。"
+                yield sse_event("error", {
+                    "status": "timeout", "errorCode": "RAG_STAGE_TIMEOUT",
+                    "stage": e.stage, "message": str(e), "traceId": trace_id,
+                })
+                asst_id = f"am_{int(datetime.now().timestamp() * 1000)}"
+                add_message(asst_id, session_id, "assistant", timeout_msg, mode)
+                yield sse_event("done", {
+                    "sessionId": session_id, "assistantMessageId": asst_id,
+                    "status": "timeout", "errorCode": "RAG_STAGE_TIMEOUT",
+                    "stage": e.stage, "ragEngine": "v2", "fallbackUsed": False,
+                    "content": timeout_msg,
+                })
+                return
 
             asst_id = f"am_{int(datetime.now().timestamp() * 1000)}"
             result_data = {
@@ -167,6 +186,9 @@ async def chat_stream_generator(
                 "evidence": evidence_items, "evidence_state": evidence_state,
                 "citation_map": citation_map,
                 "content": answer_text,
+                "ragEngine": "v2",
+                "retrievalMode": "dense",
+                "fallbackUsed": False,
             })
             return  # CRITICAL: close generator immediately after done
         else:
@@ -201,7 +223,7 @@ async def chat_stream_generator(
             asst_id = f"am_{int(datetime.now().timestamp() * 1000)}"
             add_message(asst_id, session_id, "assistant", answer, mode)
             ti = _finalize_title_and_done(session_id, content, answer)
-            yield sse_event("done", {**ti, "sessionId": session_id, "assistantMessageId": asst_id, "abstained": len(evidence_items) == 0, "usedLLM": LLM_ENABLED and bool(answer)})
+            yield sse_event("done", {**ti, "sessionId": session_id, "assistantMessageId": asst_id, "abstained": len(evidence_items) == 0, "usedLLM": LLM_ENABLED and bool(answer), "ragEngine": "v1", "retrievalMode": "legacy", "fallbackUsed": True, "fallbackReason": "V2 pipeline unavailable"})
 
     elif mode == "react":
         # 智能诊断 — 受控 ReAct，不输出多 Agent 报告
