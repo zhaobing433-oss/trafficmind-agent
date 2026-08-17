@@ -1569,6 +1569,13 @@ app.include_router(workflow_router)
 app.include_router(knowledge_router)
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Phase 17: Adaptive Planning V1 Router
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from backend.planning.api import router as planning_router
+app.include_router(planning_router)
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Phase 13: Traffic Map & Simulation V1 Router
 # ═══════════════════════════════════════════════════════════════════════════════
 

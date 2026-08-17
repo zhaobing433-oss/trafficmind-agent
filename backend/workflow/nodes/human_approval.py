@@ -38,13 +38,21 @@ async def execute_human_approval(
     Returns:
         审批信息（含 approval_id，供 API 调用）
     """
-    # ── 恢复场景：若已批准/驳回，跳过审批节点 ──────────────────────
-    if state.pending_approval is None and state.approved_actions:
-        # 已批准：直接跳过，继续到下一个节点
-        state.add_audit_event("approval_completed", config.node_id, {
-            "status": "already_approved",
-        })
-        return {"approval_required": False, "status": "already_approved"}
+    # ── 恢复场景：仅当本节点声明的 action_type 已全部批准时才跳过 ──
+    # Phase17：不能因为「本 run 已有 approved_actions」就跳过第二个 high-risk
+    # 门禁（approval 是 actionType-scoped，多个门禁需各自独立审批）。
+    declared = config.config.get("action_types", []) or []
+    if state.pending_approval is None and declared:
+        approved_types = {
+            pa.get("actionType") or pa.get("action_type")
+            for pa in (state.approved_actions or [])
+            if isinstance(pa, dict)
+        }
+        if all(at in approved_types for at in declared):
+            state.add_audit_event("approval_completed", config.node_id, {
+                "status": "already_approved",
+            })
+            return {"approval_required": False, "status": "already_approved"}
 
     # 收集提议的动作
     proposed_actions = list(state.proposed_actions or [])
