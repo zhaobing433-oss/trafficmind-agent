@@ -198,6 +198,22 @@ async def execute_action(
         status=ActionStatus.EXECUTING,
     )
 
+    # ── Phase17 Round2: budget durable reservation BEFORE dispatch ──
+    # ToolPolicy ALLOW 后、真正 dispatch 前：check → increment → persist → dispatch。
+    # 若 persist 失败或 budget 耗尽 → fail-closed，不 dispatch。
+    if repository:
+        from backend.planning.budget import reserve_tool_call_durable
+        if not reserve_tool_call_durable(repository, state.workflow_run_id):
+            state.add_audit_event("budget_exhausted", config.node_id, {
+                "actionType": action_type, "reason": "tool budget exhausted",
+            })
+            return {
+                "action_type": action_type,
+                "status": "budget_exhausted",
+                "executed": False,
+                "reason": "tool budget exhausted",
+            }
+
     # 执行具体动作
     result_data: Dict[str, Any] = {}
     error = ""

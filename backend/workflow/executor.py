@@ -151,6 +151,11 @@ class WorkflowExecutor:
             current_node_id=definition.entry_node_id,
             state=state.to_dict(), triggered_by=triggered_by,
         )
+        # Phase17 Round2: 初始化 execution lineage（budget/constraints/loop）
+        from backend.planning.budget import get_lineage, new_lineage, set_lineage
+        _lineage = get_lineage(run.state)
+        if not _lineage.rootRunId:
+            set_lineage(run.state, new_lineage(run_id))
         self.repo.save_run(run)
 
         seq = 0
@@ -164,6 +169,7 @@ class WorkflowExecutor:
 
         state.transition(WorkflowRunStatus.RUNNING)
         self._persist_run(run, state)
+        self._open_active_segment(run)
 
         try:
             async for sse_str in self._execute_definition(
@@ -204,6 +210,7 @@ class WorkflowExecutor:
             return
 
         state.transition(WorkflowRunStatus.RUNNING)
+        self._open_active_segment(run)
 
         yield sse_event("workflow_resumed", {
             "runId": run_id, "currentNodeId": state.current_node,
@@ -236,6 +243,58 @@ class WorkflowExecutor:
     # ═══════════════════════════════════════════════════════════════════════
     # 取消
     # ═══════════════════════════════════════════════════════════════════════
+
+    async def execute_created_run(self, run_id: str) -> AsyncGenerator[str, None]:
+        """执行一个预先创建（record-only）的 child continuation run。
+
+        Phase17 Round2：cutover 事务只创建 child run record；commit 后由本方法执行。
+        """
+        from backend.agent.streaming import sse_event
+
+        run = self.repo.get_run(run_id)
+        if run is None:
+            yield sse_event("error", {"message": f"Run '{run_id}' 不存在"})
+            yield sse_event("done", {"error": True})
+            return
+
+        definition = self._def_manager.get_definition_at_version(run.definition_id, run.version)
+        if definition is None:
+            yield sse_event("error", {"message": f"版本 {run.version} 的 Definition 不存在"})
+            yield sse_event("done", {"error": True})
+            return
+
+        state = TrafficWorkflowState.from_dict(run.state if isinstance(run.state, dict) else {})
+        state.workflow_run_id = run_id
+        state.workflow_definition_id = run.definition_id
+        state.workflow_version = run.version
+        state.session_id = run.session_id
+        state.event_thread_id = run.event_thread_id
+        if state.status == WorkflowRunStatus.PENDING:
+            state.transition(WorkflowRunStatus.RUNNING)
+        self._persist_run(run, state)
+        self._open_active_segment(run)
+
+        yield sse_event("workflow_started", {
+            "runId": run_id, "definitionId": run.definition_id,
+            "version": run.version, "continued": True,
+        })
+        self._save_event(run_id, "workflow_started", "", {
+            "runId": run_id, "continued": True,
+        }, 0)
+
+        seq = len(self.repo.list_events(run_id))
+        try:
+            async for sse_str in self._execute_definition(
+                definition=definition, state=state, run=run, start_seq=seq,
+            ):
+                yield sse_str
+        except Exception as e:
+            traceback.print_exc()
+            state.record_error("executor", str(e))
+            state.transition(WorkflowRunStatus.FAILED)
+            self._persist_run(run, state)
+            yield sse_event("workflow_failed", {"runId": run_id, "error": str(e)[:500]})
+            yield sse_event("done", {"runId": run_id, "status": "failed"})
 
     async def cancel(self, run_id: str) -> Dict[str, Any]:
         """取消 Workflow 执行。"""
@@ -446,6 +505,7 @@ class WorkflowExecutor:
             # ── 检查暂停 ──────────────────────────────────────────────
             if state.status == WorkflowRunStatus.AWAITING_APPROVAL:
                 self._persist_run(run, state)
+                self._close_active_segment(run)
                 approval_data = state.pending_approval or {}
                 self._save_event(run.run_id, "approval_required", current_node_id, {
                     "approvalId": approval_data.get("approvalId", ""),
@@ -458,6 +518,7 @@ class WorkflowExecutor:
 
             if state.status == WorkflowRunStatus.PAUSED:
                 self._persist_run(run, state)
+                self._close_active_segment(run)
 
                 # ── wait 节点处理 ────────────────────────────────────
                 wait_config = node_config.config
@@ -662,6 +723,21 @@ class WorkflowExecutor:
         result: Dict[str, Any] = {}
         succeeded = False
 
+        # Phase17 Round2: active-time budget check before semantic step
+        from backend.planning.budget import should_count_step
+        if should_count_step(node_config.node_type) and self._active_budget_exhausted(run):
+            node_run.status = NodeStatus.FAILED
+            node_run.error = "active time budget exhausted"
+            node_run.completed_at = _utc_now_iso()
+            self.repo.save_node_run(node_run)
+            sse_events.append(sse_event_fn("node_failed", {
+                "runId": run.run_id, "nodeId": node_id,
+                "nodeType": node_type, "error": "active time budget exhausted",
+                "attempt": 1,
+            }))
+            state.transition(WorkflowRunStatus.FAILED)
+            return {"sse_events": sse_events, "next_seq": seq, "succeeded": False, "result": {}}
+
         for attempt in range(1, node_config.max_attempts + 1):
             node_run.attempt = attempt
             node_run.node_run_id = generate_node_run_id(run.run_id, node_id, attempt)
@@ -691,6 +767,11 @@ class WorkflowExecutor:
                 state.record_error(node_id, last_error, attempt)
 
             if attempt < node_config.max_attempts:
+                # Phase17 Round2: execution-lineage maxRetries（同 step retry 不重复 stepsUsed）
+                from backend.planning.budget import reserve_retry_durable
+                if not reserve_retry_durable(self.repo, run.run_id):
+                    last_error = "retry budget exhausted"
+                    break
                 await asyncio.sleep(node_config.retry_delay_seconds)
 
         # ── 断言 current_event 未被覆盖 ──────────────────────────────
@@ -743,6 +824,11 @@ class WorkflowExecutor:
             }, seq)
             seq += 1
             state.transition(WorkflowRunStatus.FAILED)
+
+        # Phase17 Round2: stepsUsed for semantic PlanStep（结构节点不计）
+        from backend.planning.budget import reserve_step_durable, should_count_step
+        if should_count_step(node_config.node_type):
+            reserve_step_durable(self.repo, run.run_id)
 
         self.repo.save_node_run(node_run)
 
@@ -828,13 +914,62 @@ class WorkflowExecutor:
     # ═══════════════════════════════════════════════════════════════════════
 
     def _persist_run(self, run: WorkflowRun, state: TrafficWorkflowState) -> None:
-        run.state = state.to_dict()
+        state_dict = state.to_dict()
+        # Phase17 Round2: 保留 execution lineage（action 节点可能已 durable reserve）
+        from backend.planning.budget import LINEAGE_KEY
+        db_run = self.repo.get_run(run.run_id)
+        if db_run is not None and isinstance(db_run.state, dict) and db_run.state.get(LINEAGE_KEY):
+            state_dict[LINEAGE_KEY] = db_run.state[LINEAGE_KEY]
+        # terminal 时关闭 active segment，累计 activeElapsedSeconds
+        if state.is_terminal():
+            import time
+            from backend.planning.budget import close_active_segment, get_lineage
+            lineage = get_lineage(state_dict)
+            if lineage.rootRunId:
+                close_active_segment(lineage, time.time())
+                state_dict[LINEAGE_KEY] = lineage.to_dict()
+        run.state = state_dict
         run.status = state.status
         run.current_node_id = state.current_node
         run.updated_at = _utc_now_iso()
         if state.is_terminal() and not run.completed_at:
             run.completed_at = _utc_now_iso()
         self.repo.save_run(run)
+
+    def _open_active_segment(self, run: WorkflowRun) -> None:
+        """打开 active execution segment（start/resume 时）。"""
+        import time
+
+        from backend.planning.budget import get_lineage, open_active_segment, set_lineage
+        state = run.state if isinstance(run.state, dict) else {}
+        lineage = get_lineage(state)
+        if not lineage.rootRunId:
+            return
+        open_active_segment(lineage, time.time())
+        set_lineage(state, lineage)
+        run.state = state
+        self.repo.save_run(run)
+
+    def _close_active_segment(self, run: WorkflowRun) -> None:
+        """关闭 active segment（pause/terminal 时），累计 activeElapsedSeconds。"""
+        import time
+
+        from backend.planning.budget import close_active_segment, get_lineage, set_lineage
+        state = run.state if isinstance(run.state, dict) else {}
+        lineage = get_lineage(state)
+        if not lineage.rootRunId:
+            return
+        close_active_segment(lineage, time.time())
+        set_lineage(state, lineage)
+        run.state = state
+        self.repo.save_run(run)
+
+    def _active_budget_exhausted(self, run: WorkflowRun) -> bool:
+        """activeElapsedSeconds 是否已达 maxTotalSeconds。"""
+        from backend.planning.budget import active_budget_exhausted, get_lineage
+        state = run.state if isinstance(run.state, dict) else {}
+        lineage = get_lineage(state)
+        return active_budget_exhausted(lineage)
 
     def _save_event(
         self, run_id: str, event_type: str, node_id: str,

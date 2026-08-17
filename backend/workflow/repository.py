@@ -881,3 +881,72 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
                 result[rid] = []
             result[rid].append(row["decision"])
         return result
+
+    # ── Phase 17 Round 2: atomic child continuation ──────────────────────
+
+    def create_child_continuation_tx(
+        self,
+        child_run: "WorkflowRun",
+        parent_run_id: str,
+        parent_status: str,
+        parent_state: Dict[str, Any],
+        definition_json: Dict[str, Any],
+        changelog: str = "replan",
+    ) -> int:
+        """原子 child cutover（单一 BEGIN IMMEDIATE 事务）。
+
+        顺序：version allocation → insert version → insert child run → update parent。
+        任何异常 rollback（parent 不被半写 / child 不 orphan / version 不覆盖）。
+        返回分配的 version。
+        """
+        import uuid as _uuid
+
+        init_workflow_tables()
+        _ensure_wait_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            # 1. version allocation（definition-level global monotonic，事务内无 race）
+            row = conn.execute(
+                "SELECT MAX(version) as mv FROM workflow_definition_versions WHERE definition_id=?",
+                (child_run.definition_id,),
+            ).fetchone()
+            next_version = (row["mv"] if row and row["mv"] is not None else 0) + 1
+            child_run.version = next_version
+
+            # 2. insert version snapshot（UNIQUE(definition_id, version)，碰撞即 rollback）
+            conn.execute(
+                "INSERT INTO workflow_definition_versions (id, definition_id, version, definition_json, changelog, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (f"wfver_{_uuid.uuid4().hex[:12]}", child_run.definition_id, next_version,
+                 json.dumps(definition_json, ensure_ascii=False), changelog, now),
+            )
+
+            # 3. insert child run record（确定性 run_id，PK 碰撞即 rollback → 幂等）
+            conn.execute(
+                "INSERT INTO workflow_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (child_run.run_id, child_run.definition_id, next_version,
+                 child_run.session_id, child_run.event_thread_id, child_run.status.value,
+                 child_run.current_node_id, json.dumps(child_run.state, ensure_ascii=False),
+                 child_run.started_at, child_run.updated_at, child_run.completed_at,
+                 child_run.triggered_by, "", None, None, ""),
+            )
+
+            # 4. update parent run（terminal + lineage/termination metadata）
+            conn.execute(
+                "UPDATE workflow_runs SET status=?, state_json=?, updated_at=? WHERE run_id=?",
+                (parent_status, json.dumps(parent_state, ensure_ascii=False), now, parent_run_id),
+            )
+
+            conn.commit()
+            return next_version
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def list_observations(self, run_id: str) -> List["WorkflowEvent"]:
+        """列出 run 的 observation 事件（event_type=observation_recorded）。"""
+        events = self.list_events(run_id)
+        return [e for e in events if e.event_type == "observation_recorded"]

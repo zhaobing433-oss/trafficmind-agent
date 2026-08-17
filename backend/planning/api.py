@@ -165,6 +165,7 @@ async def run_plan(plan_id: str, body: PlanRunRequest):
             # 流结束后补写 plan 生命周期事件（plan_started + terminal）
             if run_id:
                 _record_plan_lifecycle_events(run_id)
+                _auto_replan_if_needed(run_id)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -210,9 +211,16 @@ async def get_plan(plan_id: str):
             run_status=run.status.value,
             pending_approval=pending,
         )
+        lineage = (state.get("executionLineage") or {})
         run_projections.append({
             "runId": run.run_id,
             "status": run.status.value,
+            "version": run.version,
+            "rootRunId": lineage.get("rootRunId"),
+            "replannedFromRunId": state.get("replannedFromRunId"),
+            "replannedFromVersion": state.get("replannedFromVersion"),
+            "replannedToRunId": state.get("replannedToRunId"),
+            "terminationReason": state.get("terminationReason"),
             "startedAt": run.started_at or None,
             "completedAt": run.completed_at or None,
             "stepStatuses": {k: v.value for k, v in step_statuses.items()},
@@ -222,6 +230,30 @@ async def get_plan(plan_id: str):
         "plan": plan.to_dict(),
         "definitionId": definition.id,
         "runs": run_projections,
+    }
+
+
+@router.post("/runs/{run_id}/replan", summary="显式 deterministic replan（child continuation）")
+async def replan_run(run_id: str):
+    """对失败/拒绝的 run 发起 deterministic revision。幂等（已 replan 返回既有 child）。"""
+    from backend.planning.continuation import PlanningContinuationCoordinator
+    coordinator = PlanningContinuationCoordinator(_repo)
+    result = coordinator.explicit_replan(run_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/runs/{run_id}/observations", summary="查询 run 的 observation audit")
+async def list_observations(run_id: str):
+    """从 durable workflow_events 重建 observation audit log。"""
+    run = _repo.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' 不存在")
+    events = _repo.list_observations(run_id)
+    return {
+        "runId": run_id,
+        "observations": [e.to_dict() for e in events],
     }
 
 
@@ -244,6 +276,16 @@ def _load_plan_from_metadata(metadata: Dict[str, Any]) -> Optional[Plan]:
         return Plan.from_dict(plan_raw)
     except Exception:
         return None
+
+
+def _auto_replan_if_needed(run_id: str) -> None:
+    """machine failure 自动 replan（仅 planning-generated run；deny/reject 不自动）。"""
+    try:
+        from backend.planning.continuation import PlanningContinuationCoordinator
+        coordinator = PlanningContinuationCoordinator(_repo)
+        coordinator.auto_continue(run_id)
+    except Exception:
+        pass  # 自动 replan 失败不阻断主流程
 
 
 def _extract_run_id(sse_str: str) -> str:

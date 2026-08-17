@@ -200,6 +200,7 @@ class PlanStep:
     timeoutSeconds: int = 60
     resultRef: str = ""
     failureReason: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -219,6 +220,7 @@ class PlanStep:
             "timeoutSeconds": self.timeoutSeconds,
             "resultRef": self.resultRef,
             "failureReason": self.failureReason,
+            "metadata": dict(self.metadata),
         }
 
     @classmethod
@@ -240,6 +242,7 @@ class PlanStep:
             timeoutSeconds=int(d.get("timeoutSeconds", 60)),
             resultRef=d.get("resultRef", ""),
             failureReason=d.get("failureReason", ""),
+            metadata=dict(d.get("metadata", {})),
         )
 
 
@@ -362,6 +365,8 @@ def compute_fingerprint(steps: List[PlanStep]) -> str:
             "approvalRequired": s.approvalRequired,
             "timeoutSeconds": s.timeoutSeconds,
             "retryPolicy": s.retryPolicy,
+            "resultRef": s.resultRef,
+            "metadata": s.metadata,
         })
     payload = json.dumps(canon, sort_keys=True, ensure_ascii=False, default=str)
     return "fp_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
