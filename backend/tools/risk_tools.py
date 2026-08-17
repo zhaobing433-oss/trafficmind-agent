@@ -6,6 +6,7 @@
 
 from typing import Dict, Any, List
 from backend.config import EVENT_BASE_SCORES, RISK_LEVELS
+from backend.tools.event_tools import safe_float
 
 
 def calculate_risk_score(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -40,17 +41,17 @@ def calculate_risk_score(event: Dict[str, Any]) -> Dict[str, Any]:
 
     # ----- 加权规则 -----
 
-    avg_speed = float(event.get("avgSpeed", 30))
+    avg_speed = safe_float(event.get("avgSpeed"), 30.0)
     if avg_speed < 10:
         total += 15
         reasons.append(f"平均车速 {avg_speed} km/h < 10 km/h，严重缓行，+15")
 
-    queue_length = float(event.get("queueLength", 0))
+    queue_length = safe_float(event.get("queueLength"), 0.0)
     if queue_length > 150:
         total += 15
         reasons.append(f"排队长度 {queue_length} 米 > 150 米，拥堵范围大，+15")
 
-    duration = float(event.get("duration", 0))
+    duration = safe_float(event.get("duration"), 0.0)
     if duration > 600:
         total += 10
         reasons.append(f"持续 {int(duration)} 秒 > 600 秒，事件未快速消散，+10")
@@ -83,7 +84,7 @@ def calculate_risk_score(event: Dict[str, Any]) -> Dict[str, Any]:
         reasons.append("事发路段邻近医院，需保障急救通道，+10")
 
     # 置信度检查
-    confidence = float(event.get("confidence", 0.9))
+    confidence = safe_float(event.get("confidence"), 0.9)
     if confidence < 0.7:
         reasons.append("⚠ 算法置信度偏低（< 0.7），建议人工复核确认事件真实性")
 

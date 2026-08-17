@@ -217,7 +217,9 @@ class EvidencePolicy:
         for c in candidates:
             auth = c.get("authority_level", AuthorityLevel.OPERATIONAL)
             bonus = weights.get(auth, 0.0)
-            current = c.get("rerank_score") or c.get("rrf_score") or c.get("score", 0)
+            # Base score: rerank_score (sigmoid [0,1]) when available;
+            # otherwise dense_score (real cosine [0,1]) — NOT rrf_score (rank fusion 0.01-0.05).
+            current = c.get("rerank_score") or c.get("dense_score") or c.get("score") or c.get("rrf_score") or 0
             c["authority_bonus"] = bonus
             c["adjusted_score"] = round(current + bonus, 6)
 
@@ -337,6 +339,28 @@ class Reranker:
         accepted, rejected, policy_degraded = self.policy.apply(to_rerank)
         return accepted, rejected, is_degraded or policy_degraded
 
+    def fallback_rerank(
+        self,
+        candidates: List[Dict],
+    ) -> Tuple[List[Dict], List[Dict], bool]:
+        """Retrieval-ranking fallback（不调用 CrossEncoder）。
+
+        用于 reranker 超时/不可用时：直接按 rrf_score 降序排序后应用
+        EvidencePolicy。保证 RAG 仍可产出 grounded answer。
+        """
+        if not candidates:
+            return [], [], True
+        # Sort by rrf_score (or existing rerank_score) descending
+        to_rerank = sorted(
+            candidates,
+            key=lambda x: x.get("rrf_score", x.get("rerank_score", 0.0)),
+            reverse=True,
+        )
+        for i, c in enumerate(to_rerank):
+            c["rerank_rank"] = i + 1
+        accepted, rejected, _ = self.policy.apply(to_rerank)
+        return accepted, rejected, True  # is_degraded=True (reranker not applied)
+
     def build_evidence_items(
         self,
         accepted: List[Dict],
@@ -361,6 +385,7 @@ class Reranker:
                 retrieval_channels=c.get("retrieval_channels", []),
                 rrf_score=c.get("rrf_score"),
                 rerank_score=c.get("rerank_score"),
+                dense_score=c.get("dense_score"),
                 source_uri=c.get("source_uri", c.get("metadata", {}).get("source_uri")),
             ))
         return evidence

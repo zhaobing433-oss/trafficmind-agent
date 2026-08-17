@@ -19,6 +19,8 @@ backend/data/vector_db/
 
 # 环境变量（含密钥）
 .env
+.env.local
+.env.*.local
 
 # IDE / Editor
 .vscode/

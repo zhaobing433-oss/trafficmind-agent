@@ -479,7 +479,7 @@ async def rag_v2_index():
         docs = load_all_documents()
         emb_provider = get_embedding_provider()
         indexer = IncrementalIndexer(emb_provider)
-        job: IndexJobResult = indexer.index_documents(docs)
+        job: IndexJobResult = indexer.index_documents(docs, cleanup_stale=True)
         return job.model_dump(mode="json")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"索引失败: {e}")
@@ -1564,7 +1564,9 @@ async def list_event_threads(session_id: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from backend.workflow.api import router as workflow_router
+from backend.knowledge.api import router as knowledge_router
 app.include_router(workflow_router)
+app.include_router(knowledge_router)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Phase 13: Traffic Map & Simulation V1 Router

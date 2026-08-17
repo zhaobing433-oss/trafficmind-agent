@@ -7,6 +7,8 @@
 from datetime import datetime
 from typing import Dict, Any, List
 
+from backend.tools.event_tools import safe_float
+
 
 def generate_event_report(
     event: Dict[str, Any],
@@ -37,7 +39,7 @@ def generate_event_report(
     lane = event.get("lane", "")
     avg_speed = event.get("avgSpeed", 0)
     queue_length = event.get("queueLength", 0)
-    duration_min = int(float(event.get("duration", 0)) / 60)
+    duration_min = int(safe_float(event.get("duration"), 0.0) / 60)
     vehicle_count = event.get("vehicleCount", 0)
     confidence = event.get("confidence", 0)
 

@@ -68,6 +68,17 @@ async def execute_human_approval(
                 })
         state.proposed_actions = proposed_actions
 
+    # 模板声明的可执行动作类型 → 追加为结构化审批项。
+    # 这确保 tool-level approval 绑定到具体 action，而非 run 级 bool：
+    # 文本摘要审批只授权模板声明的动作，不会退化成「批准任意 high-risk tool」。
+    declared_action_types = config.config.get("action_types", []) or []
+    for at in declared_action_types:
+        if not any(
+            isinstance(pa, dict) and (pa.get("actionType") or pa.get("action_type")) == at
+            for pa in proposed_actions
+        ):
+            proposed_actions.append({"actionType": at, "source": "workflow_template"})
+
     # 从 rule_router 结果中获取审批原因
     risk = state.risk_assessment or {}
     event = state.current_event or {}

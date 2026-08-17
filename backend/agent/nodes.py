@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 # 导入各个工具模块
-from backend.tools.event_tools import validate_event, standardize_event
+from backend.tools.event_tools import validate_event, standardize_event, safe_float
 from backend.tools.risk_tools import calculate_risk_score
 from backend.tools.rule_tools import retrieve_rule
 from backend.tools.dispatch_tools import generate_dispatch_message, generate_public_message
@@ -42,10 +42,10 @@ def _generate_local_suggestions(event: Dict[str, Any], matched_rule: Dict[str, A
     if actions:
         suggestions.append(actions.strip())
 
-    if event.get("queueLength", 0) > 100:
+    if safe_float(event.get("queueLength"), 0.0) > 100:
         suggestions.append(f"建议在{road}上游路口实施分流，引导车辆绕行，缓解排队压力。")
 
-    if event.get("avgSpeed", 30) < 15:
+    if safe_float(event.get("avgSpeed"), 30.0) < 15:
         suggestions.append(f"建议通过交通广播、诱导屏发布实时路况信息，告知驾驶员提前绕行。")
 
     suggestions.append("做好事件处置记录，拍照留存，处置完成后及时反馈指挥中心。")
@@ -166,7 +166,7 @@ def generate_suggestions_node(state: Dict[str, Any]) -> Dict[str, Any]:
             direction=standard_event.get("direction", ""),
             speed=standard_event.get("avgSpeed", 0),
             queue=standard_event.get("queueLength", 0),
-            duration=int(float(standard_event.get("duration", 0)) / 60),
+            duration=int(safe_float(standard_event.get("duration"), 0.0) / 60),
             weather=standard_event.get("weather", ""),
             period=standard_event.get("timePeriod", ""),
             risk_level=risk_result.get("riskLevel", ""),
@@ -278,7 +278,9 @@ def send_notification_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     节点8：高风险事件消息推送（非阻塞）。
     仅当配置了通知渠道且风险等级 >= HIGH_RISK_THRESHOLD 时才推送。
-    使用 daemon 线程发送，不阻塞 API 响应。
+
+    ToolPolicy 门禁：/analyze_event 无 HITL 上下文，
+    HIGH_RISK 通知工具默认 REQUIRE_APPROVAL → 阻止执行，不偷偷发送。
     """
     from backend.config import NOTIFY_ENABLED, HIGH_RISK_THRESHOLD
 
@@ -291,16 +293,47 @@ def send_notification_node(state: Dict[str, Any]) -> Dict[str, Any]:
     threshold_score = level_scores.get(HIGH_RISK_THRESHOLD, 80)
 
     if NOTIFY_ENABLED and result and risk_score >= threshold_score:
-        import threading
-        from backend.tools.notify_tools import notify_high_risk_event
+        from backend.agent.tool_policy import enforce_tool_request
 
-        thread = threading.Thread(
-            target=notify_high_risk_event,
-            args=(result,),
-            daemon=True,
+        gate = enforce_tool_request(
+            "notify_high_risk_event",
+            caller="langgraph:/analyze_event",
+            context={"riskLevel": risk_level, "riskScore": risk_score},
         )
-        thread.start()
-        print(f"[Agent] 高风险事件 {result.get('eventId', '')} 已触发消息推送（{risk_level}）")
+
+        if gate["allowed"]:
+            import threading
+            from backend.tools.notify_tools import notify_high_risk_event
+
+            thread = threading.Thread(
+                target=notify_high_risk_event,
+                args=(result,),
+                daemon=True,
+            )
+            thread.start()
+            print(f"[Agent] 高风险事件 {result.get('eventId', '')} 已触发消息推送（{risk_level}）")
+        else:
+            # 阻止执行：记录 approval_required，不调用真实通知函数
+            result["notification"] = {
+                "status": gate["status"],
+                "reason": gate["reason"],
+                "executed": False,
+                "decision": gate["decision"],
+                "riskLevel": gate["riskLevel"],
+                "tool": "notify_high_risk_event",
+                "caller": "langgraph:/analyze_event",
+            }
+            state["result"] = result
+            # 持久化 ToolPolicy 决策（审计）：save_event_analysis 幂等（INSERT OR REPLACE）
+            # 使请求结束后仍可从 event_records.fullResult 读回 policy decision。
+            try:
+                save_event_analysis(result)
+            except Exception:
+                pass
+            print(
+                f"[Agent] 高风险事件 {result.get('eventId', '')} "
+                f"通知被 ToolPolicy 阻止：{gate['status']}（{gate['reason']}）"
+            )
 
     return {**state, "step": "send_notification"}
 

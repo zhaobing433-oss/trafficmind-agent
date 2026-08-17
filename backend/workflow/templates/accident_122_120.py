@@ -125,6 +125,7 @@ def build_accident_122_120_definition() -> WorkflowDefinition:
             label="人工审批",
             description="事故处置方案须人工审核",
             next_nodes=["action_notify"],
+            config={"action_types": ["notify_wechat"]},
         ),
 
         NodeConfig(

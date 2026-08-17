@@ -31,8 +31,18 @@ class EvidenceEvaluator:
         evidence: List[EvidenceItem],
         required_facets: List[str],
         query: str = "",
+        rerank_applied: bool = True,
     ) -> Tuple[EvidenceState, str]:
         """评估证据是否充分。
+
+        Args:
+            evidence: 证据列表。
+            required_facets: 需求面列表。
+            query: 原始查询（用于 fallback 时的 lexical 匹配）。
+            rerank_applied: 是否应用了 CrossEncoder 重排。
+                - True: 使用 rerank_score（sigmoid [0,1]）阈值。
+                - False: 使用 rank/facet/authority 决定 grounding，
+                  不能把 rrf_score（0.01-0.05 量级）与 rerank 阈值（0.15/0.3）比较。
 
         Returns:
             (evidence_state, reason)
@@ -44,31 +54,28 @@ class EvidenceEvaluator:
         covered_facets = self._check_facet_coverage(evidence, required_facets)
         facet_ratio = len(covered_facets) / max(len(required_facets), 1)
 
-        # 2. Check top rerank score
-        top_score = max((e.rerank_score or e.rrf_score or 0) for e in evidence)
-
-        # 3. Count formal rules
+        # 2. Count formal rules
         formal_rules = sum(1 for e in evidence if e.doc_type in ("rule", "regulation"))
 
-        # 4. Check authority
+        # 3. Check authority
         has_high_authority = any(
             e.authority_level in (AuthorityLevel.OFFICIAL, AuthorityLevel.PROFESSIONAL)
             for e in evidence
         )
 
-        # 5. Check for expired evidence
+        # 4. Check for expired evidence
         expired = [e for e in evidence if self._is_expired(e)]
         if expired:
             return EvidenceState.PARTIAL, f"存在{len(expired)}条过期证据，已过滤"
 
-        # 6. Check for contradictions
+        # 5. Check for contradictions
         has_contradiction = self._detect_contradictions(evidence)
         if has_contradiction:
             return EvidenceState.CONTRADICTORY, (
                 "检测到证据冲突，建议人工确认。不同来源对同一问题的建议存在显著差异。"
             )
 
-        # 7. Check if only low-authority auto-generated
+        # 6. Check if only low-authority auto-generated
         all_low_auth = all(
             e.authority_level in (AuthorityLevel.AGENT_GENERATED, AuthorityLevel.UNKNOWN)
             for e in evidence
@@ -78,23 +85,40 @@ class EvidenceEvaluator:
                 "仅有低权威自动生成内容，缺少正式规则或专业指南支持"
             )
 
-        # 8. Sufficiency decision
-        if facet_ratio >= 0.7 and top_score > 0.3 and (formal_rules > 0 or has_high_authority):
-            return EvidenceState.SUFFICIENT, (
-                f"证据充分：覆盖{len(covered_facets)}/{len(required_facets)}需求面，"
-                f"包含{formal_rules}条正式规则，最高相关度{top_score:.3f}"
-            )
-
-        if facet_ratio >= 0.4 and top_score > 0.15:
-            missing = set(required_facets) - covered_facets
-            return EvidenceState.PARTIAL, (
-                f"证据部分充分：覆盖{len(covered_facets)}/{len(required_facets)}需求面"
-                + (f"，缺失: {', '.join(list(missing)[:3])}" if missing else "")
-            )
+        # 7. Sufficiency decision — score-type aware
+        if rerank_applied:
+            # CrossEncoder rerank_score is sigmoid-normalized [0,1]
+            top_score = max((e.rerank_score or 0) for e in evidence)
+            if facet_ratio >= 0.7 and top_score > 0.3 and (formal_rules > 0 or has_high_authority):
+                return EvidenceState.SUFFICIENT, (
+                    f"证据充分：覆盖{len(covered_facets)}/{len(required_facets)}需求面，"
+                    f"包含{formal_rules}条正式规则，最高相关度{top_score:.3f}"
+                )
+            if facet_ratio >= 0.4 and top_score > 0.15:
+                missing = set(required_facets) - covered_facets
+                return EvidenceState.PARTIAL, (
+                    f"证据部分充分：覆盖{len(covered_facets)}/{len(required_facets)}需求面"
+                    + (f"，缺失: {', '.join(list(missing)[:3])}" if missing else "")
+                )
+        else:
+            # Reranker fallback: use dense_score (real cosine similarity [0,1]),
+            # NOT rrf_score (reciprocal-rank-fusion ~0.01-0.05 scale).
+            # The same thresholds apply because dense_score IS a [0,1] similarity.
+            top_score = max((e.dense_score or e.rrf_score or 0) for e in evidence)
+            if facet_ratio >= 0.7 and top_score > 0.3 and (formal_rules > 0 or has_high_authority):
+                return EvidenceState.SUFFICIENT, (
+                    f"证据充分（重排序降级）：覆盖{len(covered_facets)}/{len(required_facets)}需求面，"
+                    f"包含{formal_rules}条正式规则，检索相似度{top_score:.3f}"
+                )
+            if facet_ratio >= 0.4 and top_score > 0.15:
+                missing = set(required_facets) - covered_facets
+                return EvidenceState.PARTIAL, (
+                    f"证据部分充分（重排序降级）：覆盖{len(covered_facets)}/{len(required_facets)}需求面"
+                    + (f"，缺失: {', '.join(list(missing)[:3])}" if missing else "")
+                )
 
         return EvidenceState.INSUFFICIENT, (
-            f"证据不足：仅覆盖{len(covered_facets)}/{len(required_facets)}需求面，"
-            f"最高相关度{top_score:.3f}"
+            f"证据不足：仅覆盖{len(covered_facets)}/{len(required_facets)}需求面"
         )
 
     def _check_facet_coverage(

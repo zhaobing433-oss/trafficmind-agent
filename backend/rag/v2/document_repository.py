@@ -242,6 +242,22 @@ def list_active_documents(doc_type: Optional[str] = None) -> List[RagDocument]:
     return [_row_to_document(dict(r)) for r in rows]
 
 
+def list_all_documents(doc_type: Optional[str] = None) -> List[RagDocument]:
+    """列出所有文档（含 deleted/failed/processing）。"""
+    conn = _get_conn()
+    if doc_type:
+        rows = conn.execute(
+            "SELECT * FROM rag_documents WHERE doc_type=? ORDER BY updated_at DESC",
+            (doc_type,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM rag_documents ORDER BY updated_at DESC",
+        ).fetchall()
+    conn.close()
+    return [_row_to_document(dict(r)) for r in rows]
+
+
 def _row_to_document(row: dict) -> RagDocument:
     return RagDocument(
         document_id=row["document_id"],

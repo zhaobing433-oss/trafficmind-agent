@@ -84,6 +84,7 @@ def build_simulation_bridge_definition() -> WorkflowDefinition:
             description="审批 Agent 提议的模拟处置动作",
             timeout_seconds=300,
             next_nodes=["action"],
+            config={"action_types": ["simulation_traffic_diversion"]},
         ),
         NodeConfig(
             node_id="action",

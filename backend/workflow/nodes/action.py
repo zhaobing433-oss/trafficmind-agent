@@ -21,6 +21,58 @@ from backend.workflow.models import (
     generate_action_id,
 )
 from backend.workflow.state import TrafficWorkflowState
+from backend.agent.tool_policy import (
+    ToolExecutionStatus,
+    classify_tool_result,
+    enforce_tool_request,
+)
+
+
+# Agent 提案 actionType → workflow action_type 别名（二者命名不一致）
+#   Agent 提案: traffic_diversion / signal_adjustment / ...
+#   workflow action: simulation_traffic_diversion / simulation_signal_adjustment / ...
+_ACTION_TYPE_ALIASES = {
+    "traffic_diversion": "simulation_traffic_diversion",
+    "signal_adjustment": "simulation_signal_adjustment",
+    "signal_adjust": "simulation_signal_adjustment",
+    "lane_control": "simulation_lane_control",
+    "dispatch_coordination": "simulation_dispatch_coordination",
+}
+
+
+def _canonical_action_type(action_type: str) -> str:
+    """将 action type 归一化到 workflow action_type 命名空间。"""
+    return _ACTION_TYPE_ALIASES.get(action_type, action_type)
+
+
+def is_current_action_approved(state: TrafficWorkflowState, action_type: str) -> bool:
+    """审批是否绑定到当前具体 action（而非 run 级 bool）。
+
+    语义（fail-closed）：
+      - 结构化审批：approved_actions 中存在 actionType 与当前 action_type
+        （归一化后）一致 → 仅该 action 被授权。
+      - 文本摘要（无 actionType）不授权任何未声明的 high-risk tool。
+        模板必须通过 human_approval 节点的 action_types 声明其预期动作，
+        才能让该动作在文本摘要审批下通过。
+      - 空 approved_actions → 未批准。
+
+    这避免「批准 A 后，B 也被视为已批准」以及「run 有审批 → 任意 high-risk 放行」
+    两类 scope escalation。
+    """
+    approved = state.approved_actions or []
+    if not approved:
+        return False
+
+    target = _canonical_action_type(action_type)
+    for item in approved:
+        if not isinstance(item, dict):
+            continue
+        at = item.get("actionType") or item.get("action_type")
+        if at and _canonical_action_type(at) == target:
+            return True
+
+    # fail closed：无结构化 actionType 匹配 → 未批准
+    return False
 
 
 async def execute_action(
@@ -45,6 +97,37 @@ async def execute_action(
     action_type = config.config.get("action_type", "")
     if not action_type:
         return {"error": "action 节点缺少 action_type 配置"}
+
+    # ── ToolPolicy 门禁（Section 11/12/13）：外部动作必须先通过 ToolPolicy ──
+    # 未知工具 fail-closed；高风险工具未批准则阻止执行并返回 approval_required。
+    risk = state.risk_assessment or {}
+    _policy = enforce_tool_request(
+        action_type,
+        caller=f"workflow:{state.workflow_run_id}:{config.node_id}",
+        context={"riskLevel": risk.get("riskLevel", "")},
+        is_approved=is_current_action_approved(state, action_type),
+    )
+    if not _policy["allowed"]:
+        audit_payload = {
+            **_policy["audit"],  # tool, caller, riskLevel, decision, reason, timestamp
+            "actionType": action_type,
+            "workflowRunId": state.workflow_run_id,
+            "nodeId": config.node_id,
+            "executed": False,
+        }
+        event_type = (
+            "tool_denied"
+            if _policy["status"] == ToolExecutionStatus.DENIED.value
+            else "tool_approval_required"
+        )
+        state.add_audit_event(event_type, config.node_id, audit_payload)
+        return {
+            "action_type": action_type,
+            "status": _policy["status"],
+            "executed": False,
+            "reason": _policy["reason"],
+            "approvalRequired": _policy["approvalRequired"],
+        }
 
     # 检查是否有待审批但未批准的审批
     pending = state.pending_approval
@@ -125,6 +208,18 @@ async def execute_action(
     except Exception as e:
         error = str(e)[:500]
         status = ActionStatus.FAILED
+        result_data = {}
+        state.record_error(config.node_id, f"action 执行失败: {error}")
+
+    # ── 工具失败语义（Section 17）：result 明确失败时不得标记 SUCCEEDED ──
+    # _dispatch_action 对 notify/save 失败返回 {"sent": False}/{"saved": False}
+    # 而非抛异常，因此必须在执行后重新判定，防止失败被记录成成功。
+    if status == ActionStatus.SUCCEEDED and classify_tool_result(result_data) == ToolExecutionStatus.FAILURE:
+        status = ActionStatus.FAILED
+        if isinstance(result_data, dict):
+            error = str(result_data.get("error", "工具返回失败结果"))[:500]
+        else:
+            error = "工具返回失败结果"
         state.record_error(config.node_id, f"action 执行失败: {error}")
 
     # 更新动作记录
@@ -218,8 +313,8 @@ async def _dispatch_action(
                 f"路段：{event.get('roadName', '')}\n"
                 f"风险等级：{risk.get('riskLevel', '未知')}（{risk.get('riskScore', 0)}分）\n"
             )
-            send_wechat_work(event_summary)
-            return {"sent": True, "channel": "wechat"}
+            ok = send_wechat_work(event_summary)
+            return {"sent": bool(ok), "channel": "wechat"}
         except Exception as e:
             return {"sent": False, "channel": "wechat", "error": str(e)[:200]}
 
@@ -232,8 +327,8 @@ async def _dispatch_action(
                 f"事件：{event.get('eventTypeCn', '')} | {event.get('roadName', '')}\n"
                 f"风险：{risk.get('riskLevel', '未知')}（{risk.get('riskScore', 0)}分）\n"
             )
-            send_dingtalk(event_summary)
-            return {"sent": True, "channel": "dingtalk"}
+            ok = send_dingtalk(event_summary)
+            return {"sent": bool(ok), "channel": "dingtalk"}
         except Exception as e:
             return {"sent": False, "channel": "dingtalk", "error": str(e)[:200]}
 
@@ -250,8 +345,8 @@ async def _dispatch_action(
                 "riskLevel": risk.get("riskLevel", "低风险"),
                 "status": "待派单",
             }
-            save_event_analysis(result_data)
-            return {"saved": True, "eventId": result_data.get("eventId", "")}
+            ok = save_event_analysis(result_data)
+            return {"saved": bool(ok), "eventId": result_data.get("eventId", "")}
         except Exception as e:
             return {"saved": False, "error": str(e)[:200]}
 

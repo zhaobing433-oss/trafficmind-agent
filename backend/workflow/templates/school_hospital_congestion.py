@@ -135,6 +135,7 @@ def build_school_hospital_congestion_definition() -> WorkflowDefinition:
             label="人工审批",
             description="安全优先：须人工审核信号配时方案",
             next_nodes=["action_notify"],
+            config={"action_types": ["notify_wechat"]},
         ),
 
         NodeConfig(

@@ -28,10 +28,12 @@ class DocType(str, Enum):
 
 class DocStatus(str, Enum):
     ACTIVE = "active"
+    PROCESSING = "processing"
     SUPERSEDED = "superseded"
     EXPIRED = "expired"
     DRAFT = "draft"
     DELETED = "deleted"
+    FAILED = "failed"
 
 
 class AuthorityLevel(str, Enum):
@@ -189,6 +191,7 @@ class EvidenceItem(BaseModel):
     retrieval_channels: List[str] = Field(default_factory=list)
     rrf_score: Optional[float] = None
     rerank_score: Optional[float] = None
+    dense_score: Optional[float] = None      # 真实 dense cosine similarity [0,1]
     source_uri: Optional[str] = None
 
 

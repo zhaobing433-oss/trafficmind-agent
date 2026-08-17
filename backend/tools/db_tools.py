@@ -15,6 +15,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from backend.config import DB_PATH
+from backend.tools.event_tools import safe_float
 
 
 def get_connection() -> sqlite3.Connection:
@@ -108,9 +109,9 @@ def save_event_analysis(result: Dict[str, Any]) -> bool:
             standard_event.get("eventTypeCn", ""),
             standard_event.get("roadName", ""),
             standard_event.get("direction", ""),
-            float(standard_event.get("avgSpeed", 0)),
-            float(standard_event.get("queueLength", 0)),
-            float(standard_event.get("duration", 0)),
+            safe_float(standard_event.get("avgSpeed"), 0.0),
+            safe_float(standard_event.get("queueLength"), 0.0),
+            safe_float(standard_event.get("duration"), 0.0),
             standard_event.get("weather", "clear"),
             standard_event.get("timePeriod", "off_peak"),
             1 if standard_event.get("isMainRoad") else 0,

@@ -38,6 +38,12 @@ RAG_RRF_WINDOW = int(os.getenv("RAG_RRF_WINDOW", "40"))
 # --- Context ---
 RAG_MAX_CONTEXT_TOKENS = int(os.getenv("RAG_MAX_CONTEXT_TOKENS", "4096"))
 
+# --- Timeout (Phase 16 Round 2: guarantee RAG termination) ---
+RAG_STAGE_TIMEOUT_SECONDS = int(os.getenv("RAG_STAGE_TIMEOUT_SECONDS", "60"))
+RAG_OVERALL_TIMEOUT_SECONDS = int(os.getenv("RAG_OVERALL_TIMEOUT_SECONDS", "120"))
+# Reranker 是 optional quality-enhancement stage：超时即 fallback retrieval ranking
+RAG_RERANK_TIMEOUT_SECONDS = int(os.getenv("RAG_RERANK_TIMEOUT_SECONDS", "15"))
+
 # --- Chunking ---
 RAG_CHILD_MIN_CHARS = int(os.getenv("RAG_CHILD_MIN_CHARS", "250"))
 RAG_CHILD_MAX_CHARS = int(os.getenv("RAG_CHILD_MAX_CHARS", "450"))
