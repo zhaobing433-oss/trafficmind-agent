@@ -12,15 +12,17 @@
 
 from typing import Dict, Any, List, Optional
 
+from backend.tools.event_tools import safe_float
 
-# 触发规则表
+
+# 触发规则表（数值判断均经 safe_float 处理 None/非法值，不抛 TypeError）
 TRIGGER_RULES = [
     {
         "name": "congestion_to_signal",
         "sourceAgent": "CongestionAgent",
         "check": lambda info, result: (
-            float(info.get("queueLength", 0)) > 200 and
-            float(info.get("avgSpeed", 99)) < 10 and
+            safe_float(info.get("queueLength"), 0.0) > 200 and
+            safe_float(info.get("avgSpeed"), 99.0) < 10 and
             info.get("isMainRoad", False)
         ),
         "targetAgent": "SignalAgent",
@@ -31,7 +33,7 @@ TRIGGER_RULES = [
         "sourceAgent": "AccidentAgent",
         "check": lambda info, result: (
             info.get("riskLevel", "") == "重大风险" and
-            float(info.get("duration", 0)) > 600
+            safe_float(info.get("duration"), 0.0) > 600
         ),
         "targetAgent": "DispatchAgent",
         "reason": "重大风险事故持续超过10分钟，需优先联动多部门",

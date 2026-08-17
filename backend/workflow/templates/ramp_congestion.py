@@ -137,6 +137,7 @@ def build_ramp_congestion_definition() -> WorkflowDefinition:
             label="人工审批",
             description="高风险事件需人工审核后方可执行外部动作",
             next_nodes=["action_notify"],
+            config={"action_types": ["notify_wechat"]},
         ),
 
         # ── 9b/10. action ─────────────────────────────────────────────

@@ -8,6 +8,7 @@ from backend.agent.collaboration.context_projection import project_context_for_a
 from backend.agent.collaboration.protocol import AgentResult
 from backend.agent.collaboration.event_bus import get_event_bus
 from backend.agent.collaboration.task_graph import AgentTaskNode
+from backend.tools.event_tools import safe_float
 
 
 class AgentExecutionResult:
@@ -61,7 +62,7 @@ async def execute_single_agent(
             agent_result = AgentResult(
                 agent_name=agent_name, task_id=task.task_id, status="completed",
                 findings=result_dict.get("findings", []),
-                confidence=min(float(result_dict.get("confidence", 0.5)), 1.0),
+                confidence=min(safe_float(result_dict.get("confidence"), 0.5), 1.0),
                 suggestion=result_dict.get("suggestion", ""),
                 urgency=result_dict.get("urgency", "low"),
                 duration_ms=int(result_dict.get("duration_ms", 0)),

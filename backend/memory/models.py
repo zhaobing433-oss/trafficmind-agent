@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from backend.tools.event_tools import safe_float, safe_int
+
 
 def compute_dedup_key(
     session_id: str,
@@ -152,8 +154,8 @@ class MemoryItem:
             value=value,
             text_content=row.get("text_content", ""),
             status=row.get("status", "candidate"),
-            confidence=float(row.get("confidence", 1.0)),
-            authority_level=int(row.get("authority_level", 0)),
+            confidence=safe_float(row.get("confidence"), 1.0),
+            authority_level=safe_int(row.get("authority_level"), 0),
             source_type=row.get("source_type", ""),
             source_id=row.get("source_id", ""),
             source_run_id=row.get("source_run_id", ""),

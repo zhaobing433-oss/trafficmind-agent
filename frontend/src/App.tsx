@@ -90,15 +90,19 @@ export default function App() {
     }
   }, []);
 
-  // On mount: if URL has sessionId, load it and set the correct view
+  // On mount: if URL has sessionId, load it and set the correct view.
+  // Guard: if URL already has an explicit `view` (e.g. ?view=workflow&workflowRunId=...),
+  // do NOT override it from session mode — this caused F5 to jump from Workflow Run Detail
+  // back to Knowledge when a stale sessionId was also present.
   useEffect(() => {
     if (!initialSessionId) return;
+    if (urlView) return;
     chatApi.getSession(initialSessionId).then(detail => {
       const m = detail.session.mode || 'react';
       const vm: Record<string,string> = { react:'home',routed:'home',hybrid:'home',rag:'qa',collaboration:'multi',report:'report',simulation:'simulation' };
       setView(vm[m] || 'home');
     }).catch(() => setView('home'));
-  }, [initialSessionId]);
+  }, [initialSessionId, urlView]);
 
   useEffect(() => { chatApi.listSessions(30).then(setSessions).catch(() => {}); }, [recentRefresh]);
   const refreshSessions = useCallback(() => setRecentRefresh(Date.now()), []);
@@ -115,6 +119,12 @@ export default function App() {
       // Explicit nav to workflow → clear run detail, show center
       setWorkflowRunId(null);
       url.searchParams.delete('workflowRunId');
+      // 清除知识库/会话残留参数，避免两套 URL state 互污染
+      setActiveSessionId(null);
+      url.searchParams.delete('sessionId');
+      url.searchParams.delete('knowledgeTab');
+      url.searchParams.delete('knowledgeDocumentId');
+      url.searchParams.delete('knowledgeChunkId');
     }
     if (v === 'qa') {
       // Explicit nav to 知识库 → enter default Documents tab, clear stale RAG session
@@ -124,6 +134,9 @@ export default function App() {
       url.searchParams.delete('knowledgeTab');
       url.searchParams.delete('knowledgeDocumentId');
       url.searchParams.delete('knowledgeChunkId');
+      // 清除工作流残留参数
+      setWorkflowRunId(null);
+      url.searchParams.delete('workflowRunId');
     }
     window.history.replaceState({}, '', url.toString());
   };

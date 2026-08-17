@@ -7,6 +7,8 @@
 
 from typing import Dict, Any
 
+from backend.tools.event_tools import safe_float
+
 
 def generate_dispatch_message(
     event: Dict[str, Any],
@@ -29,7 +31,7 @@ def generate_dispatch_message(
     direction = event.get("direction", "")
     event_type_cn = event.get("eventTypeCn", event.get("eventType", "未知事件"))
     risk_level = risk_result.get("riskLevel", "未知")
-    duration_min = int(float(event.get("duration", 0)) / 60)
+    duration_min = int(safe_float(event.get("duration"), 0.0) / 60)
 
     rule_sections = matched_rule.get("ruleSections", {})
     department = rule_sections.get("联动部门", "指挥中心")

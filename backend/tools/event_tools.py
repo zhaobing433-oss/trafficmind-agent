@@ -90,6 +90,52 @@ def normalize_event_type(event_type: str) -> str:
     return EVENT_TYPE_MAP.get(event_type, event_type)
 
 
+def safe_float(value: Any, default: float = 0.0) -> float:
+    """
+    安全转换为 float，None / missing / 空串 / 非法值 → default。
+
+    与 event_normalizer 的 UNKNOWN ≠ ZERO 语义区分：
+      这里用于「输出/持久化」路径，缺失值按字段语义回落到默认值，
+      绝不抛出 TypeError。判断逻辑需保留 unknown 的地方请勿使用本函数。
+
+    Args:
+        value: 任意值（int/float/合法字符串/None/非法字符串）
+        default: 回落默认值
+
+    Returns:
+        float 数值
+    """
+    if value is None:
+        return float(default)
+    if isinstance(value, bool):
+        return float(default)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return float(default)
+
+
+def safe_int(value: Any, default: int = 0) -> int:
+    """
+    安全转换为 int，None / missing / 非法值 → default。
+
+    Args:
+        value: 任意值
+        default: 回落默认值
+
+    Returns:
+        int 数值
+    """
+    if value is None:
+        return int(default)
+    if isinstance(value, bool):
+        return int(default)
+    try:
+        return int(float(value))
+    except (ValueError, TypeError):
+        return int(default)
+
+
 def standardize_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     标准化事件对象：补全中文类型名和默认字段。
@@ -113,12 +159,12 @@ def standardize_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "direction": event.get("direction", ""),
         "lane": event.get("lane", ""),
 
-        # --- 量化指标 ---
-        "avgSpeed": float(event.get("avgSpeed", 0)),
-        "queueLength": float(event.get("queueLength", 0)),
-        "duration": float(event.get("duration", 0)),
-        "vehicleCount": int(event.get("vehicleCount", 0)),
-        "confidence": float(event.get("confidence", 0.9)),
+        # --- 量化指标（None/非法值安全回落，不抛 TypeError）---
+        "avgSpeed": safe_float(event.get("avgSpeed"), 0.0),
+        "queueLength": safe_float(event.get("queueLength"), 0.0),
+        "duration": safe_float(event.get("duration"), 0.0),
+        "vehicleCount": safe_int(event.get("vehicleCount"), 0),
+        "confidence": safe_float(event.get("confidence"), 0.9),
 
         # --- 环境与场景（补充默认值） ---
         "weather": event.get("weather", "clear"),

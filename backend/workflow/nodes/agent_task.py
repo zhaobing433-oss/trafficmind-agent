@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from backend.workflow.models import NodeConfig
 from backend.workflow.state import TrafficWorkflowState
+from backend.tools.event_tools import safe_float
 
 
 async def execute_agent_task(
@@ -99,7 +100,7 @@ async def execute_agent_task(
             findings = result.get("findings", [])
             suggestion = result.get("suggestion", "")
             urgency = result.get("urgency", "low")
-            confidence = result.get("confidence", 0.5)
+            confidence = safe_float(result.get("confidence"), 0.5)
         else:
             findings = [f"[{agent_name}] 未找到对应 Agent 实现，使用默认分析"]
             suggestion = "按常规流程处置"

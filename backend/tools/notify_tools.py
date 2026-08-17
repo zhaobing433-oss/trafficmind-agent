@@ -23,6 +23,7 @@ from backend.config import (
     SMTP_FROM,
     SMTP_TO,
 )
+from backend.tools.event_tools import safe_float
 
 
 def _build_event_summary(result: Dict[str, Any]) -> Dict[str, str]:
@@ -35,7 +36,7 @@ def _build_event_summary(result: Dict[str, Any]) -> Dict[str, str]:
         "direction": standard_event.get("direction", ""),
         "avgSpeed": str(standard_event.get("avgSpeed", "")),
         "queueLength": str(standard_event.get("queueLength", "")),
-        "durationMin": str(int(float(standard_event.get("duration", 0)) / 60)),
+        "durationMin": str(int(safe_float(standard_event.get("duration"), 0.0) / 60)),
         "riskScore": str(result.get("riskScore", "")),
         "riskLevel": result.get("riskLevel", ""),
         "status": result.get("status", ""),

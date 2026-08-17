@@ -8,6 +8,8 @@
 
 from typing import Dict, Any, List
 
+from backend.agent.event_normalizer import normalize_event
+
 
 # Agent 注册表 — ReportAgent 已统一映射为 FusionAgent
 ALL_AGENTS = [
@@ -32,14 +34,18 @@ def route_agents(event_info: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         RouteResult 结构
     """
-    event_type = event_info.get("eventTypeCn", event_info.get("eventType", ""))
-    event_type_raw = event_info.get("eventType", event_type)
-    risk_level = event_info.get("riskLevel", "")
-    is_main_road = bool(event_info.get("isMainRoad", False))
-    nearby_school = bool(event_info.get("nearbySchool", False))
-    nearby_hospital = bool(event_info.get("nearbyHospital", False))
-    weather = event_info.get("weather", "clear")
-    time_period = event_info.get("timePeriod", "off_peak")
+    # 归一化数值字段（avgSpeed/queueLength 等），UNKNOWN 保留 None
+    _norm = normalize_event(event_info if isinstance(event_info, dict) else {})
+    event_type = _norm.get("eventTypeCn", event_info.get("eventType", "") if isinstance(event_info, dict) else "")
+    event_type_raw = event_info.get("eventType", event_type) if isinstance(event_info, dict) else event_type
+    risk_level = event_info.get("riskLevel", "") if isinstance(event_info, dict) else ""
+    is_main_road = bool(_norm.get("isMainRoad", False))
+    nearby_school = bool(_norm.get("nearbySchool", False))
+    nearby_hospital = bool(_norm.get("nearbyHospital", False))
+    weather = event_info.get("weather", "clear") if isinstance(event_info, dict) else "clear"
+    time_period = event_info.get("timePeriod", "off_peak") if isinstance(event_info, dict) else "off_peak"
+    avg_speed = _norm.get("avgSpeed")
+    queue_length = _norm.get("queueLength")
 
     selected: List[str] = []
     reasons: List[str] = []
@@ -53,7 +59,7 @@ def route_agents(event_info: Dict[str, Any]) -> Dict[str, Any]:
         skipped.append("AccidentAgent")
         # SignalAgent: signal keywords or parsed signalOptimizationRequested
         signal_keywords = ["信号", "配时", "绿信比", "相位", "红绿灯", "灯控", "绿灯", "放行", "cycle", "signal", "intersection"]
-        content = str(event_info.get("originalInput", event_info.get("content", ""))).lower()
+        content = str(event_info.get("originalInput", event_info.get("content", ""))).lower() if isinstance(event_info, dict) else ""
         if any(kw in content for kw in signal_keywords) or event_info.get("signalOptimizationRequested"):
             selected.append("SignalAgent")
             reasons.append("存在信号/绿灯/配时相关需求，附加 SignalAgent")
@@ -66,7 +72,8 @@ def route_agents(event_info: Dict[str, Any]) -> Dict[str, Any]:
     elif event_type in ("信号灯异常", "signal_fault"):
         selected.extend(["SignalAgent"])
         reasons.append(f"事件类型为「{event_type}」，触发 SignalAgent")
-        skipped.extend(["CongestionAgent", "AccidentAgent"])
+        # 不再硬 skip CongestionAgent —— 拥堵证据（规则 1.5）决定是否附加
+        skipped.append("AccidentAgent")
 
     elif event_type in ("逆行", "wrong_way"):
         selected.extend(["AccidentAgent", "DispatchAgent"])
@@ -76,11 +83,22 @@ def route_agents(event_info: Dict[str, Any]) -> Dict[str, Any]:
     elif event_type in ("行人闯入", "pedestrian_intrusion"):
         selected.extend(["PublicSafetyAgent", "DispatchAgent"])
         reasons.append(f"事件类型为「{event_type}」，触发 PublicSafetyAgent")
-        skipped.extend(["CongestionAgent", "AccidentAgent", "SignalAgent"])
+        skipped.extend(["AccidentAgent", "SignalAgent"])
 
     else:
         selected.extend(["CongestionAgent", "DispatchAgent"])
         reasons.append(f"事件类型为「{event_type}」，使用默认 Agent 组合")
+
+    # ---- 规则 1.5: 拥堵证据 → CongestionAgent 资格（不依赖 event type） ----
+    if "CongestionAgent" not in selected:
+        if avg_speed is not None and avg_speed < 20:
+            selected.append("CongestionAgent")
+            reasons.append(f"平均车速 {avg_speed} km/h 偏低，存在拥堵特征，附加 CongestionAgent")
+            risk_triggers.append(f"avgSpeed={avg_speed}")
+        elif queue_length is not None and queue_length > 100:
+            selected.append("CongestionAgent")
+            reasons.append(f"排队 {queue_length}m，存在拥堵特征，附加 CongestionAgent")
+            risk_triggers.append(f"queueLength={queue_length}")
 
     # ---- 规则 2: 风险等级触发 ----
     if risk_level in ("高风险", "重大风险"):

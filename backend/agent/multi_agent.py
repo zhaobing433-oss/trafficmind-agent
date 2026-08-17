@@ -8,32 +8,42 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
+from backend.agent.event_normalizer import normalize_event
+
 
 def _get_event_info(event: Dict[str, Any]) -> Dict[str, Any]:
-    se = event.get("standardEvent", event)
-    def _safe_float(key, default=0.0):
-        v = se.get(key)
-        if v is None:
-            return None
-        try: return float(v)
-        except (ValueError, TypeError): return default
+    """使用 EventNormalizer 生成 Agent 输入 info。
+
+    UNKNOWN ≠ ZERO：duration/avgSpeed 等字段为 None 时保留 None，
+    不在 Agent 层伪造成 0。Agent 需自行安全处理 None。
+    """
+    se = event.get("standardEvent", event) if isinstance(event, dict) else {}
+    if not isinstance(se, dict):
+        se = {}
+
+    norm = normalize_event(se)
+
     return {
-        "eventType": se.get("eventTypeCn", se.get("eventType", "")),
-        "roadName": se.get("roadName", ""),
+        "eventType": norm.get("eventTypeCn", norm.get("eventType", "")),
+        "roadName": norm.get("roadName", ""),
         "direction": se.get("direction", ""),
-        "avgSpeed": _safe_float("avgSpeed"),
-        "queueLength": _safe_float("queueLength"),
-        "duration": _safe_float("duration", 0),
+        "avgSpeed": norm.get("avgSpeed"),
+        "queueLength": norm.get("queueLength"),
+        "duration": norm.get("duration"),
+        "vehicleCount": norm.get("vehicleCount"),
+        "riskScore": norm.get("riskScore"),
         "weather": se.get("weather", "clear"),
         "timePeriod": se.get("timePeriod", "off_peak"),
-        "isMainRoad": bool(se.get("isMainRoad", False)),
-        "nearbySchool": bool(se.get("nearbySchool", False)),
-        "nearbyHospital": bool(se.get("nearbyHospital", False)),
+        "isMainRoad": norm.get("isMainRoad", False),
+        "nearbySchool": norm.get("nearbySchool", False),
+        "nearbyHospital": norm.get("nearbyHospital", False),
         "pedestrianRisk": se.get("pedestrianRisk", "low"),
         "signalOptimizationRequested": se.get("signalOptimizationRequested", False),
         "conflictIntent": se.get("conflictIntent", False),
         "riskLevel": se.get("riskLevel", event.get("riskLevel", "")),
-        "riskScore": se.get("riskScore", event.get("riskScore", 0)),
+        # 归一化元数据（供上层判断 unknown）
+        "unknownFields": norm.get("unknownFields", []),
+        "normalizationWarnings": norm.get("normalizationWarnings", []),
     }
 
 
@@ -128,13 +138,16 @@ class AccidentAgent:
     """事故研判 Agent"""
     def analyze(self, info: Dict[str, Any]) -> Dict[str, Any]:
         findings = []; urgency = "low"
-        if info["riskLevel"] in ("高风险", "重大风险"):
+        if info.get("riskLevel") in ("高风险", "重大风险"):
             findings.append(f"风险 {info['riskLevel']}，需多部门联动"); urgency = "critical"
-        if int(info["duration"] / 60) > 30:
-            findings.append(f"已持续 {int(info['duration']/60)}min，建议优先清障"); urgency = "high"
-        if info["nearbyHospital"]: findings.append("邻近医院，保障急救通道")
+        duration = info.get("duration")
+        if duration is not None and int(duration / 60) > 30:
+            findings.append(f"已持续 {int(duration/60)}min，建议优先清障"); urgency = "high"
+        elif duration is None:
+            findings.append("持续时间未知，无法评估清障优先级")
+        if info.get("nearbyHospital"): findings.append("邻近医院，保障急救通道")
         return {"agentName": "AccidentAgent",
-                "relevant": info["eventType"] in ("事故", "accident") or info["riskLevel"] in ("高风险", "重大风险"),
+                "relevant": info.get("eventType") in ("事故", "accident") or info.get("riskLevel") in ("高风险", "重大风险"),
                 "findings": findings, "urgency": urgency,
                 "suggestion": "通知122+120，拖车清障" if findings else "持续监测"}
 
@@ -202,9 +215,10 @@ def multi_agent_analyze(raw_event: Dict[str, Any]) -> Dict[str, Any]:
     agent_results = [a.analyze(info) for a in agents]
     summary = ReportAgent().summarize(agent_results, info)
     risk_warnings = []
-    if info["riskLevel"] == "重大风险": risk_warnings.append("重大风险，立即启动应急预案")
-    if info["weather"] in ("rain", "snow", "fog"): risk_warnings.append(f"{info['weather']}天，注意安全")
-    if info["duration"] > 900: risk_warnings.append("持续>15min，注意次生事故")
+    if info.get("riskLevel") == "重大风险": risk_warnings.append("重大风险，立即启动应急预案")
+    if info.get("weather") in ("rain", "snow", "fog"): risk_warnings.append(f"{info['weather']}天，注意安全")
+    duration = info.get("duration")
+    if duration is not None and duration > 900: risk_warnings.append("持续>15min，注意次生事故")
     return {"eventSummary": {"eventType": info["eventType"], "roadName": info["roadName"],
             "direction": info["direction"], "riskLevel": info.get("riskLevel", ""),
             "riskScore": info.get("riskScore", 0),
