@@ -88,6 +88,27 @@ def _ensure_wait_columns():
         conn.close()
 
 
+def _ensure_driver_columns():
+    """非破坏性添加 RunDriver 相关列（幂等，Phase17 Round3）。"""
+    conn = _get_conn()
+    try:
+        for col_def in [
+            "driver_managed INTEGER DEFAULT 0",
+            "driver_owner TEXT DEFAULT NULL",
+            "driver_lease_until TEXT DEFAULT NULL",
+            "driver_heartbeat_at TEXT DEFAULT NULL",
+            "driver_generation INTEGER DEFAULT 0",
+        ]:
+            col_name = col_def.split()[0]
+            try:
+                conn.execute(f"ALTER TABLE workflow_runs ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 表初始化（幂等）
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -378,11 +399,21 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
     def save_run(self, run: WorkflowRun) -> None:
         init_workflow_tables()
         _ensure_wait_columns()
+        _ensure_driver_columns()
         conn = _get_conn()
+        # upsert：显式 16 业务列，保留 driver_* 列（不 wipe lease/fencing）
         conn.execute(
-            """INSERT OR REPLACE INTO workflow_runs VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            )""",
+            """INSERT INTO workflow_runs (run_id, definition_id, version, session_id, event_thread_id,
+                   status, current_node_id, state_json, started_at, updated_at, completed_at, triggered_by,
+                   wait_type, wake_at, resumed_at, resume_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(run_id) DO UPDATE SET
+                   definition_id=excluded.definition_id, version=excluded.version,
+                   session_id=excluded.session_id, event_thread_id=excluded.event_thread_id,
+                   status=excluded.status, current_node_id=excluded.current_node_id,
+                   state_json=excluded.state_json, started_at=excluded.started_at,
+                   updated_at=excluded.updated_at, completed_at=excluded.completed_at,
+                   triggered_by=excluded.triggered_by""",
             (
                 run.run_id,
                 run.definition_id,
@@ -924,7 +955,10 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
 
             # 3. insert child run record（确定性 run_id，PK 碰撞即 rollback → 幂等）
             conn.execute(
-                "INSERT INTO workflow_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO workflow_runs (run_id, definition_id, version, session_id, event_thread_id,
+                       status, current_node_id, state_json, started_at, updated_at, completed_at, triggered_by,
+                       wait_type, wake_at, resumed_at, resume_reason)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (child_run.run_id, child_run.definition_id, next_version,
                  child_run.session_id, child_run.event_thread_id, child_run.status.value,
                  child_run.current_node_id, json.dumps(child_run.state, ensure_ascii=False),
@@ -950,3 +984,175 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         """列出 run 的 observation 事件（event_type=observation_recorded）。"""
         events = self.list_events(run_id)
         return [e for e in events if e.event_type == "observation_recorded"]
+
+    # ── Phase17 Round3: RunDriver claim / lease / fencing ────────────────
+
+    def mark_driver_managed(self, run_id: str) -> None:
+        """标记为 planning driver-managed run。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            conn.execute("UPDATE workflow_runs SET driver_managed=1 WHERE run_id=?", (run_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def is_driver_managed(self, run_id: str) -> bool:
+        """查询 run 是否 driver-managed（planning）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT driver_managed FROM workflow_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            conn.close()
+            return bool(row and row["driver_managed"])
+        except Exception:
+            conn.close()
+            return False
+
+    def set_run_status_managed(self, run_id: str, status: str, state_dict: Dict[str, Any] = None) -> bool:
+        """driver-managed run 的 wake-only 状态转换（释放 lease + status 变更）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            if state_dict is not None:
+                conn.execute(
+                    """UPDATE workflow_runs SET status=?, state_json=?, driver_owner=NULL,
+                           driver_lease_until=NULL, updated_at=? WHERE run_id=?""",
+                    (status, json.dumps(state_dict, ensure_ascii=False), _utc_now_iso(), run_id),
+                )
+            else:
+                conn.execute(
+                    """UPDATE workflow_runs SET status=?, driver_owner=NULL,
+                           driver_lease_until=NULL, updated_at=? WHERE run_id=?""",
+                    (status, _utc_now_iso(), run_id),
+                )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    def claim_driver_run(self, run_id: str, owner: str, lease_until_iso: str) -> Dict[str, Any]:
+        """原子 CAS claim。返回 {claimed, generation}。rowcount==1 才成功。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                """UPDATE workflow_runs
+                   SET driver_owner=?, driver_lease_until=?, driver_heartbeat_at=?,
+                       driver_generation = driver_generation + 1
+                   WHERE run_id=? AND driver_managed=1
+                     AND status IN ('pending','running')
+                     AND (driver_lease_until IS NULL OR driver_lease_until < ?)""",
+                (owner, lease_until_iso, now, run_id, now),
+            )
+            conn.commit()
+            if cur.rowcount != 1:
+                return {"claimed": False, "generation": 0}
+            row = conn.execute(
+                "SELECT driver_generation FROM workflow_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            return {"claimed": True, "generation": row["driver_generation"] if row else 0}
+        finally:
+            conn.close()
+
+    def heartbeat_driver_lease(self, run_id: str, owner: str, generation: int, lease_until_iso: str) -> bool:
+        """CAS heartbeat：仅 owner/generation 匹配时延长 lease。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                """UPDATE workflow_runs SET driver_lease_until=?, driver_heartbeat_at=?
+                   WHERE run_id=? AND driver_owner=? AND driver_generation=?""",
+                (lease_until_iso, now, run_id, owner, generation),
+            )
+            conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
+    def release_driver_lease(self, run_id: str, owner: str, generation: int) -> bool:
+        """释放 lease（仅 owner/generation 匹配）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                """UPDATE workflow_runs SET driver_owner=NULL, driver_lease_until=NULL
+                   WHERE run_id=? AND driver_owner=? AND driver_generation=?""",
+                (run_id, owner, generation),
+            )
+            conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
+    def is_driver_owner(self, run_id: str, owner: str, generation: int) -> bool:
+        """检查当前 owner/generation 是否匹配。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT driver_owner, driver_generation FROM workflow_runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            conn.close()
+            return bool(row and row["driver_owner"] == owner and row["driver_generation"] == generation)
+        except Exception:
+            conn.close()
+            return False
+
+    def list_driver_candidates(self, limit: int = 50) -> List["WorkflowRun"]:
+        """发现 driver-managed runnable runs（PENDING / RUNNING lease-expired）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM workflow_runs
+                   WHERE driver_managed=1
+                     AND status IN ('pending','running')
+                     AND (driver_lease_until IS NULL OR driver_lease_until < ?)
+                   ORDER BY updated_at ASC LIMIT ?""",
+                (now, limit),
+            ).fetchall()
+            conn.close()
+            return [self._row_to_run(dict(r)) for r in rows]
+        except Exception:
+            conn.close()
+            raise
+
+    def fenced_update_run(self, run_id: str, owner: str, generation: int,
+                          status: str, current_node_id: str, state_dict: Dict[str, Any]) -> bool:
+        """原子 fenced 控制状态写入（owner/generation CAS）。rowcount==1 才成功。
+
+        不覆盖 CANCELLED（terminal-preserving：`status != 'cancelled'`）。
+        """
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                """UPDATE workflow_runs SET status=?, current_node_id=?, state_json=?, updated_at=?
+                   WHERE run_id=? AND driver_owner=? AND driver_generation=? AND status != 'cancelled'""",
+                (status, current_node_id, json.dumps(state_dict, ensure_ascii=False),
+                 _utc_now_iso(), run_id, owner, generation),
+            )
+            conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
+    def list_executing_action_records(self, run_id: str) -> List["WorkflowActionRecord"]:
+        """列出 run 中 status=EXECUTING 的 action record（dispatch started 但未完成）。"""
+        return [a for a in self.list_action_records(run_id) if a.status == ActionStatus.EXECUTING]

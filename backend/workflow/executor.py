@@ -87,7 +87,14 @@ class WorkflowExecutor:
     def __init__(self, repository: SQLiteWorkflowRepository = None):
         self._repo = repository or SQLiteWorkflowRepository()
         self._def_manager = DefinitionManager(self._repo)
+        self._driver_owner: str = ""
+        self._driver_generation: int = 0
         register_all_nodes()
+
+    def set_driver_context(self, owner: str, generation: int) -> None:
+        """RunDriver 设置 driver context（fenced 写入用）。"""
+        self._driver_owner = owner
+        self._driver_generation = generation
 
     @property
     def repo(self) -> SQLiteWorkflowRepository:
@@ -201,6 +208,12 @@ class WorkflowExecutor:
         state = TrafficWorkflowState.from_dict(
             run.state if isinstance(run.state, dict) else {}
         )
+        # Phase17 Round3: 回填 run identity（budget reservation 依赖 workflow_run_id）
+        state.workflow_run_id = run_id
+        state.workflow_definition_id = run.definition_id
+        state.workflow_version = run.version
+        state.session_id = run.session_id
+        state.event_thread_id = run.event_thread_id
 
         if state.status not in (WorkflowRunStatus.PAUSED, WorkflowRunStatus.AWAITING_APPROVAL):
             yield sse_event("error", {
@@ -385,6 +398,12 @@ class WorkflowExecutor:
 
         self._persist_run(run, state)
 
+        # Phase17 Round3: planning driver-managed run → 审批后转 PENDING + release lease，
+        # 由 RunDriver pickup（不在 approval HTTP request 内长期执行 continuation）。
+        if decision in (ApprovalDecision.APPROVED, ApprovalDecision.EDITED) and self.repo.is_driver_managed(run_id):
+            state.status = WorkflowRunStatus.PENDING
+            self.repo.set_run_status_managed(run_id, "pending", state.to_dict())
+
         event_seq = len(self.repo.list_events(run_id))
         self._save_event(run_id, f"approval_{decision.value}",
                          pending.get("nodeId", ""), {
@@ -463,6 +482,12 @@ class WorkflowExecutor:
         for _step in range(max_steps):
             if not current_node_id or current_node_id == "__END__":
                 break
+
+            # Phase17 Round3: cancellation gate — 开始新 node 前 reload durable status
+            if self._driver_owner:
+                durable = self.repo.get_run(run.run_id)
+                if durable is not None and durable.status == WorkflowRunStatus.CANCELLED:
+                    break
 
             node_config = definition.get_node(current_node_id)
             if node_config is None:
@@ -934,7 +959,15 @@ class WorkflowExecutor:
         run.updated_at = _utc_now_iso()
         if state.is_terminal() and not run.completed_at:
             run.completed_at = _utc_now_iso()
-        self.repo.save_run(run)
+
+        # Phase17 Round3: driver-managed run → atomic fenced write（防 stale worker clobber）
+        if self._driver_owner:
+            self.repo.fenced_update_run(
+                run.run_id, self._driver_owner, self._driver_generation,
+                run.status.value, run.current_node_id, run.state,
+            )
+        else:
+            self.repo.save_run(run)
 
     def _open_active_segment(self, run: WorkflowRun) -> None:
         """打开 active execution segment（start/resume 时）。"""

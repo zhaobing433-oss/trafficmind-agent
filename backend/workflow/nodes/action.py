@@ -11,6 +11,7 @@ action 节点 — 外部动作执行。
 未经 human_approval 批准不得执行 action 节点。
 """
 
+import asyncio
 from typing import Any, Dict
 
 from backend.workflow.models import (
@@ -214,6 +215,14 @@ async def execute_action(
                 "reason": "tool budget exhausted",
             }
 
+    # ── Phase17 Round3: persist EXECUTING record BEFORE dispatch ──
+    # action_id 即 dispatchAttemptId；EXECUTING = dispatch_started marker。
+    if repository:
+        try:
+            repository.save_action_record(record)
+        except Exception:
+            pass  # marker 写入失败不阻断（但 UNKNOWN 检测需依赖此 marker）
+
     # 执行具体动作
     result_data: Dict[str, Any] = {}
     error = ""
@@ -329,7 +338,7 @@ async def _dispatch_action(
                 f"路段：{event.get('roadName', '')}\n"
                 f"风险等级：{risk.get('riskLevel', '未知')}（{risk.get('riskScore', 0)}分）\n"
             )
-            ok = send_wechat_work(event_summary)
+            ok = await asyncio.to_thread(send_wechat_work, event_summary)
             return {"sent": bool(ok), "channel": "wechat"}
         except Exception as e:
             return {"sent": False, "channel": "wechat", "error": str(e)[:200]}
@@ -343,7 +352,7 @@ async def _dispatch_action(
                 f"事件：{event.get('eventTypeCn', '')} | {event.get('roadName', '')}\n"
                 f"风险：{risk.get('riskLevel', '未知')}（{risk.get('riskScore', 0)}分）\n"
             )
-            ok = send_dingtalk(event_summary)
+            ok = await asyncio.to_thread(send_dingtalk, event_summary)
             return {"sent": bool(ok), "channel": "dingtalk"}
         except Exception as e:
             return {"sent": False, "channel": "dingtalk", "error": str(e)[:200]}

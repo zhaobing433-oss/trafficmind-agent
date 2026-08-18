@@ -86,12 +86,19 @@ class TestFullReplanFlow:
         assert parent.status.value == "failed"
         assert calls == ["save_result"]  # 父 run 只 dispatch 一次（失败）
 
-        # explicit replan（dispatch 改为成功）
+        # explicit replan（dispatch 改为成功）→ child PENDING + driver_managed（Round3 由 RunDriver 执行）
         dispatch_mode["fail"] = False
         coord = PlanningContinuationCoordinator(repo)
         result = coord.explicit_replan(parent.run_id)
         assert "error" not in result, result
         child_run_id = result["childRunId"]
+
+        # RunDriver 拾取 child（execution owner = RunDriver）
+        from backend.workflow.run_driver import RunDriver
+        claim = repo.claim_driver_run(child_run_id, "smoke_driver", "2099-01-01T00:00:00Z")
+        assert claim["claimed"] is True
+        driver = RunDriver(repo, owner_id="smoke_driver")
+        asyncio.run(driver._drive(child_run_id, claim["generation"]))
 
         # child 只重跑 unresolved suffix（save_result），carried prefix 不重跑
         assert calls == ["save_result", "save_result"]  # 父失败 + 子成功

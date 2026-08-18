@@ -283,18 +283,7 @@ class PlanningContinuationCoordinator:
                 return {"childRunId": child_run_id, "alreadyReplanned": True}
             return {"error": f"child cutover failed: {e}"}
 
-        # cutover commit 后执行 child
-        return self._execute_child(child_run_id, new_version)
-
-    def _execute_child(self, child_run_id: str, version: int) -> Dict[str, Any]:
-        from backend.workflow.executor import get_executor
-        import asyncio
-        executor = get_executor()
-        sse = asyncio.run(self._collect(executor.execute_created_run(child_run_id)))
-        return {"childRunId": child_run_id, "version": version, "started": True}
-
-    async def _collect(self, agen):
-        out = []
-        async for s in agen:
-            out.append(s)
-        return out
+        # Phase17 Round3: 标记 child driver_managed，RunDriver 异步 pickup。
+        # 不在 coordinator/HTTP request 内长期执行 child（execution owner 唯一 = RunDriver）。
+        self._repo.mark_driver_managed(child_run_id)
+        return {"childRunId": child_run_id, "version": new_version, "started": True}

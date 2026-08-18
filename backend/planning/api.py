@@ -147,38 +147,14 @@ async def run_plan(plan_id: str, body: PlanRunRequest):
             },
         )
 
-    executor = get_executor()
-
-    async def _stream():
-        run_id = ""
-        try:
-            async for sse_str in executor.start(
-                definition_id=plan_id,
-                session_id=body.sessionId or "",
-                event_thread_id=body.eventThreadId or "",
-                initial_event=body.event,
-                triggered_by=body.triggeredBy or "api",
-            ):
-                if not run_id:
-                    run_id = _extract_run_id(sse_str)
-                yield sse_str
-            # 流结束后补写 plan 生命周期事件（plan_started + terminal）
-            if run_id:
-                _record_plan_lifecycle_events(run_id)
-                _auto_replan_if_needed(run_id)
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            if run_id:
-                _record_plan_lifecycle_events(run_id)
-            yield sse_event("error", {
-                "message": str(e).split("\n")[0][:200],
-                "details": "计划执行发生内部错误",
-            })
-            yield sse_event("done", {"error": True})
+    # Phase17 Round3: 创建 durable planning run（PENDING + driver_managed），
+    # RunDriver 异步执行；HTTP/SSE 只 observe。
+    run_id = _create_planning_run_record(plan_id, body)
+    if run_id is None:
+        raise HTTPException(status_code=400, detail="创建 planning run 失败")
 
     return StreamingResponse(
-        _stream(),
+        _observe_run(run_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -286,6 +262,71 @@ def _auto_replan_if_needed(run_id: str) -> None:
         coordinator.auto_continue(run_id)
     except Exception:
         pass  # 自动 replan 失败不阻断主流程
+
+
+def _create_planning_run_record(plan_id: str, body) -> Optional[str]:
+    """创建 durable planning run（PENDING + driver_managed=1），不执行。
+
+    返回 run_id；RunDriver 随后 claim + execute_created_run。
+    """
+    import copy
+
+    from backend.planning.budget import new_lineage, set_lineage
+    from backend.workflow.definition import DefinitionManager
+    from backend.workflow.models import WorkflowRun, WorkflowRunStatus, generate_run_id
+    from backend.workflow.state import TrafficWorkflowState
+
+    try:
+        mgr = DefinitionManager(_repo)
+        definition = mgr.get_latest_definition(plan_id)
+        if definition is None:
+            return None
+        issues = mgr.validate_for_execution(definition)
+        if issues:
+            return None
+        version = mgr.create_version(definition, changelog="planning run")
+        run_id = generate_run_id()
+        state = TrafficWorkflowState(
+            workflow_run_id=run_id, workflow_definition_id=plan_id,
+            workflow_version=version.version,
+            session_id=body.sessionId or "", event_thread_id=body.eventThreadId or "",
+            current_event=body.event or {}, original_input=copy.deepcopy(body.event or {}),
+            status=WorkflowRunStatus.PENDING, current_node=definition.entry_node_id,
+        )
+        run = WorkflowRun(
+            run_id=run_id, definition_id=plan_id, version=version.version,
+            session_id=body.sessionId or "", event_thread_id=body.eventThreadId or "",
+            status=WorkflowRunStatus.PENDING, current_node_id=definition.entry_node_id,
+            state=state.to_dict(), triggered_by=body.triggeredBy or "api",
+        )
+        set_lineage(run.state, new_lineage(run_id))
+        _repo.save_run(run)
+        _repo.mark_driver_managed(run_id)
+        return run_id
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+async def _observe_run(run_id: str):
+    """观察 run 状态直到 terminal（不拥有 execution lifecycle）。"""
+    import asyncio
+
+    yield sse_event("run_created", {"runId": run_id})
+    last_status = ""
+    for _ in range(1200):  # 最多 600s
+        run = _repo.get_run(run_id)
+        if run is None:
+            break
+        if run.status.value != last_status:
+            last_status = run.status.value
+            yield sse_event("run_status", {"runId": run_id, "status": run.status.value})
+        if run.is_terminal():
+            yield sse_event("done", {"runId": run_id, "status": run.status.value})
+            return
+        await asyncio.sleep(0.5)
+    yield sse_event("done", {"runId": run_id, "status": last_status})
 
 
 def _extract_run_id(sse_str: str) -> str:
