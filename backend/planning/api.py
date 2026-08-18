@@ -248,12 +248,16 @@ async def list_plans(
     status: Optional[str] = None,
     search: Optional[str] = None,
 ):
-    """plan discovery。只返回 planning definitions。filter 先于分页。"""
+    """plan discovery。只返回 planning definitions。filter 在 SQL 侧先于分页。"""
     page = max(1, page)
     pageSize = min(100, max(1, pageSize))
+    offset = (page - 1) * pageSize
 
-    # 先取全部 planning definitions（数量小），构建 items + aggregate，再 filter，再分页
-    definitions = _repo.list_planning_definitions(limit=1000, offset=0)
+    # filter（goalType/status/search）在 SQL 侧生效；只加载当前页，无 1000 硬上限
+    total, definitions = _repo.list_planning_definitions_filtered(
+        goal_type=goalType, status=status, search=search,
+        limit=pageSize, offset=offset,
+    )
     aggregates = _repo.batch_get_run_aggregates([d.id for d in definitions])
 
     items = []
@@ -278,20 +282,7 @@ async def list_plans(
             "replanCount": agg.get("replanCount", 0),
         })
 
-    # filter 先作用（goalType/status/search）
-    if goalType:
-        items = [i for i in items if i["goalType"] == goalType]
-    if status:
-        items = [i for i in items if i["latestExecutionStatus"] == status]
-    if search:
-        s = search.lower()
-        items = [i for i in items if s in (i["goal"] or "").lower()]
-
-    total = len(items)
-    offset = (page - 1) * pageSize
-    paged = items[offset:offset + pageSize]
-
-    return {"total": total, "page": page, "pageSize": pageSize, "plans": paged}
+    return {"total": total, "page": page, "pageSize": pageSize, "plans": items}
 
 
 @router.get("/plans/{plan_id}/diff", summary="版本 diff（deterministic）")

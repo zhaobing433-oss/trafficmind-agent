@@ -62,6 +62,7 @@ from backend.workflow.condition import (
 )
 from backend.workflow.nodes.base import get_node_registry
 from backend.workflow.nodes import register_all_nodes
+from backend.workflow.errors import DriverLeaseLost
 
 
 def _utc_now_iso() -> str:
@@ -307,6 +308,11 @@ class WorkflowExecutor:
                 definition=definition, state=state, run=run, start_seq=seq,
             ):
                 yield sse_str
+        except DriverLeaseLost:
+            # lease lost：旧 generation 停止，不写 node terminal / control progression，
+            # 也不把 run 标记为 FAILED（交给新 owner / RunDriver 决定）。
+            self._lease_lost = True
+            yield sse_event("done", {"runId": run_id, "status": "lease_lost"})
         except Exception as e:
             traceback.print_exc()
             state.record_error("executor", str(e))
@@ -793,10 +799,15 @@ class WorkflowExecutor:
                         executor_fn(state, node_config),
                         timeout=node_config.timeout_seconds,
                     )
+                # lease_lost sentinel → 立即停止，不当作普通 success / 可重试失败
+                if isinstance(result, dict) and result.get("status") == "lease_lost":
+                    raise DriverLeaseLost(run.run_id)
                 if isinstance(result, dict) and result.get("error"):
                     raise RuntimeError(result["error"])
                 succeeded = True
                 break
+            except DriverLeaseLost:
+                raise  # 不重试、不写 node terminal，向上传播
             except asyncio.TimeoutError:
                 last_error = f"节点执行超时 ({node_config.timeout_seconds}s)"
                 state.record_error(node_id, last_error, attempt)
@@ -811,6 +822,13 @@ class WorkflowExecutor:
                     last_error = "retry budget exhausted"
                     break
                 await asyncio.sleep(node_config.retry_delay_seconds)
+
+        # ── M2: 后置 fencing — node 返回后、写任何 node terminal / stepsUsed / cursor 前 re-verify owner ──
+        # lease 在 node 执行期间失效 → 立即停止；旧 generation 不得写 node terminal / control progression。
+        if self._driver_owner and not self.repo.is_driver_owner(
+            run.run_id, self._driver_owner, self._driver_generation
+        ):
+            raise DriverLeaseLost(run.run_id)
 
         # ── 断言 current_event 未被覆盖 ──────────────────────────────
         if node_config.node_type not in (NodeType.TRIGGER,):

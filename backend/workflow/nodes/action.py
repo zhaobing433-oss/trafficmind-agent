@@ -225,6 +225,7 @@ async def execute_action(
                     "status": "in_flight",
                     "executed": False,
                     "reason": "existing EXECUTING attempt",
+                    "error": "existing EXECUTING attempt",  # 使 executor 判为 node 失败（不 SUCCEEDED）
                 }
 
     # 创建动作记录
@@ -275,6 +276,7 @@ async def execute_action(
                 "status": "marker_persist_failed",
                 "executed": False,
                 "reason": str(e)[:200],
+                "error": str(e)[:200],  # 使 executor 判为 node 失败（可安全 retry，无外部 side effect）
             }
 
     # ── re-check lease ownership before external dispatch ──

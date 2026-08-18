@@ -19,7 +19,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import backend.config as _config
 
@@ -1235,6 +1235,59 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         except Exception:
             conn.close()
             return 0
+
+    def list_planning_definitions_filtered(
+        self,
+        goal_type: Optional[str] = None,
+        status: Optional[str] = None,
+        search: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Tuple[int, List["WorkflowDefinition"]]:
+        """SQL 侧过滤 planning definitions（无硬上限）。
+
+        filter（goalType/search/status）在 count 与 pagination 之前生效：
+          - goalType / search 用 json_extract 读取 metadata_json 的 frozen plan
+          - status 用 latest-run 子查询（updated_at DESC, rowid DESC 取最新）
+        返回 (filtered_total, page_definitions)。
+        """
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            where = ['metadata_json LIKE \'%"planFingerprint"%\'']
+            params: List[Any] = []
+            if goal_type:
+                where.append("json_extract(metadata_json, '$.plan.goalType') = ?")
+                params.append(goal_type)
+            if search:
+                where.append(
+                    "LOWER(COALESCE(json_extract(metadata_json, '$.plan.goal'), '')) LIKE ?"
+                )
+                params.append(f"%{search.lower()}%")
+            if status:
+                where.append(
+                    """(SELECT r.status FROM workflow_runs r
+                         WHERE r.definition_id = d.id
+                         ORDER BY r.updated_at DESC, r.rowid DESC LIMIT 1) = ?"""
+                )
+                params.append(status)
+            where_sql = " AND ".join(where)
+
+            total = conn.execute(
+                f"SELECT COUNT(*) AS c FROM workflow_definitions d WHERE {where_sql}",
+                params,
+            ).fetchone()["c"]
+
+            rows = conn.execute(
+                f"""SELECT d.* FROM workflow_definitions d WHERE {where_sql}
+                    ORDER BY d.updated_at DESC, d.id DESC LIMIT ? OFFSET ?""",
+                params + [limit, offset],
+            ).fetchall()
+            conn.close()
+            return total, [self._row_to_definition(dict(r)) for r in rows]
+        except Exception:
+            conn.close()
+            raise
 
     def batch_get_run_aggregates(self, definition_ids: List[str]) -> Dict[str, Dict[str, Any]]:
         """每个 definition_id 的 run 聚合（executionCount/replanCount/latest run summary）。"""
