@@ -1110,7 +1110,10 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             conn.close()
 
     def heartbeat_driver_lease(self, run_id: str, owner: str, generation: int, lease_until_iso: str) -> bool:
-        """CAS heartbeat：仅 owner/generation 匹配时延长 lease。"""
+        """CAS heartbeat：owner/generation 匹配且 lease 尚未过期且 run 可执行时续租。
+
+        lease 已过期 → False（不能复活过期 lease；RunDriver 停止旧 worker）。
+        """
         init_workflow_tables()
         _ensure_driver_columns()
         now = _utc_now_iso()
@@ -1118,8 +1121,10 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         try:
             cur = conn.execute(
                 """UPDATE workflow_runs SET driver_lease_until=?, driver_heartbeat_at=?
-                   WHERE run_id=? AND driver_owner=? AND driver_generation=?""",
-                (lease_until_iso, now, run_id, owner, generation),
+                   WHERE run_id=? AND driver_owner=? AND driver_generation=?
+                     AND driver_lease_until IS NOT NULL AND driver_lease_until >= ?
+                     AND status IN ('pending','running')""",
+                (lease_until_iso, now, run_id, owner, generation, now),
             )
             conn.commit()
             return cur.rowcount == 1
@@ -1143,7 +1148,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             conn.close()
 
     def is_driver_owner(self, run_id: str, owner: str, generation: int) -> bool:
-        """检查当前 owner/generation 是否匹配。"""
+        """检查当前 owner/generation 是否匹配（identity helper，不检查 lease）。"""
         init_workflow_tables()
         _ensure_driver_columns()
         conn = _get_conn()
@@ -1154,6 +1159,36 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             ).fetchone()
             conn.close()
             return bool(row and row["driver_owner"] == owner and row["driver_generation"] == generation)
+        except Exception:
+            conn.close()
+            return False
+
+    def is_driver_execution_valid(self, run_id: str, owner: str, generation: int) -> bool:
+        """driver-managed execution gate：identity + lease 未过期 + status 非 CANCELLED。
+
+        与 is_driver_owner（纯 identity）区分：lease 已过期即使尚未被 takeover，
+        旧 worker 也不得继续执行 / dispatch / 写 control state。
+        """
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT driver_owner, driver_generation, driver_lease_until, status FROM workflow_runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            conn.close()
+            if not row:
+                return False
+            if row["driver_owner"] != owner or row["driver_generation"] != generation:
+                return False
+            if row["status"] == WorkflowRunStatus.CANCELLED.value:
+                return False
+            lease = row["driver_lease_until"]
+            if not lease:
+                return False
+            return lease >= now
         except Exception:
             conn.close()
             return False
@@ -1181,19 +1216,21 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
 
     def fenced_update_run(self, run_id: str, owner: str, generation: int,
                           status: str, current_node_id: str, state_dict: Dict[str, Any]) -> bool:
-        """原子 fenced 控制状态写入（owner/generation CAS）。rowcount==1 才成功。
+        """原子 fenced 控制状态写入（owner/generation + lease 有效 CAS）。rowcount==1 才成功。
 
-        不覆盖 CANCELLED（terminal-preserving：`status != 'cancelled'`）。
+        不覆盖 CANCELLED（terminal-preserving）；lease 已过期不得写（expired worker 停写）。
         """
         init_workflow_tables()
         _ensure_driver_columns()
+        now = _utc_now_iso()
         conn = _get_conn()
         try:
             cur = conn.execute(
                 """UPDATE workflow_runs SET status=?, current_node_id=?, state_json=?, updated_at=?
-                   WHERE run_id=? AND driver_owner=? AND driver_generation=? AND status != 'cancelled'""",
+                   WHERE run_id=? AND driver_owner=? AND driver_generation=? AND status != 'cancelled'
+                     AND driver_lease_until IS NOT NULL AND driver_lease_until >= ?""",
                 (status, current_node_id, json.dumps(state_dict, ensure_ascii=False),
-                 _utc_now_iso(), run_id, owner, generation),
+                 _utc_now_iso(), run_id, owner, generation, now),
             )
             conn.commit()
             return cur.rowcount == 1

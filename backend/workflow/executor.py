@@ -503,8 +503,8 @@ class WorkflowExecutor:
                 # lease lost（fenced write 失败）→ 停止，不启动新 node
                 if self._lease_lost:
                     break
-                # 每次 node 前 re-verify owner/generation（fencing）
-                if not self.repo.is_driver_owner(run.run_id, self._driver_owner, self._driver_generation):
+                # 每次 node 前 re-verify execution-valid（owner/generation + lease 未过期 + 非 CANCELLED）
+                if not self.repo.is_driver_execution_valid(run.run_id, self._driver_owner, self._driver_generation):
                     break
 
             node_config = definition.get_node(current_node_id)
@@ -799,8 +799,8 @@ class WorkflowExecutor:
                         executor_fn(state, node_config),
                         timeout=node_config.timeout_seconds,
                     )
-                # lease_lost sentinel → 立即停止，不当作普通 success / 可重试失败
-                if isinstance(result, dict) and result.get("status") == "lease_lost":
+                # lease_lost / cancelled sentinel → 立即停止，不当作普通 success / 可重试失败
+                if isinstance(result, dict) and result.get("status") in ("lease_lost", "cancelled"):
                     raise DriverLeaseLost(run.run_id)
                 if isinstance(result, dict) and result.get("error"):
                     raise RuntimeError(result["error"])
@@ -823,9 +823,9 @@ class WorkflowExecutor:
                     break
                 await asyncio.sleep(node_config.retry_delay_seconds)
 
-        # ── M2: 后置 fencing — node 返回后、写任何 node terminal / stepsUsed / cursor 前 re-verify owner ──
-        # lease 在 node 执行期间失效 → 立即停止；旧 generation 不得写 node terminal / control progression。
-        if self._driver_owner and not self.repo.is_driver_owner(
+        # ── M2: 后置 fencing — node 返回后、写任何 node terminal / stepsUsed / cursor 前 re-verify execution-valid ──
+        # lease 在 node 执行期间失效 或 run 被 cancel → 立即停止；旧 generation 不得写 node terminal / control progression。
+        if self._driver_owner and not self.repo.is_driver_execution_valid(
             run.run_id, self._driver_owner, self._driver_generation
         ):
             raise DriverLeaseLost(run.run_id)

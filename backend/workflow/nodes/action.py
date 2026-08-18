@@ -102,11 +102,19 @@ async def execute_action(
     if not action_type:
         return {"error": "action 节点缺少 action_type 配置"}
 
-    def _lease_ok() -> bool:
-        """driver-managed 时校验当前 owner/generation 是否仍是合法 claim。"""
+    def _driver_gate() -> str:
+        """driver-managed execution gate：identity + lease 未过期 + 非 CANCELLED。
+
+        返回 'ok' | 'cancelled' | 'lease_lost'。legacy（无 driver context）恒为 'ok'。
+        """
         if not repository or not driver_owner:
-            return True
-        return repository.is_driver_owner(state.workflow_run_id, driver_owner, driver_generation)
+            return "ok"
+        if repository.is_driver_execution_valid(state.workflow_run_id, driver_owner, driver_generation):
+            return "ok"
+        durable = repository.get_run(state.workflow_run_id)
+        if durable is not None and durable.status.value == "cancelled":
+            return "cancelled"
+        return "lease_lost"
 
     def _lease_lost_result() -> Dict[str, Any]:
         return {
@@ -115,6 +123,31 @@ async def execute_action(
             "executed": False,
             "reason": "driver lease lost",
         }
+
+    def _cancelled_result(reason: str) -> Dict[str, Any]:
+        return {
+            "action_type": action_type,
+            "status": "cancelled",
+            "executed": False,
+            "reason": reason,
+        }
+
+    def _finalize_marker_cancelled() -> None:
+        """EXECUTING marker 已 persist，但 cancel 发生在真正 dispatch 前 → 终结为 known-not-dispatched。
+
+        优先写 FAILED / cancelled_before_dispatch；terminal marker 更新失败则保守保留 EXECUTING
+        （→ recovery human review / UNKNOWN），但绝不 dispatch。
+        """
+        if not repository:
+            return
+        record.status = ActionStatus.FAILED
+        record.error = "cancelled_before_dispatch"
+        record.result = {"cancelled": True, "dispatched": False}
+        record.completed_at = record.created_at
+        try:
+            repository.save_action_record(record)
+        except Exception:
+            pass
 
     # ── ToolPolicy 门禁（Section 11/12/13）：外部动作必须先通过 ToolPolicy ──
     # 未知工具 fail-closed；高风险工具未批准则阻止执行并返回 approval_required。
@@ -240,8 +273,12 @@ async def execute_action(
         status=ActionStatus.EXECUTING,
     )
 
-    # ── Phase17 Round3 fencing: budget/dispatch 前校验 lease ownership ──
-    if not _lease_ok():
+    # ── C1: budget/dispatch 前 gate（identity + lease 未过期 + 非 CANCELLED）──
+    _gate = _driver_gate()
+    if _gate == "cancelled":
+        state.add_audit_event("action_cancelled_before_dispatch", config.node_id, {"actionType": action_type})
+        return _cancelled_result("run cancelled before action")
+    if _gate == "lease_lost":
         state.add_audit_event("lease_lost", config.node_id, {"actionType": action_type})
         return _lease_lost_result()
 
@@ -279,8 +316,14 @@ async def execute_action(
                 "error": str(e)[:200],  # 使 executor 判为 node 失败（可安全 retry，无外部 side effect）
             }
 
-    # ── re-check lease ownership before external dispatch ──
-    if not _lease_ok():
+    # ── C2: external dispatch 前 re-check（durable != CANCELLED 且 lease 未过期）──
+    _gate = _driver_gate()
+    if _gate == "cancelled":
+        # EXECUTING marker 已 persist，但 cancel 发生在真正 dispatch 前 → 终结为 known-not-dispatched
+        state.add_audit_event("action_cancelled_before_dispatch", config.node_id, {"actionType": action_type})
+        _finalize_marker_cancelled()
+        return _cancelled_result("run cancelled before dispatch")
+    if _gate == "lease_lost":
         state.add_audit_event("lease_lost", config.node_id, {"actionType": action_type})
         return _lease_lost_result()
 

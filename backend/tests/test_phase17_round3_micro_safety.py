@@ -72,6 +72,15 @@ def _drive(executor, run_id):
     asyncio.run(_run())
 
 
+def _expire_lease(run_id):
+    """手动将 run 的 lease 置为过期（用于模拟执行期间 lease 到期）。"""
+    import sqlite3
+    conn = sqlite3.connect(cfg.DB_PATH)
+    conn.execute("UPDATE workflow_runs SET driver_lease_until='2000-01-01T00:00:00Z' WHERE run_id=?", (run_id,))
+    conn.commit()
+    conn.close()
+
+
 class TestLateNodeCompletionFencing:
     def test_m01_late_node_completion_no_progression(self, monkeypatch):
         from backend.workflow.models import generate_run_id
@@ -83,7 +92,7 @@ class TestLateNodeCompletionFencing:
         run_id = generate_run_id()
         _pending_run(repo, run_id, "def_action")
 
-        c1 = repo.claim_driver_run(run_id, "w1", "2000-01-01T00:00:00Z")  # gen1（lease 已过期，可被 takeover）
+        c1 = repo.claim_driver_run(run_id, "w1", "2099-01-01T00:00:00Z")  # gen1（valid lease，执行期间才过期）
         assert c1["claimed"] is True
 
         started = asyncio.Event()
@@ -104,6 +113,7 @@ class TestLateNodeCompletionFencing:
                     pass
             task = asyncio.create_task(drive())
             await asyncio.wait_for(started.wait(), timeout=10.0)  # action node 已开始 dispatch
+            _expire_lease(run_id)  # 手动让 gen1 lease 过期
             c2 = repo.claim_driver_run(run_id, "w2", "2099-01-01T00:00:00Z")  # gen2 takeover
             assert c2["claimed"] is True
             release.set()
