@@ -77,13 +77,15 @@ def is_current_action_approved(state: TrafficWorkflowState, action_type: str) ->
 
 
 async def execute_action(
-    state: TrafficWorkflowState, config: NodeConfig, repository=None
+    state: TrafficWorkflowState, config: NodeConfig, repository=None,
+    driver_owner: str = "", driver_generation: int = 0,
 ) -> Dict[str, Any]:
     """执行外部动作。
 
     执行前检查：
       1. 是否已经过审批（如有 approval 节点）
       2. 幂等键是否已存在成功记录
+      3. driver lease ownership（fencing，driver-managed 时）
 
     Args:
         state: 工作流状态
@@ -91,6 +93,7 @@ async def execute_action(
           - config.action_type: 动作类型（"notify_wechat", "adjust_signal" 等）
           - config.action_params: 动作参数
         repository: Workflow 持久化仓库（用于幂等检查）
+        driver_owner / driver_generation: driver context（fencing 校验）
 
     Returns:
         执行结果
@@ -98,6 +101,20 @@ async def execute_action(
     action_type = config.config.get("action_type", "")
     if not action_type:
         return {"error": "action 节点缺少 action_type 配置"}
+
+    def _lease_ok() -> bool:
+        """driver-managed 时校验当前 owner/generation 是否仍是合法 claim。"""
+        if not repository or not driver_owner:
+            return True
+        return repository.is_driver_owner(state.workflow_run_id, driver_owner, driver_generation)
+
+    def _lease_lost_result() -> Dict[str, Any]:
+        return {
+            "action_type": action_type,
+            "status": "lease_lost",
+            "executed": False,
+            "reason": "driver lease lost",
+        }
 
     # ── ToolPolicy 门禁（Section 11/12/13）：外部动作必须先通过 ToolPolicy ──
     # 未知工具 fail-closed；高风险工具未批准则阻止执行并返回 approval_required。
@@ -172,7 +189,20 @@ async def execute_action(
     if repository:
         try:
             existing = repository.get_action_record_by_idempotency_key(idempotency_key)
-            if existing and existing.status == ActionStatus.SUCCEEDED:
+        except Exception as e:
+            # 幂等检查失败 → fail-closed，不 dispatch
+            state.add_audit_event("action_idempotency_check_failed", config.node_id, {
+                "actionType": action_type, "idempotencyKey": idempotency_key,
+                "reason": f"idempotency check failed: {str(e)[:200]}",
+            })
+            return {
+                "action_type": action_type,
+                "status": "failed",
+                "executed": False,
+                "reason": f"idempotency check failed: {str(e)[:200]}",
+            }
+        if existing is not None:
+            if existing.status == ActionStatus.SUCCEEDED:
                 state.add_audit_event("action_idempotent_skip", config.node_id, {
                     "actionType": action_type,
                     "idempotencyKey": idempotency_key,
@@ -184,8 +214,18 @@ async def execute_action(
                     "reason": "idempotent_skip",
                     "previous_result": existing.result,
                 }
-        except Exception:
-            pass  # 幂等检查失败不影响执行
+            if existing.status == ActionStatus.EXECUTING:
+                # 已有 in-flight/unknown attempt → no second dispatch（fail closed）
+                state.add_audit_event("action_inflight_conflict", config.node_id, {
+                    "actionType": action_type, "idempotencyKey": idempotency_key,
+                    "reason": "已有 EXECUTING attempt，禁止二次 dispatch",
+                })
+                return {
+                    "action_type": action_type,
+                    "status": "in_flight",
+                    "executed": False,
+                    "reason": "existing EXECUTING attempt",
+                }
 
     # 创建动作记录
     action_id = generate_action_id()
@@ -198,6 +238,11 @@ async def execute_action(
         params=action_params,
         status=ActionStatus.EXECUTING,
     )
+
+    # ── Phase17 Round3 fencing: budget/dispatch 前校验 lease ownership ──
+    if not _lease_ok():
+        state.add_audit_event("lease_lost", config.node_id, {"actionType": action_type})
+        return _lease_lost_result()
 
     # ── Phase17 Round2: budget durable reservation BEFORE dispatch ──
     # ToolPolicy ALLOW 后、真正 dispatch 前：check → increment → persist → dispatch。
@@ -217,11 +262,25 @@ async def execute_action(
 
     # ── Phase17 Round3: persist EXECUTING record BEFORE dispatch ──
     # action_id 即 dispatchAttemptId；EXECUTING = dispatch_started marker。
+    # marker 必须 durable persist；失败 → 不 dispatch（fail-closed）。
     if repository:
         try:
             repository.save_action_record(record)
-        except Exception:
-            pass  # marker 写入失败不阻断（但 UNKNOWN 检测需依赖此 marker）
+        except Exception as e:
+            state.add_audit_event("dispatch_marker_persist_failed", config.node_id, {
+                "actionType": action_type, "reason": str(e)[:200],
+            })
+            return {
+                "action_type": action_type,
+                "status": "marker_persist_failed",
+                "executed": False,
+                "reason": str(e)[:200],
+            }
+
+    # ── re-check lease ownership before external dispatch ──
+    if not _lease_ok():
+        state.add_audit_event("lease_lost", config.node_id, {"actionType": action_type})
+        return _lease_lost_result()
 
     # 执行具体动作
     result_data: Dict[str, Any] = {}
@@ -282,7 +341,20 @@ async def execute_action(
                         }
                 except Exception:
                     pass
-            # 其他持久化错误：记录但不阻止返回结果
+                # UNIQUE 冲突但读取失败 → 继续（幂等键仍存在，不重复执行）
+            else:
+                # 其他持久化错误 → fail-safe：external 已发生但 durable terminal result 丢失。
+                # EXECUTING marker 仍在 DB，HIGH_RISK 重启/恢复会识别 UNKNOWN_OUTCOME。
+                state.add_audit_event("action_result_persist_failed", config.node_id, {
+                    "actionType": action_type, "reason": str(e)[:200],
+                })
+                state.record_error(config.node_id, f"action result 持久化失败: {str(e)[:200]}")
+                return {
+                    "action_id": action_id,
+                    "action_type": action_type,
+                    "status": "result_persist_failed",
+                    "error": f"action result 持久化失败: {str(e)[:200]}",
+                }
 
     # 跟踪
     state.action_record_ids.append(action_id)

@@ -248,12 +248,12 @@ async def list_plans(
     status: Optional[str] = None,
     search: Optional[str] = None,
 ):
-    """plan discovery。只返回 planning definitions。"""
+    """plan discovery。只返回 planning definitions。filter 先于分页。"""
     page = max(1, page)
     pageSize = min(100, max(1, pageSize))
-    offset = (page - 1) * pageSize
-    total = _repo.count_planning_definitions()
-    definitions = _repo.list_planning_definitions(limit=pageSize, offset=offset)
+
+    # 先取全部 planning definitions（数量小），构建 items + aggregate，再 filter，再分页
+    definitions = _repo.list_planning_definitions(limit=1000, offset=0)
     aggregates = _repo.batch_get_run_aggregates([d.id for d in definitions])
 
     items = []
@@ -278,6 +278,7 @@ async def list_plans(
             "replanCount": agg.get("replanCount", 0),
         })
 
+    # filter 先作用（goalType/status/search）
     if goalType:
         items = [i for i in items if i["goalType"] == goalType]
     if status:
@@ -286,7 +287,11 @@ async def list_plans(
         s = search.lower()
         items = [i for i in items if s in (i["goal"] or "").lower()]
 
-    return {"total": total, "page": page, "pageSize": pageSize, "plans": items}
+    total = len(items)
+    offset = (page - 1) * pageSize
+    paged = items[offset:offset + pageSize]
+
+    return {"total": total, "page": page, "pageSize": pageSize, "plans": paged}
 
 
 @router.get("/plans/{plan_id}/diff", summary="版本 diff（deterministic）")
@@ -388,8 +393,8 @@ def _create_planning_run_record(plan_id: str, body) -> Optional[str]:
             state=state.to_dict(), triggered_by=body.triggeredBy or "api",
         )
         set_lineage(run.state, new_lineage(run_id))
-        _repo.save_run(run)
-        _repo.mark_driver_managed(run_id)
+        # 原子创建 driver-managed run（driver_managed=1 单次落库，无 post-save mark 窗口）
+        _repo.save_driver_managed_run(run)
         return run_id
     except Exception:
         import traceback

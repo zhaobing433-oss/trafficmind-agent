@@ -263,7 +263,7 @@ class PlanningContinuationCoordinator:
         # 更新 parent state：lineage 指针 + termination metadata
         new_parent_state = dict(parent_state)
         new_parent_state["replannedToRunId"] = child_run_id
-        new_parent_state["replannedToVersion"] = parent.version + 1
+        # replannedToVersion 由事务内实际分配的 next_version 覆盖（不在此猜 parent.version+1）
         new_parent_state["terminationReason"] = "replanned"
         new_parent_state["executionLineage"] = child_lineage.to_dict()
         parent_status = WorkflowRunStatus.REJECTED if parent.status == WorkflowRunStatus.REJECTED else WorkflowRunStatus.FAILED
@@ -283,7 +283,5 @@ class PlanningContinuationCoordinator:
                 return {"childRunId": child_run_id, "alreadyReplanned": True}
             return {"error": f"child cutover failed: {e}"}
 
-        # Phase17 Round3: 标记 child driver_managed，RunDriver 异步 pickup。
-        # 不在 coordinator/HTTP request 内长期执行 child（execution owner 唯一 = RunDriver）。
-        self._repo.mark_driver_managed(child_run_id)
+        # child driver_managed 已在事务内落库（create_child_continuation_tx），此处无需 post-commit mark
         return {"childRunId": child_run_id, "version": new_version, "started": True}

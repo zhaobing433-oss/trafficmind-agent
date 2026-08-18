@@ -89,12 +89,18 @@ class WorkflowExecutor:
         self._def_manager = DefinitionManager(self._repo)
         self._driver_owner: str = ""
         self._driver_generation: int = 0
+        self._lease_lost: bool = False
         register_all_nodes()
 
     def set_driver_context(self, owner: str, generation: int) -> None:
         """RunDriver 设置 driver context（fenced 写入用）。"""
         self._driver_owner = owner
         self._driver_generation = generation
+        self._lease_lost = False
+
+    @property
+    def lease_lost(self) -> bool:
+        return self._lease_lost
 
     @property
     def repo(self) -> SQLiteWorkflowRepository:
@@ -488,6 +494,12 @@ class WorkflowExecutor:
                 durable = self.repo.get_run(run.run_id)
                 if durable is not None and durable.status == WorkflowRunStatus.CANCELLED:
                     break
+                # lease lost（fenced write 失败）→ 停止，不启动新 node
+                if self._lease_lost:
+                    break
+                # 每次 node 前 re-verify owner/generation（fencing）
+                if not self.repo.is_driver_owner(run.run_id, self._driver_owner, self._driver_generation):
+                    break
 
             node_config = definition.get_node(current_node_id)
             if node_config is None:
@@ -769,10 +781,11 @@ class WorkflowExecutor:
 
             try:
                 executor_fn = registry.get(node_type)
-                # 为 action 节点传入 repository，确保 ActionRecord 持久化
+                # 为 action 节点传入 repository + driver context，确保 ActionRecord 持久化 + fencing
                 if node_config.node_type == NodeType.ACTION:
                     result = await asyncio.wait_for(
-                        executor_fn(state, node_config, repository=self._repo),
+                        executor_fn(state, node_config, repository=self._repo,
+                                    driver_owner=self._driver_owner, driver_generation=self._driver_generation),
                         timeout=node_config.timeout_seconds,
                     )
                 else:
@@ -961,11 +974,17 @@ class WorkflowExecutor:
             run.completed_at = _utc_now_iso()
 
         # Phase17 Round3: driver-managed run → atomic fenced write（防 stale worker clobber）
+        self._persist_run_state(run)
+
+    def _persist_run_state(self, run: WorkflowRun) -> None:
+        """driver-managed 用 fenced write；失败 → lease_lost。legacy 用 save_run。"""
         if self._driver_owner:
-            self.repo.fenced_update_run(
+            ok = self.repo.fenced_update_run(
                 run.run_id, self._driver_owner, self._driver_generation,
                 run.status.value, run.current_node_id, run.state,
             )
+            if not ok:
+                self._lease_lost = True  # lease lost → 停止执行
         else:
             self.repo.save_run(run)
 
@@ -981,7 +1000,7 @@ class WorkflowExecutor:
         open_active_segment(lineage, time.time())
         set_lineage(state, lineage)
         run.state = state
-        self.repo.save_run(run)
+        self._persist_run_state(run)
 
     def _close_active_segment(self, run: WorkflowRun) -> None:
         """关闭 active segment（pause/terminal 时），累计 activeElapsedSeconds。"""
@@ -995,7 +1014,7 @@ class WorkflowExecutor:
         close_active_segment(lineage, time.time())
         set_lineage(state, lineage)
         run.state = state
-        self.repo.save_run(run)
+        self._persist_run_state(run)
 
     def _active_budget_exhausted(self, run: WorkflowRun) -> bool:
         """activeElapsedSeconds 是否已达 maxTotalSeconds。"""

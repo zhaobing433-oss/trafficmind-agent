@@ -949,6 +949,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
 
         init_workflow_tables()
         _ensure_wait_columns()
+        _ensure_driver_columns()
         now = _utc_now_iso()
         conn = _get_conn()
         try:
@@ -969,11 +970,12 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             )
 
             # 3. insert child run record（确定性 run_id，PK 碰撞即 rollback → 幂等）
+            #    driver_managed=1 在同一事务内落库（COMMIT 后即 driver 可发现，无 post-commit mark 窗口）
             conn.execute(
                 """INSERT INTO workflow_runs (run_id, definition_id, version, session_id, event_thread_id,
                        status, current_node_id, state_json, started_at, updated_at, completed_at, triggered_by,
-                       wait_type, wake_at, resumed_at, resume_reason)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       wait_type, wake_at, resumed_at, resume_reason, driver_managed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
                 (child_run.run_id, child_run.definition_id, next_version,
                  child_run.session_id, child_run.event_thread_id, child_run.status.value,
                  child_run.current_node_id, json.dumps(child_run.state, ensure_ascii=False),
@@ -982,6 +984,8 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             )
 
             # 4. update parent run（terminal + lineage/termination metadata）
+            #    replannedToVersion 必须 = 事务内实际分配的 next_version（非 parent.version+1）
+            parent_state["replannedToVersion"] = next_version
             conn.execute(
                 "UPDATE workflow_runs SET status=?, state_json=?, updated_at=? WHERE run_id=?",
                 (parent_status, json.dumps(parent_state, ensure_ascii=False), now, parent_run_id),
@@ -1009,6 +1013,34 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         conn = _get_conn()
         try:
             conn.execute("UPDATE workflow_runs SET driver_managed=1 WHERE run_id=?", (run_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def save_driver_managed_run(self, run: "WorkflowRun") -> None:
+        """原子创建 driver-managed run（单次 INSERT，driver_managed=1，无 post-save mark 窗口）。"""
+        init_workflow_tables()
+        _ensure_wait_columns()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            conn.execute(
+                """INSERT INTO workflow_runs (run_id, definition_id, version, session_id, event_thread_id,
+                       status, current_node_id, state_json, started_at, updated_at, completed_at, triggered_by,
+                       wait_type, wake_at, resumed_at, resume_reason, driver_managed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                   ON CONFLICT(run_id) DO UPDATE SET
+                       definition_id=excluded.definition_id, version=excluded.version,
+                       session_id=excluded.session_id, event_thread_id=excluded.event_thread_id,
+                       status=excluded.status, current_node_id=excluded.current_node_id,
+                       state_json=excluded.state_json, started_at=excluded.started_at,
+                       updated_at=excluded.updated_at, completed_at=excluded.completed_at,
+                       triggered_by=excluded.triggered_by,
+                       driver_managed=1""",
+                (run.run_id, run.definition_id, run.version, run.session_id, run.event_thread_id,
+                 run.status.value, run.current_node_id, json.dumps(run.state, ensure_ascii=False),
+                 run.started_at, run.updated_at, run.completed_at, run.triggered_by, "", None, None, ""),
+            )
             conn.commit()
         finally:
             conn.close()
