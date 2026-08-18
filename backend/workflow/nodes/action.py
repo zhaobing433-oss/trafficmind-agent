@@ -11,6 +11,7 @@ action 节点 — 外部动作执行。
 未经 human_approval 批准不得执行 action 节点。
 """
 
+import asyncio
 from typing import Any, Dict
 
 from backend.workflow.models import (
@@ -76,13 +77,15 @@ def is_current_action_approved(state: TrafficWorkflowState, action_type: str) ->
 
 
 async def execute_action(
-    state: TrafficWorkflowState, config: NodeConfig, repository=None
+    state: TrafficWorkflowState, config: NodeConfig, repository=None,
+    driver_owner: str = "", driver_generation: int = 0,
 ) -> Dict[str, Any]:
     """执行外部动作。
 
     执行前检查：
       1. 是否已经过审批（如有 approval 节点）
       2. 幂等键是否已存在成功记录
+      3. driver lease ownership（fencing，driver-managed 时）
 
     Args:
         state: 工作流状态
@@ -90,6 +93,7 @@ async def execute_action(
           - config.action_type: 动作类型（"notify_wechat", "adjust_signal" 等）
           - config.action_params: 动作参数
         repository: Workflow 持久化仓库（用于幂等检查）
+        driver_owner / driver_generation: driver context（fencing 校验）
 
     Returns:
         执行结果
@@ -97,6 +101,53 @@ async def execute_action(
     action_type = config.config.get("action_type", "")
     if not action_type:
         return {"error": "action 节点缺少 action_type 配置"}
+
+    def _driver_gate() -> str:
+        """driver-managed execution gate：identity + lease 未过期 + 非 CANCELLED。
+
+        返回 'ok' | 'cancelled' | 'lease_lost'。legacy（无 driver context）恒为 'ok'。
+        """
+        if not repository or not driver_owner:
+            return "ok"
+        if repository.is_driver_execution_valid(state.workflow_run_id, driver_owner, driver_generation):
+            return "ok"
+        durable = repository.get_run(state.workflow_run_id)
+        if durable is not None and durable.status.value == "cancelled":
+            return "cancelled"
+        return "lease_lost"
+
+    def _lease_lost_result() -> Dict[str, Any]:
+        return {
+            "action_type": action_type,
+            "status": "lease_lost",
+            "executed": False,
+            "reason": "driver lease lost",
+        }
+
+    def _cancelled_result(reason: str) -> Dict[str, Any]:
+        return {
+            "action_type": action_type,
+            "status": "cancelled",
+            "executed": False,
+            "reason": reason,
+        }
+
+    def _finalize_marker_cancelled() -> None:
+        """EXECUTING marker 已 persist，但 cancel 发生在真正 dispatch 前 → 终结为 known-not-dispatched。
+
+        优先写 FAILED / cancelled_before_dispatch；terminal marker 更新失败则保守保留 EXECUTING
+        （→ recovery human review / UNKNOWN），但绝不 dispatch。
+        """
+        if not repository:
+            return
+        record.status = ActionStatus.FAILED
+        record.error = "cancelled_before_dispatch"
+        record.result = {"cancelled": True, "dispatched": False}
+        record.completed_at = record.created_at
+        try:
+            repository.save_action_record(record)
+        except Exception:
+            pass
 
     # ── ToolPolicy 门禁（Section 11/12/13）：外部动作必须先通过 ToolPolicy ──
     # 未知工具 fail-closed；高风险工具未批准则阻止执行并返回 approval_required。
@@ -171,7 +222,20 @@ async def execute_action(
     if repository:
         try:
             existing = repository.get_action_record_by_idempotency_key(idempotency_key)
-            if existing and existing.status == ActionStatus.SUCCEEDED:
+        except Exception as e:
+            # 幂等检查失败 → fail-closed，不 dispatch
+            state.add_audit_event("action_idempotency_check_failed", config.node_id, {
+                "actionType": action_type, "idempotencyKey": idempotency_key,
+                "reason": f"idempotency check failed: {str(e)[:200]}",
+            })
+            return {
+                "action_type": action_type,
+                "status": "failed",
+                "executed": False,
+                "reason": f"idempotency check failed: {str(e)[:200]}",
+            }
+        if existing is not None:
+            if existing.status == ActionStatus.SUCCEEDED:
                 state.add_audit_event("action_idempotent_skip", config.node_id, {
                     "actionType": action_type,
                     "idempotencyKey": idempotency_key,
@@ -183,8 +247,19 @@ async def execute_action(
                     "reason": "idempotent_skip",
                     "previous_result": existing.result,
                 }
-        except Exception:
-            pass  # 幂等检查失败不影响执行
+            if existing.status == ActionStatus.EXECUTING:
+                # 已有 in-flight/unknown attempt → no second dispatch（fail closed）
+                state.add_audit_event("action_inflight_conflict", config.node_id, {
+                    "actionType": action_type, "idempotencyKey": idempotency_key,
+                    "reason": "已有 EXECUTING attempt，禁止二次 dispatch",
+                })
+                return {
+                    "action_type": action_type,
+                    "status": "in_flight",
+                    "executed": False,
+                    "reason": "existing EXECUTING attempt",
+                    "error": "existing EXECUTING attempt",  # 使 executor 判为 node 失败（不 SUCCEEDED）
+                }
 
     # 创建动作记录
     action_id = generate_action_id()
@@ -197,6 +272,60 @@ async def execute_action(
         params=action_params,
         status=ActionStatus.EXECUTING,
     )
+
+    # ── C1: budget/dispatch 前 gate（identity + lease 未过期 + 非 CANCELLED）──
+    _gate = _driver_gate()
+    if _gate == "cancelled":
+        state.add_audit_event("action_cancelled_before_dispatch", config.node_id, {"actionType": action_type})
+        return _cancelled_result("run cancelled before action")
+    if _gate == "lease_lost":
+        state.add_audit_event("lease_lost", config.node_id, {"actionType": action_type})
+        return _lease_lost_result()
+
+    # ── Phase17 Round2: budget durable reservation BEFORE dispatch ──
+    # ToolPolicy ALLOW 后、真正 dispatch 前：check → increment → persist → dispatch。
+    # 若 persist 失败或 budget 耗尽 → fail-closed，不 dispatch。
+    if repository:
+        from backend.planning.budget import reserve_tool_call_durable
+        if not reserve_tool_call_durable(repository, state.workflow_run_id):
+            state.add_audit_event("budget_exhausted", config.node_id, {
+                "actionType": action_type, "reason": "tool budget exhausted",
+            })
+            return {
+                "action_type": action_type,
+                "status": "budget_exhausted",
+                "executed": False,
+                "reason": "tool budget exhausted",
+            }
+
+    # ── Phase17 Round3: persist EXECUTING record BEFORE dispatch ──
+    # action_id 即 dispatchAttemptId；EXECUTING = dispatch_started marker。
+    # marker 必须 durable persist；失败 → 不 dispatch（fail-closed）。
+    if repository:
+        try:
+            repository.save_action_record(record)
+        except Exception as e:
+            state.add_audit_event("dispatch_marker_persist_failed", config.node_id, {
+                "actionType": action_type, "reason": str(e)[:200],
+            })
+            return {
+                "action_type": action_type,
+                "status": "marker_persist_failed",
+                "executed": False,
+                "reason": str(e)[:200],
+                "error": str(e)[:200],  # 使 executor 判为 node 失败（可安全 retry，无外部 side effect）
+            }
+
+    # ── C2: external dispatch 前 re-check（durable != CANCELLED 且 lease 未过期）──
+    _gate = _driver_gate()
+    if _gate == "cancelled":
+        # EXECUTING marker 已 persist，但 cancel 发生在真正 dispatch 前 → 终结为 known-not-dispatched
+        state.add_audit_event("action_cancelled_before_dispatch", config.node_id, {"actionType": action_type})
+        _finalize_marker_cancelled()
+        return _cancelled_result("run cancelled before dispatch")
+    if _gate == "lease_lost":
+        state.add_audit_event("lease_lost", config.node_id, {"actionType": action_type})
+        return _lease_lost_result()
 
     # 执行具体动作
     result_data: Dict[str, Any] = {}
@@ -257,7 +386,20 @@ async def execute_action(
                         }
                 except Exception:
                     pass
-            # 其他持久化错误：记录但不阻止返回结果
+                # UNIQUE 冲突但读取失败 → 继续（幂等键仍存在，不重复执行）
+            else:
+                # 其他持久化错误 → fail-safe：external 已发生但 durable terminal result 丢失。
+                # EXECUTING marker 仍在 DB，HIGH_RISK 重启/恢复会识别 UNKNOWN_OUTCOME。
+                state.add_audit_event("action_result_persist_failed", config.node_id, {
+                    "actionType": action_type, "reason": str(e)[:200],
+                })
+                state.record_error(config.node_id, f"action result 持久化失败: {str(e)[:200]}")
+                return {
+                    "action_id": action_id,
+                    "action_type": action_type,
+                    "status": "result_persist_failed",
+                    "error": f"action result 持久化失败: {str(e)[:200]}",
+                }
 
     # 跟踪
     state.action_record_ids.append(action_id)
@@ -313,7 +455,7 @@ async def _dispatch_action(
                 f"路段：{event.get('roadName', '')}\n"
                 f"风险等级：{risk.get('riskLevel', '未知')}（{risk.get('riskScore', 0)}分）\n"
             )
-            ok = send_wechat_work(event_summary)
+            ok = await asyncio.to_thread(send_wechat_work, event_summary)
             return {"sent": bool(ok), "channel": "wechat"}
         except Exception as e:
             return {"sent": False, "channel": "wechat", "error": str(e)[:200]}
@@ -327,7 +469,7 @@ async def _dispatch_action(
                 f"事件：{event.get('eventTypeCn', '')} | {event.get('roadName', '')}\n"
                 f"风险：{risk.get('riskLevel', '未知')}（{risk.get('riskScore', 0)}分）\n"
             )
-            ok = send_dingtalk(event_summary)
+            ok = await asyncio.to_thread(send_dingtalk, event_summary)
             return {"sent": bool(ok), "channel": "dingtalk"}
         except Exception as e:
             return {"sent": False, "channel": "dingtalk", "error": str(e)[:200]}

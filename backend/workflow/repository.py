@@ -19,7 +19,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import backend.config as _config
 
@@ -77,6 +77,27 @@ def _ensure_wait_columns():
             "wake_at TEXT DEFAULT NULL",
             "resumed_at TEXT DEFAULT NULL",
             "resume_reason TEXT DEFAULT ''",
+        ]:
+            col_name = col_def.split()[0]
+            try:
+                conn.execute(f"ALTER TABLE workflow_runs ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _ensure_driver_columns():
+    """非破坏性添加 RunDriver 相关列（幂等，Phase17 Round3）。"""
+    conn = _get_conn()
+    try:
+        for col_def in [
+            "driver_managed INTEGER DEFAULT 0",
+            "driver_owner TEXT DEFAULT NULL",
+            "driver_lease_until TEXT DEFAULT NULL",
+            "driver_heartbeat_at TEXT DEFAULT NULL",
+            "driver_generation INTEGER DEFAULT 0",
         ]:
             col_name = col_def.split()[0]
             try:
@@ -378,11 +399,21 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
     def save_run(self, run: WorkflowRun) -> None:
         init_workflow_tables()
         _ensure_wait_columns()
+        _ensure_driver_columns()
         conn = _get_conn()
+        # upsert：显式 16 业务列，保留 driver_* 列（不 wipe lease/fencing）
         conn.execute(
-            """INSERT OR REPLACE INTO workflow_runs VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            )""",
+            """INSERT INTO workflow_runs (run_id, definition_id, version, session_id, event_thread_id,
+                   status, current_node_id, state_json, started_at, updated_at, completed_at, triggered_by,
+                   wait_type, wake_at, resumed_at, resume_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(run_id) DO UPDATE SET
+                   definition_id=excluded.definition_id, version=excluded.version,
+                   session_id=excluded.session_id, event_thread_id=excluded.event_thread_id,
+                   status=excluded.status, current_node_id=excluded.current_node_id,
+                   state_json=excluded.state_json, started_at=excluded.started_at,
+                   updated_at=excluded.updated_at, completed_at=excluded.completed_at,
+                   triggered_by=excluded.triggered_by""",
             (
                 run.run_id,
                 run.definition_id,
@@ -631,6 +662,21 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         if row is None:
             return None
         return self._row_to_approval(dict(row))
+
+    def list_approvals(self, run_id: str) -> List["WorkflowApproval"]:
+        """列出 run 的全部审批记录。"""
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM workflow_approvals WHERE run_id=? ORDER BY created_at",
+                (run_id,),
+            ).fetchall()
+            conn.close()
+            return [self._row_to_approval(dict(r)) for r in rows]
+        except Exception:
+            conn.close()
+            return []
 
     def get_pending_approval(
         self, run_id: str, node_id: str
@@ -881,3 +927,440 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
                 result[rid] = []
             result[rid].append(row["decision"])
         return result
+
+    # ── Phase 17 Round 2: atomic child continuation ──────────────────────
+
+    def create_child_continuation_tx(
+        self,
+        child_run: "WorkflowRun",
+        parent_run_id: str,
+        parent_status: str,
+        parent_state: Dict[str, Any],
+        definition_json: Dict[str, Any],
+        changelog: str = "replan",
+    ) -> int:
+        """原子 child cutover（单一 BEGIN IMMEDIATE 事务）。
+
+        顺序：version allocation → insert version → insert child run → update parent。
+        任何异常 rollback（parent 不被半写 / child 不 orphan / version 不覆盖）。
+        返回分配的 version。
+        """
+        import uuid as _uuid
+
+        init_workflow_tables()
+        _ensure_wait_columns()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            # 1. version allocation（definition-level global monotonic，事务内无 race）
+            row = conn.execute(
+                "SELECT MAX(version) as mv FROM workflow_definition_versions WHERE definition_id=?",
+                (child_run.definition_id,),
+            ).fetchone()
+            next_version = (row["mv"] if row and row["mv"] is not None else 0) + 1
+            child_run.version = next_version
+
+            # 2. insert version snapshot（UNIQUE(definition_id, version)，碰撞即 rollback）
+            conn.execute(
+                "INSERT INTO workflow_definition_versions (id, definition_id, version, definition_json, changelog, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (f"wfver_{_uuid.uuid4().hex[:12]}", child_run.definition_id, next_version,
+                 json.dumps(definition_json, ensure_ascii=False), changelog, now),
+            )
+
+            # 3. insert child run record（确定性 run_id，PK 碰撞即 rollback → 幂等）
+            #    driver_managed=1 在同一事务内落库（COMMIT 后即 driver 可发现，无 post-commit mark 窗口）
+            conn.execute(
+                """INSERT INTO workflow_runs (run_id, definition_id, version, session_id, event_thread_id,
+                       status, current_node_id, state_json, started_at, updated_at, completed_at, triggered_by,
+                       wait_type, wake_at, resumed_at, resume_reason, driver_managed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+                (child_run.run_id, child_run.definition_id, next_version,
+                 child_run.session_id, child_run.event_thread_id, child_run.status.value,
+                 child_run.current_node_id, json.dumps(child_run.state, ensure_ascii=False),
+                 child_run.started_at, child_run.updated_at, child_run.completed_at,
+                 child_run.triggered_by, "", None, None, ""),
+            )
+
+            # 4. update parent run（terminal + lineage/termination metadata）
+            #    replannedToVersion 必须 = 事务内实际分配的 next_version（非 parent.version+1）
+            parent_state["replannedToVersion"] = next_version
+            conn.execute(
+                "UPDATE workflow_runs SET status=?, state_json=?, updated_at=? WHERE run_id=?",
+                (parent_status, json.dumps(parent_state, ensure_ascii=False), now, parent_run_id),
+            )
+
+            conn.commit()
+            return next_version
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def list_observations(self, run_id: str) -> List["WorkflowEvent"]:
+        """列出 run 的 observation 事件（event_type=observation_recorded）。"""
+        events = self.list_events(run_id)
+        return [e for e in events if e.event_type == "observation_recorded"]
+
+    # ── Phase17 Round3: RunDriver claim / lease / fencing ────────────────
+
+    def mark_driver_managed(self, run_id: str) -> None:
+        """标记为 planning driver-managed run。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            conn.execute("UPDATE workflow_runs SET driver_managed=1 WHERE run_id=?", (run_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def save_driver_managed_run(self, run: "WorkflowRun") -> None:
+        """原子创建 driver-managed run（单次 INSERT，driver_managed=1，无 post-save mark 窗口）。"""
+        init_workflow_tables()
+        _ensure_wait_columns()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            conn.execute(
+                """INSERT INTO workflow_runs (run_id, definition_id, version, session_id, event_thread_id,
+                       status, current_node_id, state_json, started_at, updated_at, completed_at, triggered_by,
+                       wait_type, wake_at, resumed_at, resume_reason, driver_managed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                   ON CONFLICT(run_id) DO UPDATE SET
+                       definition_id=excluded.definition_id, version=excluded.version,
+                       session_id=excluded.session_id, event_thread_id=excluded.event_thread_id,
+                       status=excluded.status, current_node_id=excluded.current_node_id,
+                       state_json=excluded.state_json, started_at=excluded.started_at,
+                       updated_at=excluded.updated_at, completed_at=excluded.completed_at,
+                       triggered_by=excluded.triggered_by,
+                       driver_managed=1""",
+                (run.run_id, run.definition_id, run.version, run.session_id, run.event_thread_id,
+                 run.status.value, run.current_node_id, json.dumps(run.state, ensure_ascii=False),
+                 run.started_at, run.updated_at, run.completed_at, run.triggered_by, "", None, None, ""),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def is_driver_managed(self, run_id: str) -> bool:
+        """查询 run 是否 driver-managed（planning）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT driver_managed FROM workflow_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            conn.close()
+            return bool(row and row["driver_managed"])
+        except Exception:
+            conn.close()
+            return False
+
+    def set_run_status_managed(self, run_id: str, status: str, state_dict: Dict[str, Any] = None) -> bool:
+        """driver-managed run 的 wake-only 状态转换（释放 lease + status 变更）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            if state_dict is not None:
+                conn.execute(
+                    """UPDATE workflow_runs SET status=?, state_json=?, driver_owner=NULL,
+                           driver_lease_until=NULL, updated_at=? WHERE run_id=?""",
+                    (status, json.dumps(state_dict, ensure_ascii=False), _utc_now_iso(), run_id),
+                )
+            else:
+                conn.execute(
+                    """UPDATE workflow_runs SET status=?, driver_owner=NULL,
+                           driver_lease_until=NULL, updated_at=? WHERE run_id=?""",
+                    (status, _utc_now_iso(), run_id),
+                )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    def claim_driver_run(self, run_id: str, owner: str, lease_until_iso: str) -> Dict[str, Any]:
+        """原子 CAS claim。返回 {claimed, generation}。rowcount==1 才成功。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                """UPDATE workflow_runs
+                   SET driver_owner=?, driver_lease_until=?, driver_heartbeat_at=?,
+                       driver_generation = driver_generation + 1
+                   WHERE run_id=? AND driver_managed=1
+                     AND status IN ('pending','running')
+                     AND (driver_lease_until IS NULL OR driver_lease_until < ?)""",
+                (owner, lease_until_iso, now, run_id, now),
+            )
+            conn.commit()
+            if cur.rowcount != 1:
+                return {"claimed": False, "generation": 0}
+            row = conn.execute(
+                "SELECT driver_generation FROM workflow_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            return {"claimed": True, "generation": row["driver_generation"] if row else 0}
+        finally:
+            conn.close()
+
+    def heartbeat_driver_lease(self, run_id: str, owner: str, generation: int, lease_until_iso: str) -> bool:
+        """CAS heartbeat：owner/generation 匹配且 lease 尚未过期且 run 可执行时续租。
+
+        lease 已过期 → False（不能复活过期 lease；RunDriver 停止旧 worker）。
+        """
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                """UPDATE workflow_runs SET driver_lease_until=?, driver_heartbeat_at=?
+                   WHERE run_id=? AND driver_owner=? AND driver_generation=?
+                     AND driver_lease_until IS NOT NULL AND driver_lease_until >= ?
+                     AND status IN ('pending','running')""",
+                (lease_until_iso, now, run_id, owner, generation, now),
+            )
+            conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
+    def release_driver_lease(self, run_id: str, owner: str, generation: int) -> bool:
+        """释放 lease（仅 owner/generation 匹配）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                """UPDATE workflow_runs SET driver_owner=NULL, driver_lease_until=NULL
+                   WHERE run_id=? AND driver_owner=? AND driver_generation=?""",
+                (run_id, owner, generation),
+            )
+            conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
+    def is_driver_owner(self, run_id: str, owner: str, generation: int) -> bool:
+        """检查当前 owner/generation 是否匹配（identity helper，不检查 lease）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT driver_owner, driver_generation FROM workflow_runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            conn.close()
+            return bool(row and row["driver_owner"] == owner and row["driver_generation"] == generation)
+        except Exception:
+            conn.close()
+            return False
+
+    def is_driver_execution_valid(self, run_id: str, owner: str, generation: int) -> bool:
+        """driver-managed execution gate：identity + lease 未过期 + status 非 CANCELLED。
+
+        与 is_driver_owner（纯 identity）区分：lease 已过期即使尚未被 takeover，
+        旧 worker 也不得继续执行 / dispatch / 写 control state。
+        """
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT driver_owner, driver_generation, driver_lease_until, status FROM workflow_runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            conn.close()
+            if not row:
+                return False
+            if row["driver_owner"] != owner or row["driver_generation"] != generation:
+                return False
+            if row["status"] == WorkflowRunStatus.CANCELLED.value:
+                return False
+            lease = row["driver_lease_until"]
+            if not lease:
+                return False
+            return lease >= now
+        except Exception:
+            conn.close()
+            return False
+
+    def list_driver_candidates(self, limit: int = 50) -> List["WorkflowRun"]:
+        """发现 driver-managed runnable runs（PENDING / RUNNING lease-expired）。"""
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM workflow_runs
+                   WHERE driver_managed=1
+                     AND status IN ('pending','running')
+                     AND (driver_lease_until IS NULL OR driver_lease_until < ?)
+                   ORDER BY updated_at ASC LIMIT ?""",
+                (now, limit),
+            ).fetchall()
+            conn.close()
+            return [self._row_to_run(dict(r)) for r in rows]
+        except Exception:
+            conn.close()
+            raise
+
+    def fenced_update_run(self, run_id: str, owner: str, generation: int,
+                          status: str, current_node_id: str, state_dict: Dict[str, Any]) -> bool:
+        """原子 fenced 控制状态写入（owner/generation + lease 有效 CAS）。rowcount==1 才成功。
+
+        不覆盖 CANCELLED（terminal-preserving）；lease 已过期不得写（expired worker 停写）。
+        """
+        init_workflow_tables()
+        _ensure_driver_columns()
+        now = _utc_now_iso()
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                """UPDATE workflow_runs SET status=?, current_node_id=?, state_json=?, updated_at=?
+                   WHERE run_id=? AND driver_owner=? AND driver_generation=? AND status != 'cancelled'
+                     AND driver_lease_until IS NOT NULL AND driver_lease_until >= ?""",
+                (status, current_node_id, json.dumps(state_dict, ensure_ascii=False),
+                 _utc_now_iso(), run_id, owner, generation, now),
+            )
+            conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
+    def list_executing_action_records(self, run_id: str) -> List["WorkflowActionRecord"]:
+        """列出 run 中 status=EXECUTING 的 action record（dispatch started 但未完成）。"""
+        return [a for a in self.list_action_records(run_id) if a.status == ActionStatus.EXECUTING]
+
+    # ── Phase17 P1: plan discovery ────────────────────────────────────────
+
+    def list_planning_definitions(self, limit: int = 50, offset: int = 0) -> List["WorkflowDefinition"]:
+        """列出 planning definitions（metadata 含 planFingerprint marker），分页。"""
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM workflow_definitions
+                   WHERE metadata_json LIKE '%"planFingerprint"%'
+                   ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?""",
+                (limit, offset),
+            ).fetchall()
+            conn.close()
+            return [self._row_to_definition(dict(r)) for r in rows]
+        except Exception:
+            conn.close()
+            raise
+
+    def count_planning_definitions(self) -> int:
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) as c FROM workflow_definitions WHERE metadata_json LIKE '%\"planFingerprint\"%'"
+            ).fetchone()
+            conn.close()
+            return row["c"] if row else 0
+        except Exception:
+            conn.close()
+            return 0
+
+    def list_planning_definitions_filtered(
+        self,
+        goal_type: Optional[str] = None,
+        status: Optional[str] = None,
+        search: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Tuple[int, List["WorkflowDefinition"]]:
+        """SQL 侧过滤 planning definitions（无硬上限）。
+
+        filter（goalType/search/status）在 count 与 pagination 之前生效：
+          - goalType / search 用 json_extract 读取 metadata_json 的 frozen plan
+          - status 用 latest-run 子查询（updated_at DESC, rowid DESC 取最新）
+        返回 (filtered_total, page_definitions)。
+        """
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            where = ['metadata_json LIKE \'%"planFingerprint"%\'']
+            params: List[Any] = []
+            if goal_type:
+                where.append("json_extract(metadata_json, '$.plan.goalType') = ?")
+                params.append(goal_type)
+            if search:
+                where.append(
+                    "LOWER(COALESCE(json_extract(metadata_json, '$.plan.goal'), '')) LIKE ?"
+                )
+                params.append(f"%{search.lower()}%")
+            if status:
+                where.append(
+                    """(SELECT r.status FROM workflow_runs r
+                         WHERE r.definition_id = d.id
+                         ORDER BY r.updated_at DESC, r.rowid DESC LIMIT 1) = ?"""
+                )
+                params.append(status)
+            where_sql = " AND ".join(where)
+
+            total = conn.execute(
+                f"SELECT COUNT(*) AS c FROM workflow_definitions d WHERE {where_sql}",
+                params,
+            ).fetchone()["c"]
+
+            rows = conn.execute(
+                f"""SELECT d.* FROM workflow_definitions d WHERE {where_sql}
+                    ORDER BY d.updated_at DESC, d.id DESC LIMIT ? OFFSET ?""",
+                params + [limit, offset],
+            ).fetchall()
+            conn.close()
+            return total, [self._row_to_definition(dict(r)) for r in rows]
+        except Exception:
+            conn.close()
+            raise
+
+    def batch_get_run_aggregates(self, definition_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """每个 definition_id 的 run 聚合（executionCount/replanCount/latest run summary）。"""
+        if not definition_ids:
+            return {}
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            placeholders = ",".join(["?" for _ in definition_ids])
+            rows = conn.execute(
+                f"SELECT run_id, definition_id, version, status, updated_at, state_json "
+                f"FROM workflow_runs WHERE definition_id IN ({placeholders}) ORDER BY updated_at ASC",
+                definition_ids,
+            ).fetchall()
+            conn.close()
+        except Exception:
+            conn.close()
+            return {}
+        agg: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            did = row["definition_id"]
+            a = agg.setdefault(did, {"executionCount": 0, "replanCount": 0, "latest": None})
+            a["executionCount"] += 1
+            state = row["state_json"]
+            if isinstance(state, str):
+                import json as _j
+                try:
+                    state = _j.loads(state)
+                except Exception:
+                    state = {}
+            if isinstance(state, dict) and state.get("replannedFromRunId"):
+                a["replanCount"] += 1
+            # latest by updated_at（循环按 ASC，最后一条即最新）
+            a["latest"] = {
+                "runId": row["run_id"], "version": row["version"],
+                "status": row["status"], "updatedAt": row["updated_at"],
+                "rootRunId": (state.get("executionLineage") or {}).get("rootRunId") if isinstance(state, dict) else None,
+            }
+        return agg

@@ -224,6 +224,13 @@ class WaitScheduler:
             conn.close()
 
         # ── 恢复运行 ──────────────────────────────────────────────
+        # Phase17 Round3: planning driver-managed run → wake-only（PENDING + release lease），
+        # 由 RunDriver pickup + execute；不在此 request 内长期执行。
+        if repo.is_driver_managed(run_id):
+            state.status = WorkflowRunStatus("pending")
+            repo.set_run_status_managed(run_id, "pending", state.to_dict())
+            return
+
         executor = WorkflowExecutor(repo)
         async for _ in executor.resume(run_id):
             pass  # SSE 事件通过 executor 持久化到 Event 表

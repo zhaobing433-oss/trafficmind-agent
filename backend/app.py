@@ -72,11 +72,16 @@ async def lifespan(app: FastAPI):
     from backend.workflow.wait_scheduler import get_wait_scheduler
     wait_scheduler = get_wait_scheduler()
     await wait_scheduler.start()
+    # Phase 17 Round 3: Planning RunDriver
+    from backend.workflow.run_driver import get_run_driver
+    run_driver = get_run_driver()
+    await run_driver.start()
     llm_status = "已启用 (DeepSeek)" if LLM_ENABLED else "未配置，将使用本地模板"
     print(f"TrafficMind Agent 启动完成")
     print(f"  LLM 状态: {llm_status}")
     print(f"  API 文档: http://localhost:8000/docs")
     yield
+    await run_driver.stop()
     await wait_scheduler.stop()
 
 
@@ -1567,6 +1572,13 @@ from backend.workflow.api import router as workflow_router
 from backend.knowledge.api import router as knowledge_router
 app.include_router(workflow_router)
 app.include_router(knowledge_router)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 17: Adaptive Planning V1 Router
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from backend.planning.api import router as planning_router
+app.include_router(planning_router)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Phase 13: Traffic Map & Simulation V1 Router
