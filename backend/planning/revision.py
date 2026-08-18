@@ -128,6 +128,9 @@ def build_child_state(
     state["replannedFromRunId"] = replanned_from_run_id
     state["replannedFromVersion"] = replanned_from_version
     state["carriedForwardResultRefs"] = carried_result_refs
+    # Phase17 P1: 用于区分 normal continuation vs leftover recovery（driver 比较启动时间）
+    import time
+    state["_continuationCreatedAtUnix"] = time.time()
     return state
 
 

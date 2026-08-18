@@ -12,6 +12,7 @@ import { WorkflowWorkspace } from './components/workflow/WorkflowWorkspace';
 import { TrafficMapWorkspace } from './components/simulation/TrafficMapWorkspace';
 import { EvaluationDashboard } from './components/evaluation/EvaluationDashboard';
 import { KnowledgeWorkspace } from './components/knowledge/KnowledgeWorkspace';
+import { PlanCenter } from './components/planning/PlanCenter';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
@@ -20,6 +21,7 @@ const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes
   multi: { title: '协同分析', sub: '多Agent研判 + 冲突检测 + 融合处置建议', showFullModes: false, defaultMode: 'routed' },
   workflow: { title: '工作流中心', sub: '查看运行记录、跟踪执行状态或从模板启动新的工作流', showFullModes: false, defaultMode: 'routed' },
   simulation: { title: '交通态势', sub: '模拟交通环境 · 路网可视化 · 事件注入 · 态势感知', showFullModes: false, defaultMode: 'routed' },
+  planning: { title: 'Plan Center', sub: '自适应计划 · 执行血缘 · 重规划轨迹 · 预算与恢复', showFullModes: false, defaultMode: 'routed' },
 };
 
 export default function App() {
@@ -30,11 +32,15 @@ export default function App() {
   const urlSimulationRunId = urlParams.get('simulationRunId');
   const urlView = urlParams.get('view');
   const urlReport = urlParams.get('report');
+  const urlPlanId = urlParams.get('planId');
+  const urlRootRunId = urlParams.get('rootRunId');
+  const urlFromVersion = urlParams.get('fromVersion');
+  const urlToVersion = urlParams.get('toVersion');
   const initialSessionId = urlSessionId || null;
   const initialWorkflowRunId = urlWorkflowRunId || null;
   const initialSimulationRunId = urlSimulationRunId || null;
 
-  const VALID_VIEWS = ['home','qa','report','multi','workflow','simulation','evaluation','alert','guide'];
+  const VALID_VIEWS = ['home','qa','report','multi','workflow','simulation','evaluation','alert','guide','planning'];
   const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId);
   const [pendingCreate, setPendingCreate] = useState(!initialSessionId);
   const [view, setView] = useState(() => {
@@ -42,9 +48,14 @@ export default function App() {
     if (urlReport) return 'evaluation';  // legacy: ?report=xxx without ?view=
     if (urlWorkflowRunId) return 'workflow';
     if (urlSimulationRunId) return 'simulation';
+    if (urlPlanId) return 'planning';
     return 'home';
   });
   const [workflowRunId, setWorkflowRunId] = useState<string | null>(initialWorkflowRunId);
+  const [planId, setPlanId] = useState<string | null>(urlPlanId || null);
+  const [rootRunId, setRootRunId] = useState<string | null>(urlRootRunId || null);
+  const [fromVersion, setFromVersion] = useState<number | null>(urlFromVersion ? Number(urlFromVersion) : null);
+  const [toVersion, setToVersion] = useState<number | null>(urlToVersion ? Number(urlToVersion) : null);
   const [draftInput, setDraftInput] = useState('');
   const [draftMode, setDraftMode] = useState('react');
   const [recentRefresh, setRecentRefresh] = useState(0);
@@ -79,6 +90,69 @@ export default function App() {
     setWorkflowRunId(newRunId);
     updateUrl(activeSessionId, newRunId);
   }, [activeSessionId, updateUrl]);
+
+  // Phase17 P1: planning URL state
+  const updatePlanningUrl = useCallback((p: string | null, root: string | null, fv: number | null, tv: number | null) => {
+    const url = new URL(window.location.href);
+    if (p) url.searchParams.set('planId', p); else url.searchParams.delete('planId');
+    if (root) url.searchParams.set('rootRunId', root); else url.searchParams.delete('rootRunId');
+    if (fv) url.searchParams.set('fromVersion', String(fv)); else url.searchParams.delete('fromVersion');
+    if (tv) url.searchParams.set('toVersion', String(tv)); else url.searchParams.delete('toVersion');
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
+  const handlePlanSelect = useCallback((p: string) => {
+    setPlanId(p || null);
+    setRootRunId(null);
+    setFromVersion(null); setToVersion(null);
+    updatePlanningUrl(p || null, null, null, null);
+  }, [updatePlanningUrl]);
+
+  const handleRootRunIdChange = useCallback((root: string | null) => {
+    setRootRunId(root);
+    updatePlanningUrl(planId, root, fromVersion, toVersion);
+  }, [planId, fromVersion, toVersion, updatePlanningUrl]);
+
+  const handleDiffChange = useCallback((fv: number | null, tv: number | null) => {
+    setFromVersion(fv); setToVersion(tv);
+    updatePlanningUrl(planId, rootRunId, fv, tv);
+  }, [planId, rootRunId, updatePlanningUrl]);
+
+  const handleOpenWorkflowRun = useCallback((runId: string) => {
+    setWorkflowRunId(runId);
+    setView('workflow');
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'workflow');
+    url.searchParams.set('workflowRunId', runId);
+    url.searchParams.delete('planId');
+    url.searchParams.delete('rootRunId');
+    url.searchParams.delete('fromVersion');
+    url.searchParams.delete('toVersion');
+    // 用户跨视图导航（Plan → Workflow）→ pushState，使 Browser Back 可回 Plan Center
+    window.history.pushState({}, '', url.toString());
+  }, []);
+
+  // Browser Back / Forward：重新从 URL 解析并同步 React view/state
+  useEffect(() => {
+    const onPopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const v = params.get('view');
+      if (v && VALID_VIEWS.includes(v)) setView(v);
+      else if (params.get('workflowRunId')) setView('workflow');
+      else if (params.get('planId')) setView('planning');
+      setWorkflowRunId(params.get('workflowRunId'));
+      setPlanId(params.get('planId'));
+      setRootRunId(params.get('rootRunId'));
+      const fv = params.get('fromVersion');
+      const tv = params.get('toVersion');
+      setFromVersion(fv ? Number(fv) : null);
+      setToVersion(tv ? Number(tv) : null);
+      const sid = params.get('sessionId');
+      if (sid) setActiveSessionId(sid);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // On mount: normalize legacy URLs (e.g. ?report=xxx without ?view=evaluation)
   useEffect(() => {
@@ -138,7 +212,30 @@ export default function App() {
       setWorkflowRunId(null);
       url.searchParams.delete('workflowRunId');
     }
-    window.history.replaceState({}, '', url.toString());
+    if (v === 'planning') {
+      // Explicit nav to Plan Center → clear workflow/knowledge params + show list
+      setWorkflowRunId(null);
+      setActiveSessionId(null);
+      setPlanId(null); setRootRunId(null); setFromVersion(null); setToVersion(null);
+      url.searchParams.delete('workflowRunId');
+      url.searchParams.delete('sessionId');
+      url.searchParams.delete('knowledgeTab');
+      url.searchParams.delete('knowledgeDocumentId');
+      url.searchParams.delete('knowledgeChunkId');
+      url.searchParams.delete('planId');
+      url.searchParams.delete('rootRunId');
+      url.searchParams.delete('fromVersion');
+      url.searchParams.delete('toVersion');
+    }
+    // 离开 planning 时清理 planning 残留参数
+    if (v !== 'planning') {
+      url.searchParams.delete('planId');
+      url.searchParams.delete('rootRunId');
+      url.searchParams.delete('fromVersion');
+      url.searchParams.delete('toVersion');
+    }
+    // 用户显式切换主 view（sidebar）→ pushState，使 Browser Back 符合预期
+    window.history.pushState({}, '', url.toString());
   };
   const handleRecentClick = async (id: string) => {
     // Fetch session to determine its mode, then route to correct workspace
@@ -164,7 +261,8 @@ export default function App() {
     if (targetView === 'qa') {
       url.searchParams.set('knowledgeTab', 'ask');
     }
-    window.history.replaceState({}, '', url.toString());
+    // 用户点击 recent session → 视图切换 → pushState
+    window.history.pushState({}, '', url.toString());
   };
   const handleRenameSession = async (id: string, t: string) => { try { await fetch(`/api/chat/sessions/${id}/title`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t }) }); refreshSessions(); } catch { /* ignore */ } };
   const handleDeleteSession = async (sessionId: string) => {
@@ -217,6 +315,7 @@ export default function App() {
          view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> :
          view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> :
          view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} /> :
+         view === 'planning' ? <PlanCenter planId={planId} rootRunId={rootRunId} fromVersion={fromVersion} toVersion={toVersion} onPlanSelect={handlePlanSelect} onRootRunIdChange={handleRootRunIdChange} onDiffChange={handleDiffChange} onOpenWorkflowRun={handleOpenWorkflowRun} /> :
          view === 'evaluation' ? <EvaluationDashboard /> : (
           <>
             <HomeHero />

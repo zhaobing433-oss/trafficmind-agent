@@ -199,11 +199,18 @@ async def get_plan(plan_id: str):
             "terminationReason": state.get("terminationReason"),
             "startedAt": run.started_at or None,
             "completedAt": run.completed_at or None,
+            "budgetUsage": (lineage.get("budgetUsage") or {}),
+            "budgetLimits": (lineage.get("budgetLimits") or {}),
             "stepStatuses": {k: v.value for k, v in step_statuses.items()},
         })
 
+    # 返回 canonical 最新 revision 的 plan（latestVersion），而非 definition.metadata 的原始 v1
+    latest_version = _repo.get_latest_version_number(plan_id)
+    latest_plan = _get_plan_at_version(plan_id, latest_version) or plan
+
     return {
-        "plan": plan.to_dict(),
+        "plan": latest_plan.to_dict(),
+        "latestVersion": latest_version,
         "definitionId": definition.id,
         "runs": run_projections,
     }
@@ -222,15 +229,96 @@ async def replan_run(run_id: str):
 
 @router.get("/runs/{run_id}/observations", summary="查询 run 的 observation audit")
 async def list_observations(run_id: str):
-    """从 durable workflow_events 重建 observation audit log。"""
+    """从 durable workflow_events 重建 observation audit log（返回 observation payload）。"""
     run = _repo.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' 不存在")
     events = _repo.list_observations(run_id)
     return {
         "runId": run_id,
-        "observations": [e.to_dict() for e in events],
+        "observations": [e.payload if isinstance(e.payload, dict) else {} for e in events],
     }
+
+
+@router.get("/plans", summary="列出 planning plans（分页）")
+async def list_plans(
+    page: int = 1,
+    pageSize: int = 20,
+    goalType: Optional[str] = None,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    """plan discovery。只返回 planning definitions。"""
+    page = max(1, page)
+    pageSize = min(100, max(1, pageSize))
+    offset = (page - 1) * pageSize
+    total = _repo.count_planning_definitions()
+    definitions = _repo.list_planning_definitions(limit=pageSize, offset=offset)
+    aggregates = _repo.batch_get_run_aggregates([d.id for d in definitions])
+
+    items = []
+    for d in definitions:
+        plan = _load_plan_from_metadata(d.metadata)
+        agg = aggregates.get(d.id, {})
+        latest = agg.get("latest")
+        # latestVersion = canonical 最新 revision（workflow_definition_versions MAX(version)），非最新 run 的 version
+        latest_version = _repo.get_latest_version_number(d.id) or (plan.version if plan else 1)
+        latest_plan = _get_plan_at_version(d.id, latest_version) or plan
+        items.append({
+            "planId": d.id,
+            "goal": plan.goal if plan else d.name,
+            "goalType": plan.goalType.value if plan else "",
+            "latestVersion": latest_version,
+            "latestFingerprint": latest_plan.planFingerprint if latest_plan else "",
+            "createdAt": d.created_at or None,
+            "updatedAt": d.updated_at or None,
+            "executionCount": agg.get("executionCount", 0),
+            "latestExecutionStatus": latest.get("status") if latest else None,
+            "latestRootRunId": latest.get("rootRunId") if latest else None,
+            "replanCount": agg.get("replanCount", 0),
+        })
+
+    if goalType:
+        items = [i for i in items if i["goalType"] == goalType]
+    if status:
+        items = [i for i in items if i["latestExecutionStatus"] == status]
+    if search:
+        s = search.lower()
+        items = [i for i in items if s in (i["goal"] or "").lower()]
+
+    return {"total": total, "page": page, "pageSize": pageSize, "plans": items}
+
+
+@router.get("/plans/{plan_id}/diff", summary="版本 diff（deterministic）")
+async def diff_plan(plan_id: str, fromVersion: int, toVersion: int):
+    from_plan = _get_plan_at_version(plan_id, fromVersion)
+    to_plan = _get_plan_at_version(plan_id, toVersion)
+    if from_plan is None or to_plan is None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    from backend.planning.diff import compute_diff
+    diff = compute_diff(from_plan, to_plan)
+    return {"planId": plan_id, "fromVersion": fromVersion, "toVersion": toVersion, **diff}
+
+
+@router.get("/runs/{run_id}/trajectory", summary="execution lineage trajectory metrics")
+async def run_trajectory(run_id: str):
+    run = _repo.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' 不存在")
+    from backend.planning.trajectory import compute_trajectory
+    return compute_trajectory(_repo, run_id)
+
+
+def _get_plan_at_version(plan_id: str, version: int) -> Optional[Plan]:
+    """从 version snapshot 提取 frozen Plan。"""
+    ver = _repo.get_definition_version(plan_id, int(version))
+    if ver is None:
+        return None
+    dj = ver.definition_json if isinstance(ver.definition_json, dict) else {}
+    metadata = dj.get("metadata", {})
+    if not metadata:
+        metadata = dj
+    return _load_plan_from_metadata(metadata)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

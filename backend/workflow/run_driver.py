@@ -11,6 +11,7 @@ Node runtime 唯一 = WorkflowExecutor。
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -42,6 +43,7 @@ class RunDriver:
         self._poll_interval = poll_interval
         self._lease_seconds = lease_seconds
         self._heartbeat_interval = heartbeat_interval
+        self._startup_unix = time.time()  # 用于区分 normal continuation vs crash recovery
         self._stop_event = asyncio.Event()
         self._task: Optional[asyncio.Task] = None
         self._running = False
@@ -103,8 +105,7 @@ class RunDriver:
             if fresh is None:
                 return
             if fresh.status.value == "pending":
-                async for _ in executor.execute_created_run(run_id):
-                    pass
+                await self._drive_pending(executor, fresh, generation)
             elif fresh.status.value == "running":
                 await self._recover_running(executor, fresh, generation)
         except Exception as e:
@@ -118,6 +119,34 @@ class RunDriver:
             except asyncio.CancelledError:
                 pass
             self._repo.release_driver_lease(run_id, self._owner, generation)
+
+    async def _drive_pending(self, executor, run, generation: int) -> None:
+        """执行 PENDING planning run。区分 normal continuation vs leftover recovery。"""
+        state = run.state if isinstance(run.state, dict) else {}
+        is_child = bool(state.get("replannedFromRunId"))
+        created_unix = state.get("_continuationCreatedAtUnix", 0) or 0
+        # leftover recovery：child 在 driver 启动前创建（上一 runtime 崩溃遗留 committed-but-not-driven）
+        is_leftover_recovery = is_child and created_unix > 0 and created_unix < self._startup_unix
+
+        if is_leftover_recovery:
+            attempt_id = self._recovery_attempt_id(run.run_id)
+            root_run_id = self._root_run_id(run)
+            self._emit_recovery_event(run.run_id, "recovery_started", {
+                "recoveryAttemptId": attempt_id, "rootRunId": root_run_id,
+                "runId": run.run_id, "kind": "child_pickup", "startedAt": _utc_now_iso(),
+            })
+            async for _ in executor.execute_created_run(run.run_id):
+                pass
+            final = self._repo.get_run(run.run_id)
+            self._emit_recovery_event(run.run_id, "recovery_completed", {
+                "recoveryAttemptId": attempt_id, "rootRunId": root_run_id,
+                "runId": run.run_id, "kind": "child_pickup",
+                "outcome": final.status.value if final else "unknown",
+                "completedAt": _utc_now_iso(),
+            })
+        else:
+            async for _ in executor.execute_created_run(run.run_id):
+                pass
 
     async def _heartbeat(self, run_id: str, generation: int) -> None:
         while True:
@@ -207,12 +236,47 @@ class RunDriver:
                 nr.error = "stale_failed_recovery"
                 self._repo.save_node_run(nr)
 
+        # Phase17 P1: recovery observability marker（stale replay 是真实 recovery）
+        attempt_id = self._recovery_attempt_id(run.run_id)
+        root_run_id = self._root_run_id(run)
+        self._emit_recovery_event(run.run_id, "recovery_started", {
+            "recoveryAttemptId": attempt_id, "rootRunId": root_run_id,
+            "runId": run.run_id, "kind": "stale_replay", "startedAt": _utc_now_iso(),
+        })
+
         # 过渡到 PAUSED 以复用 resume()
         state = TrafficWorkflowState.from_dict(run.state if isinstance(run.state, dict) else {})
         state.transition(WorkflowRunStatus.PAUSED)
         executor._persist_run(run, state)
         async for _ in executor.resume(run.run_id):
             pass
+
+        final = self._repo.get_run(run.run_id)
+        self._emit_recovery_event(run.run_id, "recovery_completed", {
+            "recoveryAttemptId": attempt_id, "rootRunId": root_run_id,
+            "runId": run.run_id, "kind": "stale_replay",
+            "outcome": final.status.value if final else "unknown",
+            "completedAt": _utc_now_iso(),
+        })
+
+    # ── recovery observability helpers（P1，不改变 runtime 行为）────────────
+
+    def _recovery_attempt_id(self, run_id: str) -> str:
+        return f"recovery_{run_id}_{uuid.uuid4().hex[:8]}"
+
+    def _root_run_id(self, run) -> str:
+        from backend.planning.budget import get_lineage
+        state = run.state if isinstance(run.state, dict) else {}
+        lineage = get_lineage(state)
+        return lineage.rootRunId or run.run_id
+
+    def _emit_recovery_event(self, run_id: str, event_type: str, payload: Dict[str, Any]) -> None:
+        from backend.workflow.models import WorkflowEvent
+        evt = WorkflowEvent(
+            event_id=f"wfevent_{event_type}_{payload.get('recoveryAttemptId', uuid.uuid4().hex)}",
+            run_id=run_id, event_type=event_type, payload=payload, sequence=0,
+        )
+        self._repo.save_event(evt)
 
 
 # ── 全局单例 ──────────────────────────────────────────────────────────────

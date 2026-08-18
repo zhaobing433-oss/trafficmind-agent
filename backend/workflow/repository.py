@@ -663,6 +663,21 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             return None
         return self._row_to_approval(dict(row))
 
+    def list_approvals(self, run_id: str) -> List["WorkflowApproval"]:
+        """列出 run 的全部审批记录。"""
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM workflow_approvals WHERE run_id=? ORDER BY created_at",
+                (run_id,),
+            ).fetchall()
+            conn.close()
+            return [self._row_to_approval(dict(r)) for r in rows]
+        except Exception:
+            conn.close()
+            return []
+
     def get_pending_approval(
         self, run_id: str, node_id: str
     ) -> Optional[WorkflowApproval]:
@@ -1156,3 +1171,74 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
     def list_executing_action_records(self, run_id: str) -> List["WorkflowActionRecord"]:
         """列出 run 中 status=EXECUTING 的 action record（dispatch started 但未完成）。"""
         return [a for a in self.list_action_records(run_id) if a.status == ActionStatus.EXECUTING]
+
+    # ── Phase17 P1: plan discovery ────────────────────────────────────────
+
+    def list_planning_definitions(self, limit: int = 50, offset: int = 0) -> List["WorkflowDefinition"]:
+        """列出 planning definitions（metadata 含 planFingerprint marker），分页。"""
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM workflow_definitions
+                   WHERE metadata_json LIKE '%"planFingerprint"%'
+                   ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?""",
+                (limit, offset),
+            ).fetchall()
+            conn.close()
+            return [self._row_to_definition(dict(r)) for r in rows]
+        except Exception:
+            conn.close()
+            raise
+
+    def count_planning_definitions(self) -> int:
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) as c FROM workflow_definitions WHERE metadata_json LIKE '%\"planFingerprint\"%'"
+            ).fetchone()
+            conn.close()
+            return row["c"] if row else 0
+        except Exception:
+            conn.close()
+            return 0
+
+    def batch_get_run_aggregates(self, definition_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """每个 definition_id 的 run 聚合（executionCount/replanCount/latest run summary）。"""
+        if not definition_ids:
+            return {}
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            placeholders = ",".join(["?" for _ in definition_ids])
+            rows = conn.execute(
+                f"SELECT run_id, definition_id, version, status, updated_at, state_json "
+                f"FROM workflow_runs WHERE definition_id IN ({placeholders}) ORDER BY updated_at ASC",
+                definition_ids,
+            ).fetchall()
+            conn.close()
+        except Exception:
+            conn.close()
+            return {}
+        agg: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            did = row["definition_id"]
+            a = agg.setdefault(did, {"executionCount": 0, "replanCount": 0, "latest": None})
+            a["executionCount"] += 1
+            state = row["state_json"]
+            if isinstance(state, str):
+                import json as _j
+                try:
+                    state = _j.loads(state)
+                except Exception:
+                    state = {}
+            if isinstance(state, dict) and state.get("replannedFromRunId"):
+                a["replanCount"] += 1
+            # latest by updated_at（循环按 ASC，最后一条即最新）
+            a["latest"] = {
+                "runId": row["run_id"], "version": row["version"],
+                "status": row["status"], "updatedAt": row["updated_at"],
+                "rootRunId": (state.get("executionLineage") or {}).get("rootRunId") if isinstance(state, dict) else None,
+            }
+        return agg
