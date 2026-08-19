@@ -24,6 +24,7 @@ proposal → canonical Plan（PURE / SYNC / DETERMINISTIC / NO DB / NO LLM / NO 
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from backend.agent.tool_registry import get_tool_registry
@@ -333,6 +334,7 @@ def compile_proposal(
         evidenceRefs=[],
         memoryRefs=[],
         approvalIdentityVersion=2,
+        semanticReplanEnabled=True,
     )
 
     # ── 复用现有 validate_plan() fail-closed ──────────────────────
@@ -344,3 +346,165 @@ def compile_proposal(
         )
 
     return plan
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Semantic Replan Suffix Compiler — Phase18 Extension
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _seed_counters(carried_step_ids, counters: Dict[str, int]) -> None:
+    """Seed canonical step counters so new suffix IDs avoid carried prefix IDs。
+
+    支持两种命名：deterministic（agent_congestion，无 index）与 LLM（agent_congestion_01）。
+    新 suffix 从 carried 最大 index 之后继续（SR22）。
+    """
+    for sid in carried_step_ids:
+        m = re.match(r'^(agent|action|approval)_(.+?)_(\d{2,})$', sid)
+        if m:
+            kind, slug, idx = m.group(1), m.group(2), int(m.group(3))
+        else:
+            m = re.match(r'^(agent|action|approval)_(.+)$', sid)
+            if not m:
+                continue
+            kind, slug, idx = m.group(1), m.group(2), 1
+        key = f"{kind}_{slug}"
+        counters[key] = max(counters.get(key, 0), idx)
+
+
+def compile_replan_suffix(
+    suffix_steps: List[Any],
+    snapshot,
+    requires_approval: bool,
+    carried_step_ids: set,
+) -> List[PlanStep]:
+    """编译 LLM 设计的 unresolved semantic suffix（semantic + terminal structural steps）。
+
+    复用 capability resolution / param validation / risk-approval derivation / canonical
+    step construction（与 compile_proposal 同一套 helpers）。跳过 prefix structural
+    steps（validate_event/rule_router/rag/memory 已在 carried prefix）。counters seeded
+    避免与 carried stepId 冲突。线性 only。
+    """
+    # 1. suffix 线性校验
+    ids = [s.proposalStepId for s in suffix_steps]
+    for i, s in enumerate(suffix_steps):
+        deps = s.dependsOnProposalStepIds or []
+        allowed = [] if i == 0 else [ids[i - 1]]
+        if deps and deps != allowed:
+            raise PlannerFailure(
+                PlannerFailureCode.UNSUPPORTED_PLAN_SHAPE,
+                f"suffix 步骤 '{s.proposalStepId}' 非线性（仅允许依赖前一步骤）",
+            )
+
+    # 2. seed counters（避免与 carried stepId 冲突）
+    counters: Dict[str, int] = {}
+    _seed_counters(carried_step_ids, counters)
+    registry = get_tool_registry()
+    steps: List[PlanStep] = []
+
+    # ── agent_task（SEMANTIC）─────────────────────────────────────
+    agent_count = 0
+    for ps in suffix_steps:
+        if ps.actionIntent:
+            continue
+        agent_type = _resolve_agent(ps, snapshot)
+        if agent_type is None:
+            if ps.evidenceNeeds:
+                continue
+            raise PlannerFailure(
+                PlannerFailureCode.UNSUPPORTED_CAPABILITY,
+                f"suffix 步骤 '{ps.proposalStepId}' 未声明可解析的 agent capability",
+            )
+        steps.append(PlanStep(
+            stepId=_next_step_id("agent", _agent_slug(agent_type), counters),
+            stepType=NodeType.AGENT_TASK,
+            objective=ps.expectedOutcome or f"{agent_type} 分析研判",
+            agentType=agent_type,
+            timeoutSeconds=30,
+            retryPolicy={"maxRetries": 1},
+        ))
+        agent_count += 1
+
+    # ── evidence_evaluate（CONDITIONAL）───────────────────────────
+    if agent_count > 0:
+        steps.append(PlanStep(
+            stepId="evidence_evaluate",
+            stepType=NodeType.EVIDENCE_EVALUATE,
+            objective="评估 Agent 输出与 RAG 证据质量",
+        ))
+
+    # ── risk_gate（ALWAYS）────────────────────────────────────────
+    steps.append(PlanStep(
+        stepId="risk_gate",
+        stepType=NodeType.RISK_GATE,
+        objective="风险门控：高风险需人工审批",
+        approvalRequired=requires_approval,
+    ))
+
+    # ── action（SEMANTIC）+ Approval V2 ───────────────────────────
+    for ps in suffix_steps:
+        if not ps.actionIntent:
+            continue
+        action_type = _resolve_action(ps, snapshot)
+        if action_type is None:
+            raise PlannerFailure(
+                PlannerFailureCode.UNSUPPORTED_CAPABILITY,
+                f"suffix action 步骤 '{ps.proposalStepId}' 未声明可解析的 action capability",
+            )
+        meta = _action_meta(action_type)
+        if meta is None:
+            raise PlannerFailure(
+                PlannerFailureCode.UNSUPPORTED_CAPABILITY,
+                f"action '{action_type}' 未注册",
+            )
+        params = normalize_parameter_hints(action_type, ps.parameterHints or {})
+        action_step_id = _next_step_id("action", action_type, counters)
+
+        if meta.approvalRequired:
+            approval_step_id = _next_step_id("approval", action_type, counters)
+            steps.append(PlanStep(
+                stepId=approval_step_id,
+                stepType=NodeType.HUMAN_APPROVAL,
+                objective=f"人工审批 {action_type}",
+                actionType=action_type,
+                riskLevel=meta.riskLevel.value,
+                approvalRequired=True,
+                expectedOutcome="批准后方可执行对应 action",
+                metadata={"approvalIdentityVersion": 2, "targetActionStepId": action_step_id},
+            ))
+
+        steps.append(PlanStep(
+            stepId=action_step_id,
+            stepType=NodeType.ACTION,
+            objective=ps.expectedOutcome or f"执行动作 {action_type}",
+            toolName=action_type,
+            actionType=action_type,
+            riskLevel=meta.riskLevel.value,
+            approvalRequired=meta.approvalRequired,
+            retryPolicy=dict(meta.retryPolicy),
+            timeoutSeconds=int(meta.timeoutSeconds),
+            metadata={"approvalIdentityVersion": 2, "paramsTemplate": params},
+        ))
+
+    # ── save_result（ALWAYS，terminal persistence）────────────────
+    save_meta = registry.get("save_result")
+    steps.append(PlanStep(
+        stepId=_next_step_id("action", "save_result", counters),
+        stepType=NodeType.ACTION,
+        objective="执行动作 save_result",
+        toolName="save_result",
+        actionType="save_result",
+        riskLevel=save_meta.riskLevel.value if save_meta else "write",
+        approvalRequired=save_meta.approvalRequired if save_meta else False,
+        retryPolicy=dict(save_meta.retryPolicy) if save_meta else {},
+        timeoutSeconds=int(save_meta.timeoutSeconds) if save_meta else 30,
+        metadata={"approvalIdentityVersion": 2},
+    ))
+
+    # ── close（ALWAYS，terminal）──────────────────────────────────
+    steps.append(PlanStep(
+        stepId="close",
+        stepType=NodeType.CLOSE,
+        objective="汇总结果并闭环归档",
+    ))
+
+    return steps

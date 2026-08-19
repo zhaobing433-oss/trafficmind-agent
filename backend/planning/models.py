@@ -282,6 +282,7 @@ class Plan:
     metadata: Dict[str, Any] = field(default_factory=dict)
     approvalIdentityVersion: int = 1
     plannerAudit: Dict[str, Any] = field(default_factory=dict)
+    semanticReplanEnabled: bool = False
 
     def __post_init__(self):
         if not self.createdAt:
@@ -311,6 +312,7 @@ class Plan:
             "metadata": dict(self.metadata),
             "approvalIdentityVersion": self.approvalIdentityVersion,
             "plannerAudit": dict(self.plannerAudit),
+            "semanticReplanEnabled": self.semanticReplanEnabled,
         }
 
     @classmethod
@@ -336,6 +338,7 @@ class Plan:
             metadata=dict(d.get("metadata", {})),
             approvalIdentityVersion=int(d.get("approvalIdentityVersion", 1)),
             plannerAudit=dict(d.get("plannerAudit", {})),
+            semanticReplanEnabled=bool(d.get("semanticReplanEnabled", False)),
         )
 
     def get_step(self, step_id: str) -> Optional[PlanStep]:

@@ -1159,6 +1159,79 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         finally:
             conn.close()
 
+    def claim_semantic_replan_tx(self, run_id: str, invocation_key: str) -> Dict[str, Any]:
+        """原子 semantic-replan claim：BEGIN IMMEDIATE 内 check invocation + reserve llmCallsUsed + STARTED。"""
+        if not invocation_key or not run_id:
+            return {"result": "not_eligible"}
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT state_json FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                return {"result": "not_eligible"}
+            state = json.loads(row["state_json"] or "{}")
+            registry = state.get("semanticReplanInvocations", {}) or {}
+            existing = registry.get(invocation_key)
+            if isinstance(existing, dict):
+                if existing.get("status") == "COMPLETED":
+                    conn.rollback()
+                    return {"result": "already_completed", "proposal": existing.get("proposal", {})}
+                conn.rollback()
+                return {"result": "already_started"}
+
+            lineage = state.get("executionLineage", {}) or {}
+            usage = lineage.get("budgetUsage", {}) or {}
+            limits = lineage.get("budgetLimits", {}) or {}
+            llm_used = int(usage.get("llmCallsUsed", 0))
+            if llm_used >= int(limits.get("maxLlmCalls", 5)):
+                conn.rollback()
+                return {"result": "budget_exhausted"}
+
+            usage["llmCallsUsed"] = llm_used + 1
+            lineage["budgetUsage"] = usage
+            state["executionLineage"] = lineage
+            registry[invocation_key] = {"status": "STARTED"}
+            state["semanticReplanInvocations"] = registry
+            conn.execute(
+                "UPDATE workflow_runs SET state_json=?, updated_at=? WHERE run_id=?",
+                (json.dumps(state, ensure_ascii=False), _utc_now_iso(), run_id),
+            )
+            conn.commit()
+            return {"result": "claimed"}
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def complete_semantic_replan_tx(self, run_id: str, invocation_key: str, proposal: Dict[str, Any]) -> None:
+        """原子 semantic-replan 完成：仅 STARTED → COMPLETED（不覆盖其它 keys）。"""
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT state_json FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                return
+            state = json.loads(row["state_json"] or "{}")
+            registry = state.get("semanticReplanInvocations", {}) or {}
+            if registry.get(invocation_key, {}).get("status") == "STARTED":
+                registry[invocation_key] = {"status": "COMPLETED", "proposal": proposal or {}}
+                state["semanticReplanInvocations"] = registry
+                conn.execute(
+                    "UPDATE workflow_runs SET state_json=?, updated_at=? WHERE run_id=?",
+                    (json.dumps(state, ensure_ascii=False), _utc_now_iso(), run_id),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def list_observations(self, run_id: str) -> List["WorkflowEvent"]:
         """列出 run 的 observation 事件（event_type=observation_recorded）。"""
         events = self.list_events(run_id)

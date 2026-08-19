@@ -259,14 +259,17 @@ class TestCriticProductionWiring:
         assert "criticInvocations" not in run.state  # 未 claim
 
     def test_fa08_critic_replan_build_revision_once(self, patch_db, monkeypatch):
-        """FA08：critic REPLAN → final REPLAN → build_revision 一次（critic 不直接 build revision）。"""
+        """FA08：critic REPLAN → final REPLAN → build_revision 一次（critic 不直接 build revision）。
+
+        注：semantic_replan_enabled=False 以隔离 critic-only 路径（semantic replan 由 SR 套件单独测）。
+        """
         from backend.planning.continuation import PlanningContinuationCoordinator
         repo = SQLiteWorkflowRepository()
         run_id = _make_failed_action_run(repo)
         client = FakeCriticClient("replan")
         _patch_factory(monkeypatch, client)
 
-        coordinator = PlanningContinuationCoordinator(repo)
+        coordinator = PlanningContinuationCoordinator(repo, semantic_replan_enabled=False)
         result = coordinator.explicit_replan(run_id)
 
         assert client.calls == 1
