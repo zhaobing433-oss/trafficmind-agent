@@ -999,6 +999,239 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         finally:
             conn.close()
 
+    # ── Phase18 Round2: atomic critic/assessment invocation claim ─────────────
+
+    def claim_critic_invocation_tx(self, run_id: str, invocation_key: str) -> Dict[str, Any]:
+        """原子 critic claim：BEGIN IMMEDIATE 内 compound budget reserve + STARTED marker。
+
+        result ∈ {claimed, already_completed, already_started, budget_exhausted, not_eligible}。
+        budget 检查 + 两个 counter 递增 + registry STARTED 写回同一事务（全成功或零变化）。
+        """
+        if not invocation_key or not run_id:
+            return {"result": "not_eligible"}
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT state_json FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                return {"result": "not_eligible"}
+            state = json.loads(row["state_json"] or "{}")
+            registry = state.get("criticInvocations", {}) or {}
+            existing = registry.get(invocation_key)
+            if isinstance(existing, dict):
+                if existing.get("status") == "COMPLETED":
+                    conn.rollback()
+                    return {"result": "already_completed", "recommendation": existing.get("recommendation", {})}
+                conn.rollback()
+                return {"result": "already_started"}
+
+            lineage = state.get("executionLineage", {}) or {}
+            usage = lineage.get("budgetUsage", {}) or {}
+            limits = lineage.get("budgetLimits", {}) or {}
+            llm_used = int(usage.get("llmCallsUsed", 0))
+            critic_used = int(usage.get("criticCallsUsed", 0))
+            if llm_used >= int(limits.get("maxLlmCalls", 5)) or critic_used >= int(limits.get("maxCriticCalls", 3)):
+                conn.rollback()
+                return {"result": "budget_exhausted"}
+
+            usage["llmCallsUsed"] = llm_used + 1
+            usage["criticCallsUsed"] = critic_used + 1
+            lineage["budgetUsage"] = usage
+            state["executionLineage"] = lineage
+            registry[invocation_key] = {"status": "STARTED"}
+            state["criticInvocations"] = registry
+            conn.execute(
+                "UPDATE workflow_runs SET state_json=?, updated_at=? WHERE run_id=?",
+                (json.dumps(state, ensure_ascii=False), _utc_now_iso(), run_id),
+            )
+            conn.commit()
+            return {"result": "claimed"}
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def complete_critic_invocation_tx(self, run_id: str, invocation_key: str, recommendation: Dict[str, Any]) -> None:
+        """原子 critic 完成：仅 STARTED → COMPLETED（reload latest state，不覆盖其它 keys）。"""
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT state_json FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                return
+            state = json.loads(row["state_json"] or "{}")
+            registry = state.get("criticInvocations", {}) or {}
+            if registry.get(invocation_key, {}).get("status") == "STARTED":
+                registry[invocation_key] = {"status": "COMPLETED", "recommendation": recommendation or {}}
+                state["criticInvocations"] = registry
+                conn.execute(
+                    "UPDATE workflow_runs SET state_json=?, updated_at=? WHERE run_id=?",
+                    (json.dumps(state, ensure_ascii=False), _utc_now_iso(), run_id),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def claim_assessment_tx(self, run_id: str, assessment_key: str) -> Dict[str, Any]:
+        """原子 assessment claim（compound reserve llmCallsUsed + assessmentCallsUsed + STARTED）。"""
+        if not assessment_key or not run_id:
+            return {"result": "not_eligible"}
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT state_json FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                return {"result": "not_eligible"}
+            state = json.loads(row["state_json"] or "{}")
+            reg = state.get("assessment", {}) or {}
+            existing = reg.get(assessment_key)
+            if isinstance(existing, dict):
+                if existing.get("status") == "COMPLETED":
+                    conn.rollback()
+                    return {"result": "already_completed", "assessment": existing.get("result", {})}
+                conn.rollback()
+                return {"result": "already_started"}
+
+            lineage = state.get("executionLineage", {}) or {}
+            usage = lineage.get("budgetUsage", {}) or {}
+            limits = lineage.get("budgetLimits", {}) or {}
+            llm_used = int(usage.get("llmCallsUsed", 0))
+            assess_used = int(usage.get("assessmentCallsUsed", 0))
+            if llm_used >= int(limits.get("maxLlmCalls", 5)) or assess_used >= int(limits.get("maxAssessments", 1)):
+                conn.rollback()
+                return {"result": "budget_exhausted"}
+
+            usage["llmCallsUsed"] = llm_used + 1
+            usage["assessmentCallsUsed"] = assess_used + 1
+            lineage["budgetUsage"] = usage
+            state["executionLineage"] = lineage
+            reg[assessment_key] = {"status": "STARTED"}
+            state["assessment"] = reg
+            conn.execute(
+                "UPDATE workflow_runs SET state_json=?, updated_at=? WHERE run_id=?",
+                (json.dumps(state, ensure_ascii=False), _utc_now_iso(), run_id),
+            )
+            conn.commit()
+            return {"result": "claimed"}
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def complete_assessment_tx(self, run_id: str, assessment_key: str, result: Dict[str, Any]) -> None:
+        """原子 assessment 完成：upsert COMPLETED result（幂等）。
+
+        兼容两类路径：
+          - provider 路径：claim STARTED → complete → COMPLETED。
+          - deterministic/fallback 路径（无 claim）：直接写 COMPLETED。
+        """
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT state_json FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                return
+            state = json.loads(row["state_json"] or "{}")
+            reg = state.get("assessment", {}) or {}
+            reg[assessment_key] = {"status": "COMPLETED", "result": result or {}}
+            state["assessment"] = reg
+            conn.execute(
+                "UPDATE workflow_runs SET state_json=?, updated_at=? WHERE run_id=?",
+                (json.dumps(state, ensure_ascii=False), _utc_now_iso(), run_id),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def claim_semantic_replan_tx(self, run_id: str, invocation_key: str) -> Dict[str, Any]:
+        """原子 semantic-replan claim：BEGIN IMMEDIATE 内 check invocation + reserve llmCallsUsed + STARTED。"""
+        if not invocation_key or not run_id:
+            return {"result": "not_eligible"}
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT state_json FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                return {"result": "not_eligible"}
+            state = json.loads(row["state_json"] or "{}")
+            registry = state.get("semanticReplanInvocations", {}) or {}
+            existing = registry.get(invocation_key)
+            if isinstance(existing, dict):
+                if existing.get("status") == "COMPLETED":
+                    conn.rollback()
+                    return {"result": "already_completed", "proposal": existing.get("proposal", {})}
+                conn.rollback()
+                return {"result": "already_started"}
+
+            lineage = state.get("executionLineage", {}) or {}
+            usage = lineage.get("budgetUsage", {}) or {}
+            limits = lineage.get("budgetLimits", {}) or {}
+            llm_used = int(usage.get("llmCallsUsed", 0))
+            if llm_used >= int(limits.get("maxLlmCalls", 5)):
+                conn.rollback()
+                return {"result": "budget_exhausted"}
+
+            usage["llmCallsUsed"] = llm_used + 1
+            lineage["budgetUsage"] = usage
+            state["executionLineage"] = lineage
+            registry[invocation_key] = {"status": "STARTED"}
+            state["semanticReplanInvocations"] = registry
+            conn.execute(
+                "UPDATE workflow_runs SET state_json=?, updated_at=? WHERE run_id=?",
+                (json.dumps(state, ensure_ascii=False), _utc_now_iso(), run_id),
+            )
+            conn.commit()
+            return {"result": "claimed"}
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def complete_semantic_replan_tx(self, run_id: str, invocation_key: str, proposal: Dict[str, Any]) -> None:
+        """原子 semantic-replan 完成：仅 STARTED → COMPLETED（不覆盖其它 keys）。"""
+        init_workflow_tables()
+        conn = _get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT state_json FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                return
+            state = json.loads(row["state_json"] or "{}")
+            registry = state.get("semanticReplanInvocations", {}) or {}
+            if registry.get(invocation_key, {}).get("status") == "STARTED":
+                registry[invocation_key] = {"status": "COMPLETED", "proposal": proposal or {}}
+                state["semanticReplanInvocations"] = registry
+                conn.execute(
+                    "UPDATE workflow_runs SET state_json=?, updated_at=? WHERE run_id=?",
+                    (json.dumps(state, ensure_ascii=False), _utc_now_iso(), run_id),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def list_observations(self, run_id: str) -> List["WorkflowEvent"]:
         """列出 run 的 observation 事件（event_type=observation_recorded）。"""
         events = self.list_events(run_id)

@@ -16,7 +16,8 @@ build_plan(ctx) -> Plan
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from backend.planning.action_resolver import ActionCandidateResolver, ActionResolution
 from backend.planning.context import PlanningContext
@@ -24,6 +25,7 @@ from backend.planning.models import (
     EXECUTABLE_AGENT_TYPES,
     STRUCTURAL_AGENT_TYPES,
     UNSUPPORTED_AGENT_TYPES,
+    GoalType,
     Plan,
     PlanDefinitionStatus,
     PlanStep,
@@ -262,3 +264,121 @@ def _retry_policy_for(ctx: PlanningContext, action_type: str) -> Dict[str, Any]:
     if meta is not None:
         return dict(meta.retryPolicy)
     return {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 18 Round 1 — Planner Mode Orchestrator
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class PlanBuildResult:
+    """plan + sanitized planner audit（LLM 模式含 proposal，失败含 failure）。"""
+    plan: Plan
+    planner_audit: Any  # PlannerAudit
+    proposal: Any = None  # PlanProposal
+    failure: Any = None   # PlannerFailure
+
+
+def _deterministic_goal_coverage(ctx: PlanningContext) -> str:
+    """deterministic capability checker：识别事件类型则 FULL，否则 UNKNOWN。
+
+    不引入 LLM judge；宁可 UNKNOWN，不虚报 FULL。
+    """
+    if ctx.goal_type != GoalType.GENERIC:
+        return "FULL"
+    return "UNKNOWN"
+
+
+async def build_plan_with_mode(
+    ctx: PlanningContext,
+    planner_mode: str = "deterministic",
+    llm_client: Any = None,
+) -> PlanBuildResult:
+    """plannerMode 编排（async）。
+
+    - deterministic：现有 build_plan()，零 LLM。
+    - llm：LLM proposal → compile；失败 raise PlannerFailure（不 fallback）。
+    - auto：LLM proposal → compile；失败 deterministic fallback（记录 fallbackReason）。
+
+    Args:
+        ctx: 计划上下文。
+        planner_mode: "deterministic" | "llm" | "auto"。
+        llm_client: 注入 LLM client（测试用）；None 则用默认 PlannerLLMClient。
+
+    Returns:
+        PlanBuildResult。
+
+    Raises:
+        PlannerFailure（仅 llm 模式失败时）。
+    """
+    import time
+
+    from backend.planning.capability_snapshot import build_planner_capability_snapshot
+    from backend.planning.llm_client import PlannerLLMClient
+    from backend.planning.proposal import PlannerAudit, PlannerFailure
+    from backend.planning.proposal_compiler import compile_proposal
+
+    planner_mode = planner_mode or "deterministic"
+
+    # ── deterministic：零 LLM ─────────────────────────────────────
+    if planner_mode == "deterministic":
+        plan = build_plan(ctx)
+        audit = PlannerAudit(
+            planningModeRequested="deterministic",
+            planningModeUsed="deterministic",
+            assumptions=list(plan.assumptions),
+            goalCoverage=_deterministic_goal_coverage(ctx),
+        )
+        return PlanBuildResult(plan=plan, planner_audit=audit)
+
+    snapshot = build_planner_capability_snapshot()
+    client = llm_client or PlannerLLMClient()
+
+    def _fallback(failure: PlannerFailure, latency_ms: float) -> PlanBuildResult:
+        """auto fallback：复用 deterministic build_plan()，不伪装 LLM 成功。"""
+        plan = build_plan(ctx)
+        audit = PlannerAudit(
+            planningModeRequested="auto",
+            planningModeUsed="deterministic",
+            assumptions=list(plan.assumptions),
+            capabilitySnapshotVersion=snapshot.snapshotVersion,
+            capabilitySnapshotHash=snapshot.snapshotHash,
+            latencyMs=latency_ms,
+            fallbackReason=failure.code,
+            goalCoverage="UNKNOWN",
+        )
+        return PlanBuildResult(plan=plan, planner_audit=audit, failure=failure)
+
+    t0 = time.time()
+    try:
+        proposal = await client.generate_proposal(ctx, snapshot, ctx.user_goal)
+    except PlannerFailure as f:
+        latency_ms = (time.time() - t0) * 1000.0
+        if planner_mode == "auto":
+            return _fallback(f, latency_ms)
+        raise
+
+    latency_ms = (time.time() - t0) * 1000.0
+    try:
+        plan = compile_proposal(proposal, snapshot, ctx)
+    except PlannerFailure as f:
+        if planner_mode == "auto":
+            return _fallback(f, latency_ms)
+        raise
+
+    audit = PlannerAudit(
+        planningModeRequested=planner_mode,
+        planningModeUsed="llm",
+        plannerModel=proposal.plannerModel or None,
+        proposalId=proposal.proposalId,
+        confidence=proposal.confidence,
+        assumptions=list(plan.assumptions),
+        plannerReasonSummary=proposal.plannerReasonSummary,
+        capabilitySnapshotVersion=snapshot.snapshotVersion,
+        capabilitySnapshotHash=snapshot.snapshotHash,
+        attemptCount=getattr(client, "last_attempt_count", 1),
+        latencyMs=latency_ms,
+        usageSummary=dict(getattr(client, "last_usage", {})),
+        goalCoverage="FULL",
+    )
+    return PlanBuildResult(plan=plan, planner_audit=audit, proposal=proposal)

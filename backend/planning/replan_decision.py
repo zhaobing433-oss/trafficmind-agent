@@ -43,6 +43,62 @@ class DecisionResult:
         }
 
 
+def classify_observation(
+    observation: Observation,
+    lineage: Optional[ExecutionLineage] = None,
+) -> str:
+    """确定性 pre-classification（Phase18 Round2）。
+
+    返回：
+      hard_retry / hard_replan / hard_abort / hard_escalate /
+      wait_for_approval / no_replan / semantic_review
+
+    只有 semantic_review 才允许调用 Critic；其余分类永不调用 Critic。
+    语义与 Phase17 decide() 完全一致（I2），不改变 baseline fallback。
+    """
+    t = observation.type
+    if t == ObservationType.TIMEOUT:
+        if lineage is not None and lineage.budgetUsage.retriesUsed >= lineage.budgetLimits.maxRetries:
+            return "hard_replan"
+        return "hard_retry"
+    if t == ObservationType.TOOL_FAILED:
+        return "hard_retry" if observation.retryable else "semantic_review"
+    if t == ObservationType.RETRY_EXHAUSTED:
+        return "hard_replan"
+    if t == ObservationType.TOOL_DENIED:
+        return "hard_escalate"
+    if t == ObservationType.TOOL_REQUIRE_APPROVAL:
+        return "wait_for_approval"
+    if t == ObservationType.APPROVAL_REJECTED:
+        return "no_replan"
+    if t in (ObservationType.AGENT_FAILED, ObservationType.SIMULATION_FAILED,
+             ObservationType.MISSING_DATA, ObservationType.UPSTREAM_BLOCKED):
+        return "semantic_review"
+    if t == ObservationType.UNKNOWN_OUTCOME:
+        return "hard_escalate"
+    if t in (ObservationType.BUDGET_EXHAUSTED, ObservationType.LOOP_DETECTED):
+        return "hard_abort"
+    if t == ObservationType.CANCELLED:
+        return "no_replan"
+    # informational：NODE_FAILED / AGENT_LOW_CONFIDENCE / RAG_NO_EVIDENCE 等 → NO_REPLAN
+    return "no_replan"
+
+
+def _apply_critic(observation: Observation, critic: Any) -> DecisionResult:
+    """SEMANTIC_REVIEW 下的 critic 组合。
+
+    允许的 recommendation 只有 REPLAN / ABORT / ESCALATE_HUMAN（duck-typed）。
+    REPLAN（默认）→ REPLAN；ABORT → ABORT（安全升级）；ESCALATE_HUMAN → ESCALATE_HUMAN。
+    任何其它值（KEEP_PLAN/RETRY/未知）→ 确定性默认 REPLAN。
+    """
+    rec = (getattr(critic, "recommendation", "") or "").strip().lower()
+    if rec == "abort":
+        return DecisionResult(ReplanDecision.ABORT, "critic: abort (irrecoverable semantic failure)", observation.observationId)
+    if rec == "escalate_human":
+        return DecisionResult(ReplanDecision.ESCALATE_HUMAN, "critic: escalate to human", observation.observationId)
+    return DecisionResult(ReplanDecision.REPLAN, "semantic failure → replan", observation.observationId)
+
+
 class ReplanDecisionEngine:
     """deterministic 决策引擎。"""
 
@@ -50,8 +106,16 @@ class ReplanDecisionEngine:
         self,
         observation: Observation,
         lineage: Optional[ExecutionLineage] = None,
+        critic: Optional[Any] = None,
     ) -> DecisionResult:
-        """根据 Observation + lineage 产生唯一 authoritative decision。"""
+        """根据 Observation + lineage（+ 可选 CriticRecommendation）产生唯一 authoritative decision。
+
+        Critic 只在 SEMANTIC_REVIEW 分类下、且 critic 非空时参与；其 recommendation
+        仅能 confirm REPLAN 或安全升级 ABORT/ESCALATE_HUMAN，绝不覆盖 hard rules。
+        critic=None / 失败时，结果与 Phase17 deterministic decide() 完全一致（I2）。
+        """
+        if critic is not None and classify_observation(observation, lineage) == "semantic_review":
+            return _apply_critic(observation, critic)
         t = observation.type
 
         if t == ObservationType.TIMEOUT:

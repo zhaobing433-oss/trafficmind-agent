@@ -75,6 +75,8 @@ class ExecutionBudgetLimits:
     maxRetries: int = 2
     maxToolCalls: int = 5
     maxLlmCalls: int = 5
+    maxCriticCalls: int = 3
+    maxAssessments: int = 1
     maxTotalSeconds: int = 300
 
     def to_dict(self) -> Dict[str, Any]:
@@ -84,6 +86,8 @@ class ExecutionBudgetLimits:
             "maxRetries": self.maxRetries,
             "maxToolCalls": self.maxToolCalls,
             "maxLlmCalls": self.maxLlmCalls,
+            "maxCriticCalls": self.maxCriticCalls,
+            "maxAssessments": self.maxAssessments,
             "maxTotalSeconds": self.maxTotalSeconds,
         }
 
@@ -95,6 +99,8 @@ class ExecutionBudgetLimits:
             maxRetries=int(d.get("maxRetries", 2)),
             maxToolCalls=int(d.get("maxToolCalls", 5)),
             maxLlmCalls=int(d.get("maxLlmCalls", 5)),
+            maxCriticCalls=int(d.get("maxCriticCalls", 3)),
+            maxAssessments=int(d.get("maxAssessments", 1)),
             maxTotalSeconds=int(d.get("maxTotalSeconds", 300)),
         )
 
@@ -106,6 +112,8 @@ class ExecutionBudgetUsage:
     retriesUsed: int = 0
     toolCallsUsed: int = 0
     llmCallsUsed: int = 0
+    criticCallsUsed: int = 0
+    assessmentCallsUsed: int = 0
     activeElapsedSeconds: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
@@ -115,6 +123,8 @@ class ExecutionBudgetUsage:
             "retriesUsed": self.retriesUsed,
             "toolCallsUsed": self.toolCallsUsed,
             "llmCallsUsed": self.llmCallsUsed,
+            "criticCallsUsed": self.criticCallsUsed,
+            "assessmentCallsUsed": self.assessmentCallsUsed,
             "activeElapsedSeconds": self.activeElapsedSeconds,
         }
 
@@ -126,6 +136,8 @@ class ExecutionBudgetUsage:
             retriesUsed=int(d.get("retriesUsed", 0)),
             toolCallsUsed=int(d.get("toolCallsUsed", 0)),
             llmCallsUsed=int(d.get("llmCallsUsed", 0)),
+            criticCallsUsed=int(d.get("criticCallsUsed", 0)),
+            assessmentCallsUsed=int(d.get("assessmentCallsUsed", 0)),
             activeElapsedSeconds=float(d.get("activeElapsedSeconds", 0.0)),
         )
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from backend.agent.tool_registry import ToolRegistry, get_tool_registry
+from backend.planning.capability_snapshot import is_planner_executable_action
 from backend.planning.models import (
     EXECUTABLE_AGENT_TYPES,
     MAX_PLAN_STEPS,
@@ -43,6 +44,12 @@ VALID_AGENT_TYPES = set(EXECUTABLE_AGENT_TYPES)
 
 def _error(code: str, message: str, step_id: Optional[str] = None) -> ValidationIssue:
     return ValidationIssue(severity=IssueSeverity.ERROR, code=code, message=message, stepId=step_id)
+
+
+def _canonical_params_str(params: Dict[str, Any]) -> str:
+    """canonical business params 序列化（duplicate_semantic_action 判重用）。"""
+    import json
+    return json.dumps(params, sort_keys=True, ensure_ascii=False, default=str)
 
 
 def validate_plan(
@@ -137,7 +144,8 @@ def validate_plan(
                     s.stepId,
                 ))
 
-    # ── tool 注册 + risk 元数据一致 + high-risk 审批标注 ───────
+    # ── tool 注册 + risk 元数据一致 + high-risk 审批标注 + no-op 拒绝 ──
+    identity_version = plan.approvalIdentityVersion
     high_risk_actions: List[PlanStep] = []
     for s in steps:
         if s.stepType != NodeType.ACTION:
@@ -156,6 +164,14 @@ def validate_plan(
                 s.stepId,
             ))
             continue
+
+        # V2：no-op 拒绝（registered 但无端到端执行器）
+        if identity_version >= 2 and not is_planner_executable_action(action_type):
+            issues.append(_error(
+                "no_op_action",
+                f"action '{action_type}' 无端到端执行器（plannerEligible=false）",
+                s.stepId,
+            ))
 
         # risk 元数据与 ToolRegistry 一致
         if s.riskLevel != meta.riskLevel.value:
@@ -176,37 +192,88 @@ def validate_plan(
         if s.approvalRequired:
             high_risk_actions.append(s)
 
-    # ── 同 actionType 双 high-risk instance → ERROR ────────────
-    action_type_counts: Dict[str, int] = {}
-    for s in high_risk_actions:
-        at = s.actionType or s.toolName
-        action_type_counts[at] = action_type_counts.get(at, 0) + 1
-    for at, cnt in action_type_counts.items():
-        if cnt > 1:
-            issues.append(_error(
-                "duplicate_high_risk_action_type",
-                f"同一 plan 内存在 {cnt} 个同 actionType '{at}' 的 high-risk action（approval 为 actionType-scoped）",
-            ))
+    # ── duplicate action validation（V1 actionType-scoped / V2 semantic）──
+    if identity_version >= 2:
+        seen_semantic: Dict[Any, str] = {}
+        for s in steps:
+            if s.stepType != NodeType.ACTION:
+                continue
+            at = s.actionType or s.toolName
+            params = _canonical_params_str(s.metadata.get("paramsTemplate", {}))
+            key = (at, params, s.objective)
+            if key in seen_semantic:
+                issues.append(_error(
+                    "duplicate_semantic_action",
+                    f"重复语义 action：'{at}' 的 params + objective 与 '{seen_semantic[key]}' 相同",
+                    s.stepId,
+                ))
+            else:
+                seen_semantic[key] = s.stepId
+    else:
+        # legacy V1：同 actionType 双 high-risk instance → ERROR（actionType-scoped）
+        action_type_counts: Dict[str, int] = {}
+        for s in high_risk_actions:
+            at = s.actionType or s.toolName
+            action_type_counts[at] = action_type_counts.get(at, 0) + 1
+        for at, cnt in action_type_counts.items():
+            if cnt > 1:
+                issues.append(_error(
+                    "duplicate_high_risk_action_type",
+                    f"同一 plan 内存在 {cnt} 个同 actionType '{at}' 的 high-risk action（approval 为 actionType-scoped）",
+                ))
 
     # ── 每个 high-risk action 有独立 approval gate ──────────────
     approval_steps = [s for s in steps if s.stepType == NodeType.HUMAN_APPROVAL]
     for act in high_risk_actions:
         at = act.actionType or act.toolName
-        matching = [a for a in approval_steps if (a.actionType or a.toolName) == at]
-        if not matching:
-            issues.append(_error(
-                "missing_approval_gate",
-                f"high-risk action '{at}' 缺少独立 human_approval 门禁",
-                act.stepId,
-            ))
-            continue
-        # 该 approval 必须是 action 的直接前驱
-        if not any(a.stepId in act.dependsOn for a in matching):
-            issues.append(_error(
-                "approval_not_predecessor",
-                f"human_approval 未作为 action '{at}' 的直接前驱",
-                act.stepId,
-            ))
+        if identity_version >= 2:
+            # V2：approval 必须绑定 targetActionStepId == act.stepId（exact instance）
+            matching = [a for a in approval_steps if a.metadata.get("targetActionStepId") == act.stepId]
+            if not matching:
+                issues.append(_error(
+                    "missing_approval_step_id",
+                    f"high-risk action '{at}'（V2）缺少绑定 targetActionStepId='{act.stepId}' 的 human_approval",
+                    act.stepId,
+                ))
+                continue
+            if not any(a.stepId in act.dependsOn for a in matching):
+                issues.append(_error(
+                    "approval_not_predecessor",
+                    f"human_approval 未作为 action '{at}' 的直接前驱",
+                    act.stepId,
+                ))
+        else:
+            # legacy V1：按 actionType 匹配
+            matching = [a for a in approval_steps if (a.actionType or a.toolName) == at]
+            if not matching:
+                issues.append(_error(
+                    "missing_approval_gate",
+                    f"high-risk action '{at}' 缺少独立 human_approval 门禁",
+                    act.stepId,
+                ))
+                continue
+            if not any(a.stepId in act.dependsOn for a in matching):
+                issues.append(_error(
+                    "approval_not_predecessor",
+                    f"human_approval 未作为 action '{at}' 的直接前驱",
+                    act.stepId,
+                ))
+
+    # ── V2：human_approval 必须声明 V2 identity + 绑定 stepId（不 fallback actionType）──
+    if identity_version >= 2:
+        for a in approval_steps:
+            if a.metadata.get("approvalIdentityVersion", 1) != 2:
+                issues.append(_error(
+                    "missing_approval_identity_v2",
+                    f"V2 plan 的 human_approval '{a.stepId}' 必须声明 approvalIdentityVersion=2",
+                    a.stepId,
+                ))
+            if not a.metadata.get("targetActionStepId"):
+                issues.append(_error(
+                    "missing_approval_step_id",
+                    f"V2 human_approval '{a.stepId}' 缺少 targetActionStepId（禁止 fallback actionType）",
+                    a.stepId,
+                ))
 
     return issues
 

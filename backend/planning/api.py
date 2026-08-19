@@ -25,7 +25,8 @@ from backend.agent.streaming import sse_event
 from backend.planning.adapter import plan_to_definition
 from backend.planning.context import build_planning_context
 from backend.planning.models import Plan, PlanDefinitionStatus
-from backend.planning.planner import build_plan
+from backend.planning.planner import build_plan_with_mode
+from backend.planning.proposal import PlannerFailure
 from backend.planning.status_projection import project_step_statuses
 from backend.planning.validator import has_errors, validate_plan
 from backend.workflow.executor import get_executor
@@ -43,12 +44,17 @@ _repo = SQLiteWorkflowRepository()
 
 
 class PlanPreviewRequest(BaseModel):
-    """计划构建请求（preview / create 共用）。"""
+    """计划构建请求（preview / create 共用）。
+
+    plannerMode: "deterministic"（默认）| "llm" | "auto"。
+    旧 Phase17 请求无 plannerMode 字段 → 等价 deterministic（零 LLM）。
+    """
     goal: Optional[str] = ""
     event: Dict[str, Any] = {}
     ragEvidence: Optional[Dict[str, Any]] = None
     memoryContext: Optional[Dict[str, Any]] = None
     constraints: Optional[Dict[str, Any]] = None
+    plannerMode: Optional[str] = "deterministic"
 
     model_config = ConfigDict(extra="allow")
 
@@ -73,6 +79,34 @@ def _build_context(body: PlanPreviewRequest):
     )
 
 
+_VALID_PLANNER_MODES = {"deterministic", "llm", "auto"}
+
+
+def _normalize_planner_mode(body: PlanPreviewRequest) -> str:
+    """规范化 plannerMode。默认 deterministic。非法值 → HTTPException。"""
+    mode = (body.plannerMode or "deterministic").strip().lower()
+    if mode not in _VALID_PLANNER_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"非法 plannerMode '{body.plannerMode}'（仅 deterministic|llm|auto）",
+        )
+    return mode
+
+
+def _proposal_summary(proposal) -> Optional[Dict[str, Any]]:
+    """sanitized proposal summary（不含 CoT / raw response）。"""
+    if proposal is None:
+        return None
+    return {
+        "proposalId": proposal.proposalId,
+        "goalSummary": proposal.goalSummary,
+        "assumptions": list(proposal.assumptions),
+        "stepCount": len(proposal.steps),
+        "confidence": proposal.confidence,
+        "plannerReasonSummary": proposal.plannerReasonSummary,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 端点
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -80,23 +114,48 @@ def _build_context(body: PlanPreviewRequest):
 
 @router.post("/plans/preview", summary="构建并校验计划（纯函数，零持久化）")
 async def preview_plan(body: PlanPreviewRequest):
-    """只 build context + build Plan + validate + return，不写任何 DB / workflow 记录。"""
+    """只 build context + build Plan + validate + return，不写任何 DB / workflow 记录。
+
+    plannerMode=llm 时可调用 network model，但零持久化（repository save/write = 0）。
+    """
+    planner_mode = _normalize_planner_mode(body)
     ctx = _build_context(body)
-    plan = build_plan(ctx)
+    try:
+        result = await build_plan_with_mode(ctx, planner_mode)
+    except PlannerFailure as f:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "planner 失败", "failure": f.to_dict()},
+        )
+
+    plan = result.plan
     issues = validate_plan(plan)
     return {
         "plan": plan.to_dict(),
         "validationIssues": [i.to_dict() for i in issues],
         "valid": not has_errors(issues),
+        "plannerAudit": result.planner_audit.to_dict(),
+        "proposalSummary": _proposal_summary(result.proposal),
     }
 
 
 @router.post("/plans", summary="物化计划为 WorkflowDefinition（不执行）")
 async def create_plan(body: PlanPreviewRequest):
     """validate → materialize WorkflowDefinition → persist metadata。不执行。"""
+    planner_mode = _normalize_planner_mode(body)
     ctx = _build_context(body)
-    plan = build_plan(ctx)
+    try:
+        result = await build_plan_with_mode(ctx, planner_mode)
+    except PlannerFailure as f:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "planner 失败", "failure": f.to_dict()},
+        )
+
+    plan = result.plan
     plan.definitionStatus = PlanDefinitionStatus.VALIDATED
+    # sanitized planner metadata（不存 raw prompt / raw response / CoT）
+    plan.plannerAudit = result.planner_audit.to_dict()
 
     issues = validate_plan(plan)
     if has_errors(issues):
@@ -122,6 +181,7 @@ async def create_plan(body: PlanPreviewRequest):
         "version": plan.version,
         "fingerprint": plan.planFingerprint,
         "definitionStatus": plan.definitionStatus.value,
+        "plannerAudit": result.planner_audit.to_dict(),
     }
 
 

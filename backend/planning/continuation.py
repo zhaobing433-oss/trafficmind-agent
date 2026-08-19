@@ -29,12 +29,19 @@ from backend.planning.observation import (
     ObservationType,
     generate_observation_id,
 )
+from backend.planning.critic import (
+    CriticContext,
+    CriticRecommendation,
+    build_critic_invocation_key,
+    invoke_critic_sync,
+)
 from backend.planning.replan_decision import (
     DecisionResult,
     ReplanDecision,
     ReplanDecisionEngine,
+    classify_observation,
 )
-from backend.planning.replanner import build_revision
+from backend.planning.replanner import build_revision, build_semantic_revision
 from backend.planning.revision import (
     build_child_state,
     compute_continuation_key,
@@ -50,9 +57,13 @@ from backend.workflow.repository import SQLiteWorkflowRepository
 class PlanningContinuationCoordinator:
     """control plane：串 Observation → Decision → Replanner → child。"""
 
-    def __init__(self, repository: Optional[SQLiteWorkflowRepository] = None):
+    def __init__(self, repository: Optional[SQLiteWorkflowRepository] = None, critic_client: Any = None,
+                 semantic_replan_enabled: Optional[bool] = None):
         self._repo = repository or SQLiteWorkflowRepository()
         self._engine = ReplanDecisionEngine()
+        self._critic_client = critic_client  # None → critic disabled（Phase17 语义）
+        # None → follow durable Plan.semanticReplanEnabled；False → explicit kill-switch（测试）
+        self._semantic_replan_enabled = semantic_replan_enabled
 
     @property
     def repo(self) -> SQLiteWorkflowRepository:
@@ -76,10 +87,34 @@ class PlanningContinuationCoordinator:
     # ── 幂等 / lineage 辅助 ─────────────────────────────────────────
 
     def _load_plan_from_run(self, run: WorkflowRun) -> Optional[Plan]:
+        """加载 run 绑定的 plan。
+
+        - 优先 exact version snapshot（child run 绑定到版本化 plan）。
+        - versioned child（version>1）snapshot 缺失/malformed → fail-closed（禁止 fallback v1）。
+        - legacy base v1 run（无 snapshot）→ fallback base definition metadata.plan。
+        """
+        ver = self._repo.get_definition_version(run.definition_id, run.version)
+        if ver is not None:
+            dj = ver.definition_json if isinstance(ver.definition_json, dict) else {}
+            metadata = dj.get("metadata", {})
+            if not metadata:
+                metadata = dj
+            plan_raw = metadata.get("plan")
+            if not plan_raw:
+                # versioned snapshot 存在但 plan 缺失 → fail-closed
+                return None
+            return self._parse_plan_raw(plan_raw)
+
+        # 无 version snapshot：仅 legacy base v1 允许 fallback
+        if run.version > 1:
+            # versioned child 但 snapshot 缺失 → fail-closed，禁止用旧 v1 plan 重规划
+            return None
         definition = self._repo.get_definition(run.definition_id)
         if definition is None:
             return None
-        plan_raw = definition.metadata.get("plan")
+        return self._parse_plan_raw(definition.metadata.get("plan"))
+
+    def _parse_plan_raw(self, plan_raw: Any) -> Optional[Plan]:
         if not plan_raw:
             return None
         if isinstance(plan_raw, str):
@@ -111,6 +146,86 @@ class PlanningContinuationCoordinator:
             self._repo.save_run(run)
         return lineage
 
+    # ── Phase18 Round2: Critic（bounded semantic review）────────────────
+
+    def _critic_for(self, observation: Observation, lineage: ExecutionLineage,
+                    plan: Plan, run: WorkflowRun) -> tuple:
+        """若 semantic_review 且 critic_client/budget 可用，调用 critic。
+
+        Returns: (CriticRecommendation | None, fallback_reason | None)。
+        - critic disabled / ineligible / unavailable / timeout / invalid / interrupted /
+          budget 不可用 → (None, reason)，最终 decision 用 Phase17 deterministic（I2）。
+        - Critic 只返回 recommendation，绝不 build revision / child / execute tool。
+        """
+        client = self._critic_client
+        if client is None:
+            # production wiring：从现有 config 解析 planning LLM client（无 key → None）
+            from backend.planning.llm_client import get_planning_llm_client_optional
+            client = get_planning_llm_client_optional()
+        if client is None:
+            return None, None
+        if classify_observation(observation, lineage) != "semantic_review":
+            return None, None
+
+        state = run.state if isinstance(run.state, dict) else {}
+        root_run_id = lineage.rootRunId or run.run_id
+        failed_step_id = observation.stepId or ""
+        key = build_critic_invocation_key(
+            root_run_id, run.run_id, plan.version, observation.type.value, failed_step_id
+        )
+
+        claim = self._repo.claim_critic_invocation_tx(run.run_id, key)
+        result = claim.get("result")
+        if result == "already_completed":
+            rec = claim.get("recommendation", {}) or {}
+            return CriticRecommendation(
+                recommendation=rec.get("recommendation", "replan"),
+                confidence=float(rec.get("confidence", 0.0) or 0.0),
+                reasonSummary=rec.get("reasonSummary", ""),
+                semanticFailureType=rec.get("semanticFailureType", ""),
+                evidenceGaps=list(rec.get("evidenceGaps", [])),
+                unresolvedRisks=list(rec.get("unresolvedRisks", [])),
+            ), None
+        if result == "already_started":
+            return None, "interrupted"
+        if result == "budget_exhausted":
+            return None, "budget_exhausted"
+        if result != "claimed":
+            return None, None
+
+        # claimed → invoke provider（sync），失败 → deterministic fallback
+        try:
+            ctx = self._build_critic_context(observation, plan, run, lineage)
+            rec = invoke_critic_sync(client, ctx)
+            self._repo.complete_critic_invocation_tx(run.run_id, key, rec.to_dict())
+            return rec, None
+        except Exception as e:
+            return None, str(e)[:200]
+
+    def _build_critic_context(self, observation: Observation, plan: Plan,
+                              run: WorkflowRun, lineage: ExecutionLineage) -> CriticContext:
+        state = run.state if isinstance(run.state, dict) else {}
+        return CriticContext(
+            goal=plan.goal,
+            goalType=plan.goalType.value,
+            planSummary=[
+                {"stepId": s.stepId, "stepType": s.stepType.value, "objective": s.objective}
+                for s in plan.steps
+            ],
+            planVersion=plan.version,
+            completedStepIds=[nr.node_id for nr in self._repo.get_node_runs(run.run_id)
+                               if nr.status.value == "succeeded"],
+            currentStep={"stepId": observation.stepId or ""},
+            observation={"type": observation.type.value, "status": observation.status.value,
+                         "failureReason": observation.failureReason, "failureCode": observation.failureCode},
+            budgetSummary={"usage": lineage.budgetUsage.to_dict(), "limits": lineage.budgetLimits.to_dict()},
+            loopGuardSummary=dict(lineage.loopGuard),
+            rejectionConstraints=list(lineage.rejectionConstraints),
+            policyDenyConstraints=list(lineage.policyDenyConstraints),
+            evidenceRefs=list(observation.evidenceRefs),
+            trajectorySummary={},
+        )
+
     # ── explicit replan ─────────────────────────────────────────────
 
     def explicit_replan(self, run_id: str, user_goal: str = "") -> Dict[str, Any]:
@@ -133,13 +248,18 @@ class PlanningContinuationCoordinator:
         # 构建 observation（从 parent 状态）
         observation = self._build_observation(parent, plan, lineage)
 
+        # Phase18 Round2：critic（semantic_review 且 critic_client/budget 可用时）
+        critic, _critic_fallback = self._critic_for(observation, lineage, plan, parent)
+
         # decision
-        decision = self._engine.decide(observation, lineage)
+        decision = self._engine.decide(observation, lineage, critic)
         if decision.decision != ReplanDecision.REPLAN:
             self.persist_observation(observation)
             return {"error": f"decision={decision.decision.value}, 不 replan"}
 
-        return self._perform_replan(parent, plan, lineage, observation)
+        # Phase18 Extension：semantic replan（失败 fallback deterministic）
+        suffix = self._try_semantic_replan(parent, plan, lineage, observation)
+        return self._perform_replan(parent, plan, lineage, observation, suffix_steps=suffix)
 
     def auto_continue(self, run_id: str) -> Dict[str, Any]:
         """自动 continuation（machine failure 在 safe terminal boundary）。"""
@@ -159,10 +279,12 @@ class PlanningContinuationCoordinator:
 
         lineage = self._get_or_init_lineage(run)
         observation = self._build_observation(run, plan, lineage)
-        decision = self._engine.decide(observation, lineage)
+        critic, _critic_fallback = self._critic_for(observation, lineage, plan, run)
+        decision = self._engine.decide(observation, lineage, critic)
 
         if decision.decision == ReplanDecision.REPLAN:
-            return self._perform_replan(run, plan, lineage, observation)
+            suffix = self._try_semantic_replan(run, plan, lineage, observation)
+            return self._perform_replan(run, plan, lineage, observation, suffix_steps=suffix)
 
         # 非 REPLAN 决策（DENY/ABORT/ESCALATE/NO_REPLAN）→ 只记录，不自动 replan
         self.persist_observation(observation)
@@ -193,18 +315,128 @@ class PlanningContinuationCoordinator:
             source=ObservationSource.SYSTEM,
         )
 
+    # ── Phase18 Extension: semantic replan（LLM 重新设计 unresolved suffix）──
+
+    def _requires_approval(self, run: WorkflowRun) -> bool:
+        state = run.state if isinstance(run.state, dict) else {}
+        risk = state.get("riskAssessment", {}) or {}
+        return risk.get("riskLevel", "") in ("高风险", "重大风险")
+
+    def _build_replan_context(self, plan: Plan, parent: WorkflowRun,
+                              lineage: ExecutionLineage, observation: Observation) -> Any:
+        from backend.planning.capability_snapshot import build_planner_capability_snapshot
+        from backend.planning.replan_context import SemanticReplanContext
+        snapshot = build_planner_capability_snapshot()
+        completed_refs = self._completed_result_refs(parent.run_id)
+        return SemanticReplanContext(
+            goal=plan.goal,
+            goalType=plan.goalType.value,
+            parentPlanVersion=plan.version,
+            originalPlanSummary=[
+                {"stepId": s.stepId, "stepType": s.stepType.value, "objective": s.objective}
+                for s in plan.steps
+            ],
+            completedPrefixSummary=list(completed_refs.keys()),
+            failedStep={"stepId": observation.stepId or ""},
+            observation={"type": observation.type.value, "status": observation.status.value,
+                         "failureReason": observation.failureReason, "failureCode": observation.failureCode},
+            criticRecommendation={},
+            capabilitySnapshot=snapshot.to_prompt_dict(),
+            rejectionConstraints=list(lineage.rejectionConstraints),
+            policyDenyConstraints=list(lineage.policyDenyConstraints),
+            remainingBudget={"usage": lineage.budgetUsage.to_dict(), "limits": lineage.budgetLimits.to_dict()},
+            evidenceRefs=list(observation.evidenceRefs),
+        )
+
+    def _compile_suffix_from_raw(self, raw: Dict[str, Any], plan: Plan, parent: WorkflowRun) -> Any:
+        """从持久化 raw proposal 重建 semantic suffix（already_completed 复用）。失败 → None。"""
+        try:
+            from backend.planning.capability_snapshot import build_planner_capability_snapshot
+            from backend.planning.proposal_compiler import compile_replan_suffix
+            from backend.planning.replan_context import SemanticReplanProposal
+            proposal = SemanticReplanProposal.from_dict_strict(raw)
+            snapshot = build_planner_capability_snapshot()
+            carried_ids = set(self._completed_result_refs(parent.run_id).keys())
+            return compile_replan_suffix(
+                proposal.suffixSteps, snapshot, self._requires_approval(parent), carried_ids
+            )
+        except Exception:
+            return None
+
+    def _try_semantic_replan(self, parent: WorkflowRun, plan: Plan,
+                             lineage: ExecutionLineage, observation: Observation) -> Any:
+        """LLM 重新设计 unresolved suffix。失败/不可用 → None（fallback deterministic）。"""
+        # kill-switch：False 显式禁用（测试隔离）；None/True 跟随 durable plan flag
+        if self._semantic_replan_enabled is False:
+            return None
+        # EA01：durable enablement gate（absent=False，仅 LLM 计划 True）
+        if not getattr(plan, "semanticReplanEnabled", False):
+            return None
+        # EA04：maxReplans 必须在 semantic LLM spend 之前检查
+        if lineage.budgetUsage.replansUsed >= lineage.budgetLimits.maxReplans:
+            return None
+        client = self._critic_client
+        if client is None:
+            from backend.planning.llm_client import get_planning_llm_client_optional
+            client = get_planning_llm_client_optional()
+        if client is None:
+            return None
+        # 只有 semantic_review 分类才允许 semantic replan（hard safety 永不触发）
+        if classify_observation(observation, lineage) != "semantic_review":
+            return None
+
+        root_run_id = lineage.rootRunId or parent.run_id
+        failed_step_id = observation.stepId or ""
+        key = f"{root_run_id}:{parent.run_id}:{plan.version}:{failed_step_id or 'unknown'}:{observation.type.value}"
+
+        claim = self._repo.claim_semantic_replan_tx(parent.run_id, key)
+        result = claim.get("result")
+        if result == "already_completed":
+            return self._compile_suffix_from_raw(claim.get("proposal", {}).get("raw", {}), plan, parent)
+        if result != "claimed":
+            return None  # already_started / budget_exhausted / not_eligible → fallback
+
+        try:
+            from backend.planning.capability_snapshot import build_planner_capability_snapshot
+            from backend.planning.proposal_compiler import compile_replan_suffix
+            from backend.planning.replan_context import (
+                SemanticReplanProposal,
+                build_semantic_replan_messages,
+            )
+            ctx = self._build_replan_context(plan, parent, lineage, observation)
+            system, user = build_semantic_replan_messages(ctx)
+            data, _usage, _attempts = client.call_structured_json_sync(system, user)
+            proposal = SemanticReplanProposal.from_dict_strict(data)
+            snapshot = build_planner_capability_snapshot()
+            carried_ids = set(self._completed_result_refs(parent.run_id).keys())
+            suffix = compile_replan_suffix(
+                proposal.suffixSteps, snapshot, self._requires_approval(parent), carried_ids
+            )
+            self._repo.complete_semantic_replan_tx(parent.run_id, key, {"raw": data})
+            return suffix
+        except Exception:
+            return None
+
     def _perform_replan(
         self,
         parent: WorkflowRun,
         plan: Plan,
         lineage: ExecutionLineage,
         observation: Observation,
+        suffix_steps: Any = None,
     ) -> Dict[str, Any]:
-        """执行 revision transaction（build → validate → child cutover → execute）。"""
+        """执行 revision transaction（build → validate → child cutover → execute）。
+
+        suffix_steps 提供时走 semantic revision（carried prefix + LLM suffix），
+        否则走 deterministic build_revision（carried prefix + 原 suffix re-attempt）。
+        """
         completed_refs = self._completed_result_refs(parent.run_id)
 
         # 构建 v2（carried prefix + suffix）
-        v2 = build_revision(plan, completed_refs, parent.run_id)
+        if suffix_steps is not None:
+            v2 = build_semantic_revision(plan, completed_refs, parent.run_id, suffix_steps)
+        else:
+            v2 = build_revision(plan, completed_refs, parent.run_id)
 
         # validate
         issues = validate_plan(v2)
@@ -246,7 +478,11 @@ class PlanningContinuationCoordinator:
         child_run_id = deterministic_child_run_id(child_lineage.rootRunId, observation.observationId)
         child_definition = plan_to_child_definition(v2)
 
-        parent_state = parent.state if isinstance(parent.state, dict) else {}
+        # reload latest parent state：claim 写入的 registry（semanticReplanInvocations / budget）
+        # 必须保留，禁止用 stale parent.state 整块覆盖（EA12 / Design Lock V2.1 §17）。
+        fresh_parent = self._repo.get_run(parent.run_id)
+        parent_state = fresh_parent.state if fresh_parent is not None and isinstance(fresh_parent.state, dict) \
+            else (parent.state if isinstance(parent.state, dict) else {})
         carried_refs = {s.stepId: s.resultRef for s in v2.steps if s.metadata.get("carriedForward")}
         child_state = build_child_state(
             parent_state, child_lineage, parent.run_id, parent.version, carried_refs,

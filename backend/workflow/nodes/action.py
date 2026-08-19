@@ -46,24 +46,43 @@ def _canonical_action_type(action_type: str) -> str:
     return _ACTION_TYPE_ALIASES.get(action_type, action_type)
 
 
-def is_current_action_approved(state: TrafficWorkflowState, action_type: str) -> bool:
+def is_current_action_approved(
+    state: TrafficWorkflowState,
+    action_type: str,
+    config: NodeConfig = None,
+) -> bool:
     """审批是否绑定到当前具体 action（而非 run 级 bool）。
 
     语义（fail-closed）：
-      - 结构化审批：approved_actions 中存在 actionType 与当前 action_type
-        （归一化后）一致 → 仅该 action 被授权。
+      - V2（approvalIdentityVersion=2）：exact actionStepId == config.node_id 匹配。
+        缺 actionStepId 的条目永不匹配 —— 绝不 fallback actionType。
+      - legacy V1：approved_actions 中存在 actionType（归一化后）与当前 action_type
+        一致 → 仅该 action 被授权。
       - 文本摘要（无 actionType）不授权任何未声明的 high-risk tool。
-        模板必须通过 human_approval 节点的 action_types 声明其预期动作，
-        才能让该动作在文本摘要审批下通过。
       - 空 approved_actions → 未批准。
 
-    这避免「批准 A 后，B 也被视为已批准」以及「run 有审批 → 任意 high-risk 放行」
+    避免「批准 A 后，B 也被视为已批准」以及「run 有审批 → 任意 high-risk 放行」
     两类 scope escalation。
     """
     approved = state.approved_actions or []
     if not approved:
         return False
 
+    identity_version = 1
+    if config is not None:
+        identity_version = config.config.get("approval_identity_version", 1)
+
+    if identity_version >= 2:
+        # V2：exact actionStepId == config.node_id（node_id 即 canonical stepId）
+        target_step_id = config.node_id if config is not None else ""
+        for item in approved:
+            if not isinstance(item, dict):
+                continue
+            if item.get("actionStepId") == target_step_id:
+                return True
+        return False
+
+    # legacy V1：actionType 匹配
     target = _canonical_action_type(action_type)
     for item in approved:
         if not isinstance(item, dict):
@@ -156,7 +175,7 @@ async def execute_action(
         action_type,
         caller=f"workflow:{state.workflow_run_id}:{config.node_id}",
         context={"riskLevel": risk.get("riskLevel", "")},
-        is_approved=is_current_action_approved(state, action_type),
+        is_approved=is_current_action_approved(state, action_type, config),
     )
     if not _policy["allowed"]:
         audit_payload = {
@@ -189,8 +208,11 @@ async def execute_action(
         }
 
     # ── 优先使用审批后的 edited_actions，否则用节点配置 ──────────
+    # Phase18 V2：business params 来自 compiler 归一化的 config.action_params，
+    # 不由 approved_actions 覆盖（approved_actions 仅作审批绑定，不含 params）。
     action_params = config.config.get("action_params", {})
-    if state.approved_actions:
+    identity_version = config.config.get("approval_identity_version", 1)
+    if identity_version < 2 and state.approved_actions:
         # 查找匹配当前 action_type 的已批准动作
         for approved in state.approved_actions:
             if isinstance(approved, dict) and approved.get("actionType") == action_type:

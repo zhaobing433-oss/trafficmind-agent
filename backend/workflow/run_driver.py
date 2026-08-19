@@ -108,6 +108,8 @@ class RunDriver:
                 await self._drive_pending(executor, fresh, generation)
             elif fresh.status.value == "running":
                 await self._recover_running(executor, fresh, generation)
+            # Phase18 Round2：terminal 后 assessment（非致命，不改变 terminal truth）
+            await self._assess_if_terminal(run_id)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -119,6 +121,17 @@ class RunDriver:
             except asyncio.CancelledError:
                 pass
             self._repo.release_driver_lease(run_id, self._owner, generation)
+
+    async def _assess_if_terminal(self, run_id: str) -> None:
+        """terminal 后薄 assessment hook（非致命，绝不改变 terminal truth）。"""
+        try:
+            from backend.planning.assessment import assess_terminal_run, assessment_eligible
+            run = self._repo.get_run(run_id)
+            if run is None or not assessment_eligible(run):
+                return
+            await assess_terminal_run(self._repo, run_id)
+        except Exception:
+            pass  # assessment 异常不改变 runtime terminal truth
 
     async def _drive_pending(self, executor, run, generation: int) -> None:
         """执行 PENDING planning run。区分 normal continuation vs leftover recovery。"""

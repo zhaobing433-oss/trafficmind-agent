@@ -16,6 +16,7 @@ from backend.planning.models import (
     PlanStep,
     compute_fingerprint,
 )
+from backend.workflow.models import NodeType
 
 
 def _carried_step(step: PlanStep, from_version: int, from_run_id: str, result_ref: str) -> PlanStep:
@@ -92,6 +93,65 @@ def build_revision(
         evidenceRefs=list(plan.evidenceRefs),
         memoryRefs=list(plan.memoryRefs),
         metadata=dict(plan.metadata),
+        approvalIdentityVersion=plan.approvalIdentityVersion,
+        semanticReplanEnabled=plan.semanticReplanEnabled,
+    )
+
+
+def build_semantic_revision(
+    plan: Plan,
+    completed_result_refs: Dict[str, str],
+    from_run_id: str,
+    suffix_steps: List[PlanStep],
+    constraints: Dict[str, Any] = None,
+) -> Plan:
+    """merge frozen carried prefix + LLM-designed suffix → new revision（semantic replan）。
+
+    - carried prefix（completed）原样保留（objective/stepId/result/approval identity 不变）。
+    - unresolved original suffix 被丢弃，替换为 LLM 设计的 suffix_steps。
+    - boundary wiring：suffix[0] 依赖最后 carried；suffix 内部线性。
+    """
+    carried_ids = set(completed_result_refs.keys())
+    # terminal 控制步骤由新 suffix 重新生成（evidence_evaluate/risk_gate/close），不 carried，
+    # 避免与新 suffix 的固定名 structural step 冲突（SR23）。
+    _terminal_control = {NodeType.EVIDENCE_EVALUATE, NodeType.RISK_GATE, NodeType.CLOSE}
+    new_steps: List[PlanStep] = []
+    for s in plan.steps:
+        if s.stepId in carried_ids and s.stepType not in _terminal_control:
+            new_steps.append(_carried_step(s, plan.version, from_run_id, completed_result_refs[s.stepId]))
+        # else: unresolved original suffix（含 terminal control）被新 suffix 替换
+
+    if new_steps and suffix_steps:
+        suffix_steps[0].dependsOn = [new_steps[-1].stepId]
+    for i in range(1, len(suffix_steps)):
+        suffix_steps[i].dependsOn = [suffix_steps[i - 1].stepId]
+    new_steps.extend(suffix_steps)
+
+    merged_constraints = dict(plan.constraints)
+    if constraints:
+        merged_constraints.update(constraints)
+
+    return Plan(
+        planId=plan.planId,
+        planFingerprint=compute_fingerprint(new_steps),
+        goal=plan.goal,
+        goalType=plan.goalType,
+        definitionStatus=PlanDefinitionStatus.DRAFT,
+        version=plan.version + 1,
+        steps=new_steps,
+        planningMode=plan.planningMode,
+        createdBy=plan.createdBy,
+        createdAt=plan.createdAt,
+        updatedAt="",
+        eventId=plan.eventId,
+        confidence=plan.confidence,
+        assumptions=list(plan.assumptions),
+        constraints=merged_constraints,
+        evidenceRefs=list(plan.evidenceRefs),
+        memoryRefs=list(plan.memoryRefs),
+        metadata=dict(plan.metadata),
+        approvalIdentityVersion=plan.approvalIdentityVersion,
+        semanticReplanEnabled=plan.semanticReplanEnabled,
     )
 
 
