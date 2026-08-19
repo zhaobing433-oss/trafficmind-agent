@@ -29,10 +29,17 @@ from backend.planning.observation import (
     ObservationType,
     generate_observation_id,
 )
+from backend.planning.critic import (
+    CriticContext,
+    CriticRecommendation,
+    build_critic_invocation_key,
+    invoke_critic_sync,
+)
 from backend.planning.replan_decision import (
     DecisionResult,
     ReplanDecision,
     ReplanDecisionEngine,
+    classify_observation,
 )
 from backend.planning.replanner import build_revision
 from backend.planning.revision import (
@@ -50,9 +57,10 @@ from backend.workflow.repository import SQLiteWorkflowRepository
 class PlanningContinuationCoordinator:
     """control plane：串 Observation → Decision → Replanner → child。"""
 
-    def __init__(self, repository: Optional[SQLiteWorkflowRepository] = None):
+    def __init__(self, repository: Optional[SQLiteWorkflowRepository] = None, critic_client: Any = None):
         self._repo = repository or SQLiteWorkflowRepository()
         self._engine = ReplanDecisionEngine()
+        self._critic_client = critic_client  # None → critic disabled（Phase17 语义）
 
     @property
     def repo(self) -> SQLiteWorkflowRepository:
@@ -111,6 +119,86 @@ class PlanningContinuationCoordinator:
             self._repo.save_run(run)
         return lineage
 
+    # ── Phase18 Round2: Critic（bounded semantic review）────────────────
+
+    def _critic_for(self, observation: Observation, lineage: ExecutionLineage,
+                    plan: Plan, run: WorkflowRun) -> tuple:
+        """若 semantic_review 且 critic_client/budget 可用，调用 critic。
+
+        Returns: (CriticRecommendation | None, fallback_reason | None)。
+        - critic disabled / ineligible / unavailable / timeout / invalid / interrupted /
+          budget 不可用 → (None, reason)，最终 decision 用 Phase17 deterministic（I2）。
+        - Critic 只返回 recommendation，绝不 build revision / child / execute tool。
+        """
+        client = self._critic_client
+        if client is None:
+            # production wiring：从现有 config 解析 planning LLM client（无 key → None）
+            from backend.planning.llm_client import get_planning_llm_client_optional
+            client = get_planning_llm_client_optional()
+        if client is None:
+            return None, None
+        if classify_observation(observation, lineage) != "semantic_review":
+            return None, None
+
+        state = run.state if isinstance(run.state, dict) else {}
+        root_run_id = lineage.rootRunId or run.run_id
+        failed_step_id = observation.stepId or ""
+        key = build_critic_invocation_key(
+            root_run_id, run.run_id, plan.version, observation.type.value, failed_step_id
+        )
+
+        claim = self._repo.claim_critic_invocation_tx(run.run_id, key)
+        result = claim.get("result")
+        if result == "already_completed":
+            rec = claim.get("recommendation", {}) or {}
+            return CriticRecommendation(
+                recommendation=rec.get("recommendation", "replan"),
+                confidence=float(rec.get("confidence", 0.0) or 0.0),
+                reasonSummary=rec.get("reasonSummary", ""),
+                semanticFailureType=rec.get("semanticFailureType", ""),
+                evidenceGaps=list(rec.get("evidenceGaps", [])),
+                unresolvedRisks=list(rec.get("unresolvedRisks", [])),
+            ), None
+        if result == "already_started":
+            return None, "interrupted"
+        if result == "budget_exhausted":
+            return None, "budget_exhausted"
+        if result != "claimed":
+            return None, None
+
+        # claimed → invoke provider（sync），失败 → deterministic fallback
+        try:
+            ctx = self._build_critic_context(observation, plan, run, lineage)
+            rec = invoke_critic_sync(client, ctx)
+            self._repo.complete_critic_invocation_tx(run.run_id, key, rec.to_dict())
+            return rec, None
+        except Exception as e:
+            return None, str(e)[:200]
+
+    def _build_critic_context(self, observation: Observation, plan: Plan,
+                              run: WorkflowRun, lineage: ExecutionLineage) -> CriticContext:
+        state = run.state if isinstance(run.state, dict) else {}
+        return CriticContext(
+            goal=plan.goal,
+            goalType=plan.goalType.value,
+            planSummary=[
+                {"stepId": s.stepId, "stepType": s.stepType.value, "objective": s.objective}
+                for s in plan.steps
+            ],
+            planVersion=plan.version,
+            completedStepIds=[nr.node_id for nr in self._repo.get_node_runs(run.run_id)
+                               if nr.status.value == "succeeded"],
+            currentStep={"stepId": observation.stepId or ""},
+            observation={"type": observation.type.value, "status": observation.status.value,
+                         "failureReason": observation.failureReason, "failureCode": observation.failureCode},
+            budgetSummary={"usage": lineage.budgetUsage.to_dict(), "limits": lineage.budgetLimits.to_dict()},
+            loopGuardSummary=dict(lineage.loopGuard),
+            rejectionConstraints=list(lineage.rejectionConstraints),
+            policyDenyConstraints=list(lineage.policyDenyConstraints),
+            evidenceRefs=list(observation.evidenceRefs),
+            trajectorySummary={},
+        )
+
     # ── explicit replan ─────────────────────────────────────────────
 
     def explicit_replan(self, run_id: str, user_goal: str = "") -> Dict[str, Any]:
@@ -133,8 +221,11 @@ class PlanningContinuationCoordinator:
         # 构建 observation（从 parent 状态）
         observation = self._build_observation(parent, plan, lineage)
 
+        # Phase18 Round2：critic（semantic_review 且 critic_client/budget 可用时）
+        critic, _critic_fallback = self._critic_for(observation, lineage, plan, parent)
+
         # decision
-        decision = self._engine.decide(observation, lineage)
+        decision = self._engine.decide(observation, lineage, critic)
         if decision.decision != ReplanDecision.REPLAN:
             self.persist_observation(observation)
             return {"error": f"decision={decision.decision.value}, 不 replan"}
@@ -159,7 +250,8 @@ class PlanningContinuationCoordinator:
 
         lineage = self._get_or_init_lineage(run)
         observation = self._build_observation(run, plan, lineage)
-        decision = self._engine.decide(observation, lineage)
+        critic, _critic_fallback = self._critic_for(observation, lineage, plan, run)
+        decision = self._engine.decide(observation, lineage, critic)
 
         if decision.decision == ReplanDecision.REPLAN:
             return self._perform_replan(run, plan, lineage, observation)

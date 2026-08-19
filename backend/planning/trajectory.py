@@ -185,6 +185,8 @@ def compute_trajectory(repo, run_id: str) -> Dict[str, Any]:
             if nr.node_type.value not in _STRUCTURAL_NODE_TYPES:
                 trajectory_length += 1
 
+    critic_assessment = _collect_critic_assessment(repo, run_ids)
+
     return {
         "canonicalRootRunId": root_run_id,
         "planId": plan_id,
@@ -204,11 +206,50 @@ def compute_trajectory(repo, run_id: str) -> Dict[str, Any]:
             "carriedForwardCount": carried_forward_count,
             "duplicateSideEffectCount": duplicate_side_effect,
             "trajectoryLength": trajectory_length,
+            "criticCalls": critic_assessment["criticCalls"],
+            "criticDecisionChanges": critic_assessment["criticDecisionChanges"],
+            "assessmentStatus": critic_assessment["assessmentStatus"],
+            "goalAchievement": critic_assessment["goalAchievement"],
+            "assessmentConfidence": critic_assessment["assessmentConfidence"],
         },
         "observationSummary": {
             "total": len(observations),
             "byType": _count_by(observations, "type"),
         },
+    }
+
+
+def _collect_critic_assessment(repo, run_ids: List[str]) -> Dict[str, Any]:
+    """从 lineage runs 的 state_json 投影 critic/assessment 只读指标（不造第二状态机）。"""
+    critic_calls = 0
+    critic_decision_changes = 0
+    assessment_status = None
+    goal_achievement = None
+    assessment_confidence = None
+    for rid in run_ids:
+        run = repo.get_run(rid)
+        if run is None:
+            continue
+        state = run.state if isinstance(run.state, dict) else {}
+        for inv in (state.get("criticInvocations") or {}).values():
+            if isinstance(inv, dict) and inv.get("status") == "COMPLETED":
+                critic_calls += 1
+                rec = inv.get("recommendation", {}) or {}
+                if rec.get("recommendation") in ("abort", "escalate_human"):
+                    critic_decision_changes += 1
+        assessment = state.get("assessment") or {}
+        for a in assessment.values():
+            if isinstance(a, dict) and a.get("status") == "COMPLETED":
+                result = a.get("result", {}) or {}
+                assessment_status = result.get("assessmentStatus")
+                goal_achievement = result.get("goalAchievement")
+                assessment_confidence = result.get("confidence")
+    return {
+        "criticCalls": critic_calls,
+        "criticDecisionChanges": critic_decision_changes,
+        "assessmentStatus": assessment_status,
+        "goalAchievement": goal_achievement,
+        "assessmentConfidence": assessment_confidence,
     }
 
 

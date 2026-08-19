@@ -32,6 +32,18 @@ def _system_proposal_id() -> str:
     return f"proposal_{uuid.uuid4().hex[:8]}"
 
 
+def get_planning_llm_client_optional(timeout: float = 30.0, max_attempts: int = 2) -> Optional["PlannerLLMClient"]:
+    """从现有 config 创建 planning LLM client（无 key → None）。
+
+    None 表示环境不可用（不表示 production assessment/critic 被硬编码禁用）。
+    复用 Round1 已验证的 PlannerLLMClient（max_retries=0 + timeout + bounded retry）。
+    每次创建新实例（无 global mutable singleton，简单、线程安全）。
+    """
+    if not (DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "your_api_key"):
+        return None
+    return PlannerLLMClient(timeout=timeout, max_attempts=max_attempts)
+
+
 def _extract_json(text: str) -> Dict[str, Any]:
     """从 LLM 输出提取 JSON 对象（严格，不做松散正则拼字段）。"""
     text = (text or "").strip()
@@ -110,9 +122,7 @@ class PlannerLLMClient:
 
         system, user = build_planner_messages(ctx, snapshot, user_goal)
 
-        data, usage, attempts = await asyncio.to_thread(self._call_attempts, system, user)
-        self.last_usage = usage
-        self.last_attempt_count = attempts
+        data, usage, attempts = await self.call_structured_json(system, user)
 
         try:
             proposal = PlanProposal.from_dict_strict(data)
@@ -127,6 +137,36 @@ class PlannerLLMClient:
         proposal.fallbackReason = None
         proposal.proposalId = _system_proposal_id()
         return proposal
+
+    async def call_structured_json(self, system: str, user: str):
+        """公开结构化 JSON 原语（async，Phase18 Round2）。
+
+        职责仅：OpenAI-compatible transport + max_retries=0 + timeout + bounded retry +
+        JSON 提取 + usage。不做任何 schema validation（PlanProposal / Critic /
+        Assessment 各自 strict parse）。sync provider 经 asyncio.to_thread offload。
+        """
+        if not self._enabled:
+            raise PlannerFailure(
+                PlannerFailureCode.LLM_UNAVAILABLE, "LLM 未配置（无 API key）", retryable=False
+            )
+        data, usage, attempts = await asyncio.to_thread(self._call_attempts, system, user)
+        self.last_usage = usage
+        self.last_attempt_count = attempts
+        return data, usage, attempts
+
+    def call_structured_json_sync(self, system: str, user: str):
+        """公开结构化 JSON 原语（sync，供 sync continuation 路径使用）。
+
+        与 call_structured_json 同职责，但直接调用 sync provider（不 offload）。
+        """
+        if not self._enabled:
+            raise PlannerFailure(
+                PlannerFailureCode.LLM_UNAVAILABLE, "LLM 未配置（无 API key）", retryable=False
+            )
+        data, usage, attempts = self._call_attempts(system, user)
+        self.last_usage = usage
+        self.last_attempt_count = attempts
+        return data, usage, attempts
 
     def _call_attempts(self, system: str, user: str):
         """sync 调用 + 有限 retry（transport / malformed JSON）。
