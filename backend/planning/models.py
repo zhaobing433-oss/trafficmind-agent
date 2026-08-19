@@ -47,9 +47,10 @@ class GoalType(str, Enum):
 
 
 class PlanningMode(str, Enum):
-    """规划模式。Round1 仅确定性规则规划。"""
+    """规划模式。"""
     DETERMINISTIC = "deterministic"
-    # 预留（Round2+）：LLM_ASSISTED, REPLAN
+    LLM_ASSISTED = "llm_assisted"
+    # 预留（Round2+）：REPLAN
 
 
 class PlanDefinitionStatus(str, Enum):
@@ -279,6 +280,8 @@ class Plan:
     evidenceRefs: List[Dict[str, Any]] = field(default_factory=list)
     memoryRefs: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    approvalIdentityVersion: int = 1
+    plannerAudit: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.createdAt:
@@ -306,6 +309,8 @@ class Plan:
             "evidenceRefs": list(self.evidenceRefs),
             "memoryRefs": list(self.memoryRefs),
             "metadata": dict(self.metadata),
+            "approvalIdentityVersion": self.approvalIdentityVersion,
+            "plannerAudit": dict(self.plannerAudit),
         }
 
     @classmethod
@@ -329,6 +334,8 @@ class Plan:
             evidenceRefs=list(d.get("evidenceRefs", [])),
             memoryRefs=list(d.get("memoryRefs", [])),
             metadata=dict(d.get("metadata", {})),
+            approvalIdentityVersion=int(d.get("approvalIdentityVersion", 1)),
+            plannerAudit=dict(d.get("plannerAudit", {})),
         )
 
     def get_step(self, step_id: str) -> Optional[PlanStep]:

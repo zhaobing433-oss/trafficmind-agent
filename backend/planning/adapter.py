@@ -57,9 +57,18 @@ def _node_config_for(step: PlanStep, agent_targets: List[str]) -> Dict[str, Any]
         return {}
     if st == NodeType.HUMAN_APPROVAL:
         # 每个 approval node 只声明其对应的 actionType（不压多个）
-        return {"action_types": [step.actionType] if step.actionType else []}
+        # Phase18 V2：绑定 exact targetActionStepId + approval identity version
+        return {
+            "action_types": [step.actionType] if step.actionType else [],
+            "target_action_step_id": step.metadata.get("targetActionStepId", ""),
+            "approval_identity_version": step.metadata.get("approvalIdentityVersion", 1),
+        }
     if st == NodeType.ACTION:
-        return {"action_type": step.actionType or "", "action_params": {}}
+        return {
+            "action_type": step.actionType or "",
+            "action_params": step.metadata.get("paramsTemplate", {}) or {},
+            "approval_identity_version": step.metadata.get("approvalIdentityVersion", 1),
+        }
     if st == NodeType.CLOSE:
         return {}
     return {}
