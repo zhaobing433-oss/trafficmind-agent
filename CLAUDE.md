@@ -9,9 +9,25 @@
 - **Pydantic 标准协议**：Agent 间通信基于 14 种消息类型的 Pydantic 模型，全局唯一 ID，完整审计追踪。
 - **DAG 编排 + 动态仲裁**：5 层 TaskGraph DAG，检测到冲突时动态插入仲裁层，安全优先原则。
 - **零依赖降级**：不配置任何外部 API Key 也能完整运行所有核心功能。
-- **当前阶段：Phase 10（结构化 Memory V2）已完成**，469 个 pytest 全部通过，TypeScript 0 errors。
-  Memory V2 实现 Event Thread 隔离、确定性意图分类、结构化抽取写入、用户纠正 Supersede 链、
-  可解释过滤排序、按 Agent 最小权限注入、Memory Trace 追踪和前端可观测面板。
+- **LLM 只 PROPOSE，不直接执行**：LLM 产出计划提案，由确定性 Compiler 编译、fail-closed Validator 校验，
+  ToolPolicy 为工具权威，WorkflowExecutor 是唯一 runtime。
+
+**当前基线（Phase 18 已 CLOSED / MERGED_AND_VERIFIED）：**
+
+| 项 | 值 |
+|------|------|
+| 分支 | `master` |
+| Phase 18 | CLOSED / MERGED_AND_VERIFIED（PR #10） |
+| Phase 19 | **NOT_STARTED** |
+| 下一阶段推荐方向 | Grounded Cognitive Loop（Evidence-grounded Reflection / Replanning / Assessment） |
+
+当前 Agent 主链：
+
+```
+Capability-grounded Planning → Deterministic Compiler → Validator
+  → Durable Workflow Runtime → ToolPolicy → Approval V2 → Observation
+  → Critic → Semantic Replanning → ExecutionAssessment → Trajectory
+```
 
 ## 技术栈
 
@@ -25,7 +41,7 @@
 | 规则库 | 本地 Markdown | 无需外部数据库 |
 | 前端 | React 18 + TypeScript + Ant Design 5 + ECharts 5 + Vite | 浅色现代工作台 |
 | 消息推送 | 企业微信/钉钉 Webhook + SMTP 邮件 | 高风险事件自动告警 |
-| 测试 | pytest + FastAPI TestClient | 283 个用例 |
+| 测试 | pytest + FastAPI TestClient | `backend/tests/` 57 个测试文件（见「测试与验收口径」） |
 
 ## 第一阶段目标（MVP）
 
@@ -204,10 +220,16 @@ npm run dev
 ### 测试
 
 ```bash
-cd trafficmind-agent
-backend\.venv\Scripts\python.exe -m pytest backend\tests -q
-# 预期：283 passed
+# 在仓库根目录执行（macOS / Linux）
+backend/.venv/bin/python -m pytest backend/tests -q
+
+# Windows:
+# backend\.venv\Scripts\python.exe -m pytest backend\tests -q
 ```
+
+> 不要在文档中写死"预期 N passed"：`backend/tests/` 同时包含 pytest 用例与若干
+> 需要本地服务或真实模型的 acceptance 脚本，全量数字随环境变化。
+> 可核实的验收口径见下方「测试与验收口径」。
 
 ## API 接口速览
 
@@ -307,7 +329,7 @@ backend\.venv\Scripts\python.exe -m pytest backend\tests -q
 ### Phase 9：多 Agent 协同编排与审计
 详见 [docs/PHASE9_MULTI_AGENT_COLLABORATION.md](docs/PHASE9_MULTI_AGENT_COLLABORATION.md)
 
-### Phase 10：结构化 Memory V2（当前阶段）
+### Phase 10：结构化 Memory V2
 详见 [docs/PHASE10_MEMORY_V2.md](docs/PHASE10_MEMORY_V2.md)
 
 核心能力：
@@ -326,27 +348,42 @@ backend\.venv\Scripts\python.exe -m pytest backend\tests -q
 - **前端 MemoryTracePanel** — 4 Tab（召回/注入/写入/拒绝），旧 Run 兼容
 - **Session 删除级联** — 12 张表同步清理
 
-### 测试覆盖
-- **469 passed** / TypeScript 0 errors
-- 测试文件：`test_sample_request.py` + `test_phase9_multi_run.py` + `test_phase10_memory_store.py` + `test_phase10_memory_write.py` + `test_phase10_memory_recall.py`
+### Phase 11–16：RAG V2、Workflow V1、交通仿真、可观测性、Workflow Center V2、知识 Agent 可靠性
 
-## 后续计划（Phase 10+）
+### Phase 17：Durable Adaptive Planning Runtime
+可持久化规划运行驱动（driver lease / heartbeat / generation fencing / 崩溃恢复）、自适应重规划、有界执行预算。
 
-### 近期
-- **Memory V2**：跨 Session 结构化长期摘要，渐进式知识积累
-- **Evaluation**：路由准确率、冲突召回率、RAG groundedness 评测集
-- **Observability**：OpenTelemetry trace、延迟分位统计、失败率监控
+### Phase 18：Intelligent Planning / Reflection / Semantic Replanning
+能力感知的 LLM 规划（Capability Snapshot + 哈希绑定）、有界反思（Critic）、语义重规划
+（completed prefix frozen，仅重设计 unresolved suffix）、只读 ExecutionAssessment。
 
-### 中期
-- **并行 Agent 执行**：同层 Agent 使用 `asyncio.gather` 并发
-- **Auth/RBAC**：JWT + 用户角色 + 数据隔离
-- **LLM 辅助仲裁**：关键词匹配漏检时调用 LLM
+## 测试与验收口径
 
-### 远期
-- **Production**：PostgreSQL + Redis + Docker Compose + Nginx
-- **Reliability**：取消/恢复/幂等/并发压力测试
-- **SUMO 仿真**：信号配时方案仿真验证
-- **WebSocket 大屏推送**：实时指挥中心态势更新
+> 只记录可核实的验收证据，不等同于 CI 结论 —— 本项目当前**没有 CI**。
+
+| 项 | 结果 | 说明 |
+|------|------|------|
+| Phase 18 total | **232 passed** | Phase18 本地验收（Round1 108 + Round2 79 + 语义重规划 34 + FA 11） |
+| C01–C32 评测集 | **32/32** | `backend/evaluation_data/trafficmind_eval_v1.json`，纯确定性规则管线 |
+| Fresh-PC recovery | **PASS** | 新机恢复 + 真实 DeepSeek planner preview 验收 |
+| 测试规模 | `backend/tests/` 57 个文件 | 文件数量，非某次执行结果 |
+
+## 后续计划
+
+**Phase 19：NOT_STARTED**
+
+推荐方向：**Grounded Cognitive Loop** — Evidence-grounded Reflection / Replanning / Assessment。
+核心问题是决策层与已建成的 Memory V2 / RAG V2 管道断开：`PlanningContext` 带有
+`rag_evidence` / `memory_context` 字段，但没有任何 prompt builder 读取它们。
+
+### 已知技术债（未处理，不在维护范围）
+- UNKNOWN_OUTCOME reconciliation 缺失
+- `/workflow/runs/{id}/retry` 端点为 stub
+- legacy（`driver_managed=0`）RUNNING run 不会被恢复
+- `NodeType.PARALLEL` 为占位实现，未真正并发执行节点
+- 无 authN/authZ（Approval 端点无鉴权）
+- 前端无测试、仓库无 CI
+- npm 依赖 3 项告警（2 high 位于构建链，1 moderate 需 echarts major 升级）
 
 ---
 
