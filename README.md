@@ -4,7 +4,26 @@
 
 TrafficMind Agent 是一个智能交通事件分析系统，支持从事件研判、知识库问答、相似案例检索、日报周报生成到多 Agent 协同编排的全链路智慧交通工作台。后端基于 **FastAPI**，前端使用 **React + TypeScript**，集成 **DeepSeek LLM**、**Chroma 向量检索（RAG）**、**SSE 真流式**、**多 Agent DAG 编排**和 **SQLite 持久化**。LLM 不可用时具备完整的可控降级能力。
 
-**Phase 10 Memory V2** 将多轮交通研判转化为**可追踪、可纠正、可过期、按事件线程隔离并可按 Agent 最小权限注入**的结构化 Session Memory，包含 Event Thread 隔离、确定性意图分类、可解释过滤排序、用户纠正 Supersede 链、Proposal 确认绑定、Memory Trace 完整追踪和前端可观测面板。
+## 当前基线
+
+| 项 | 值 |
+|---|---|
+| 分支 | `master` |
+| Phase 18 | **CLOSED / MERGED_AND_VERIFIED**（PR #10） |
+| Phase 19 | **NOT_STARTED** |
+| 下一阶段推荐方向 | Grounded Cognitive Loop（Evidence-grounded Reflection / Replanning / Assessment） |
+
+**当前 Agent 主链：**
+
+```
+Capability-grounded Planning → Deterministic Compiler → Validator
+  → Durable Workflow Runtime → ToolPolicy → Approval V2 → Observation
+  → Critic → Semantic Replanning → ExecutionAssessment → Trajectory
+```
+
+安全边界：LLM 只 **PROPOSE**；Compiler **确定性**编译；Validator **fail-closed**；
+ToolPolicy **权威**；WorkflowExecutor 是**唯一 runtime**；Approval V2 使用 exact `actionStepId`；
+completed prefix **frozen**；Assessment **只读**。
 
 > **一句话简历版**：独立设计并实现 TrafficMind Agent — 基于 FastAPI + LangGraph + React 的智慧交通多 Agent 协同研判系统，支持自然语言事件解析、动态 Agent 路由、DAG 任务编排、冲突检测仲裁、SSE 流式推送和历史会话完整恢复。
 
@@ -60,7 +79,7 @@ TrafficMind Agent 是一个智能交通事件分析系统，支持从事件研�
 - DeepSeek `stream=true` 真流式 delta 转发
 - 所有工作区统一写入 chat_sessions/chat_messages
 
-### Phase 9：生产式多 Agent 协同编排与审计（当前阶段）
+### Phase 9：生产式多 Agent 协同编排与审计
 - **Agent Role Registry**：7 个注册 Agent，声明能力边界、输入输出约束、依赖关系
 - **结构化 Agent 消息协议**：14 种标准消息类型，Pydantic 模型校验，全局唯一 ID
 - **Shared Run State**：11 状态运行状态机，合法转换校验，可中断/可恢复
@@ -659,9 +678,12 @@ chat_sessions
 
 ### 后端
 
-```powershell
-cd C:\Users\25442\trafficmind-agent
-backend\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```bash
+# 在仓库根目录执行（macOS / Linux）
+backend/.venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
+
+# Windows:
+# backend\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
 ```
 
 启动后访问：
@@ -670,10 +692,10 @@ backend\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --p
 
 ### 前端
 
-```powershell
-cd C:\Users\25442\trafficmind-agent\frontend
-npm.cmd install
-npm.cmd run dev
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
 前端开发服务器：http://localhost:5173
@@ -702,19 +724,31 @@ HIGH_RISK_THRESHOLD=高风险
 
 ### 运行测试
 
-```powershell
-cd C:\Users\25442\trafficmind-agent
-backend\.venv\Scripts\python.exe -m pytest backend\tests -q
+```bash
+# 在仓库根目录执行（macOS / Linux）
+backend/.venv/bin/python -m pytest backend/tests -q
+
+# Windows:
+# backend\.venv\Scripts\python.exe -m pytest backend\tests -q
 ```
 
 ---
 
 ## 测试与验收
 
-### 自动化测试
+### 当前验收口径
 
-- **pytest**：283 passed / 0 failed
-- **TypeScript**：0 errors
+> 以下为**本地验收结果**，不代表 CI 结论 —— 本项目当前**没有 CI**。
+
+| 项 | 结果 |
+|---|---|
+| Phase 18 total | **232 passed**（Round1 108 + Round2 79 + 语义重规划 34 + FA 11） |
+| C01–C32 评测集 | **32/32** |
+| Fresh-PC recovery | **PASS**（新机恢复 + 真实 DeepSeek planner preview） |
+| 测试规模 | `backend/tests/` 57 个测试文件（文件数量，非某次执行结果） |
+
+`backend/tests/` 同时包含 pytest 用例与若干需要本地服务或真实模型的 `acceptance_*` 脚本，
+因此不在文档中写死全量 "N passed"。
 
 ### Phase 9 核心验收
 
