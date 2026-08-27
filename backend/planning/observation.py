@@ -123,6 +123,57 @@ class Observation:
             return False
         return False
 
+    # ── Phase19 R1：legacy prompt 冻结投影 ──────────────────────────────
+    #
+    # Phase18 的 _build_observation 从不填充 stepId / failureCode /
+    # failureReason / evidenceRefs，因此这些字段在 legacy prompt 中恒为
+    # ""、None、None、[]。R1 开始填充它们（RC1 修复），会经由
+    # continuation.py 的 currentStep / failedStep / observation / evidenceRefs
+    # 四条路径泄漏进 Phase18 prompt。
+    #
+    # 因此这里用**封闭 allowlist 固定 legacy 字面值**，而不是依赖
+    # 「prompt 可能不会序列化这些字段」这种假设：只要 grounded flag 关闭，
+    # prompt builder 一律消费本投影，字节等价由构造保证。
+    #: Phase18 prompt 中 observation 相关字段的冻结字面值
+    PHASE18_FROZEN_STEP_ID = ""
+    PHASE18_FROZEN_FAILURE_CODE = None
+    PHASE18_FROZEN_FAILURE_REASON = None
+
+    def to_phase18_prompt_view(self) -> Dict[str, Any]:
+        """legacy（flag=off）prompt 投影 —— 与 Phase18 字节等价。
+
+        只有 type / status 来自本 observation；其余一律为冻结字面值，
+        与 R1 是否填充富字段无关。
+
+        Returns:
+            {"stepId", "type", "status", "failureReason", "failureCode", "evidenceRefs"}
+        """
+        return {
+            "stepId": self.PHASE18_FROZEN_STEP_ID,
+            "type": self.type.value,
+            "status": self.status.value,
+            "failureReason": self.PHASE18_FROZEN_FAILURE_REASON,
+            "failureCode": self.PHASE18_FROZEN_FAILURE_CODE,
+            "evidenceRefs": [],
+        }
+
+    def to_grounded_prompt_view(self) -> Dict[str, Any]:
+        """grounded（flag=on）prompt 投影 —— 暴露 R1 填充的真实字段。
+
+        R2/R3 才会在 production 接线；R1 仅建立契约并由测试覆盖。
+
+        Returns:
+            与 to_phase18_prompt_view 同 key 集合，值为真实观察内容。
+        """
+        return {
+            "stepId": self.stepId or "",
+            "type": self.type.value,
+            "status": self.status.value,
+            "failureReason": self.failureReason,
+            "failureCode": self.failureCode,
+            "evidenceRefs": list(self.evidenceRefs),
+        }
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "observationId": self.observationId,

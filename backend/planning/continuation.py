@@ -169,7 +169,8 @@ class PlanningContinuationCoordinator:
 
         state = run.state if isinstance(run.state, dict) else {}
         root_run_id = lineage.rootRunId or run.run_id
-        failed_step_id = observation.stepId or ""
+        # 经冻结投影读取：flag=off 时恒为 ""，critic invocation key 命名空间不变
+        failed_step_id = self._observation_prompt_view(observation, plan)["stepId"]
         key = build_critic_invocation_key(
             root_run_id, run.run_id, plan.version, observation.type.value, failed_step_id
         )
@@ -205,6 +206,7 @@ class PlanningContinuationCoordinator:
     def _build_critic_context(self, observation: Observation, plan: Plan,
                               run: WorkflowRun, lineage: ExecutionLineage) -> CriticContext:
         state = run.state if isinstance(run.state, dict) else {}
+        view = self._observation_prompt_view(observation, plan)
         return CriticContext(
             goal=plan.goal,
             goalType=plan.goalType.value,
@@ -215,14 +217,15 @@ class PlanningContinuationCoordinator:
             planVersion=plan.version,
             completedStepIds=[nr.node_id for nr in self._repo.get_node_runs(run.run_id)
                                if nr.status.value == "succeeded"],
-            currentStep={"stepId": observation.stepId or ""},
-            observation={"type": observation.type.value, "status": observation.status.value,
-                         "failureReason": observation.failureReason, "failureCode": observation.failureCode},
+            currentStep={"stepId": view["stepId"]},
+            # key 顺序即序列化顺序（json.dumps 无 sort_keys）——不得调整
+            observation={"type": view["type"], "status": view["status"],
+                         "failureReason": view["failureReason"], "failureCode": view["failureCode"]},
             budgetSummary={"usage": lineage.budgetUsage.to_dict(), "limits": lineage.budgetLimits.to_dict()},
             loopGuardSummary=dict(lineage.loopGuard),
             rejectionConstraints=list(lineage.rejectionConstraints),
             policyDenyConstraints=list(lineage.policyDenyConstraints),
-            evidenceRefs=list(observation.evidenceRefs),
+            evidenceRefs=list(view["evidenceRefs"]),
             trajectorySummary={},
         )
 
@@ -291,8 +294,18 @@ class PlanningContinuationCoordinator:
         return {"decision": decision.decision.value, "reason": decision.reason}
 
     def _build_observation(self, parent: WorkflowRun, plan: Plan, lineage: ExecutionLineage) -> Observation:
-        """根据 parent 状态构造 observation。"""
+        """根据 parent 状态构造 observation。
+
+        Phase19 R1：填充 stepId / failureCode / failureReason / output /
+        evidenceRefs / metadata.nodeId —— 这些证据本就在 durable 层，
+        Phase18 只是在本函数里丢弃了它们（失败 node_run 已在局部作用域内）。
+
+        富字段**不改变**任何既有行为：所有会泄漏到 Phase18 prompt 或
+        idempotency key 的读取点，都改为消费 `_observation_prompt_view()`，
+        flag 关闭时返回冻结的 legacy 字面值。
+        """
         parent_state = parent.state if isinstance(parent.state, dict) else {}
+        failed_nr = None
         if parent.status == WorkflowRunStatus.REJECTED:
             typ = ObservationType.APPROVAL_REJECTED
             status = ObservationStatus.APPROVAL_REJECTED
@@ -303,6 +316,7 @@ class PlanningContinuationCoordinator:
                 if nr.status.value in ("failed", "timed_out"):
                     typ = ObservationType.TOOL_FAILED if nr.node_type.value == "action" else ObservationType.NODE_FAILED
                     status = ObservationStatus.FAILURE
+                    failed_nr = nr
                     break
         return Observation(
             observationId=generate_observation_id(parent.run_id),
@@ -313,7 +327,64 @@ class PlanningContinuationCoordinator:
             status=status,
             scope=ObservationScope.RUN,
             source=ObservationSource.SYSTEM,
+            **self._observation_evidence(parent, parent_state, typ, failed_nr),
         )
+
+    def _observation_evidence(self, parent: WorkflowRun, parent_state: Dict[str, Any],
+                              typ: ObservationType, failed_nr) -> Dict[str, Any]:
+        """从 durable 层派生 observation 富字段（确定性，无 LLM）。"""
+        from backend.planning import evidence_refs as ev_refs
+
+        if failed_nr is None:
+            # approval_rejected 或无失败 node：只挂 run 级 refs
+            refs = [{"ref": ev_refs.node_output_ref(parent.run_id, nid)}
+                    for nid in sorted((parent_state.get("nodeOutputs") or {}).keys())][:5]
+            return {"stepId": None, "failureCode": None, "failureReason": None,
+                    "output": None, "evidenceRefs": refs, "metadata": {}}
+
+        node_id = failed_nr.node_id
+        if failed_nr.status.value == "timed_out":
+            failure_code = "timeout"
+        elif typ == ObservationType.TOOL_FAILED:
+            failure_code = "tool_error"
+        else:
+            failure_code = "node_error"
+
+        refs = [{"ref": ev_refs.node_ref(parent.run_id, node_id)}]
+        outputs = parent_state.get("nodeOutputs") or {}
+        output = None
+        if node_id in outputs:
+            # 走 allowlist 投影，绝不把原始 node 输出挂到 observation ——
+            # observation 会被 persist 进 workflow_events，原始输出可能内嵌
+            # RAG 正文 / memory 原文 / 回填的 action params。
+            from backend.planning.context_assembler import project_node_output
+            projected, _trust = project_node_output(node_id, outputs[node_id])
+            output = {"nodeOutput": projected}
+            refs.append({"ref": ev_refs.node_output_ref(parent.run_id, node_id)})
+        for err in (parent_state.get("errors") or []):
+            if isinstance(err, dict) and err.get("nodeId") == node_id:
+                refs.append({"ref": ev_refs.error_ref(parent.run_id, node_id,
+                                                      int(err.get("attempt", 1) or 1))})
+                break
+
+        return {
+            "stepId": node_id,
+            "failureCode": failure_code,
+            "failureReason": failed_nr.error or None,
+            "output": output,
+            "evidenceRefs": refs,
+            "metadata": {"nodeId": node_id, "attempt": failed_nr.attempt},
+        }
+
+    def _observation_prompt_view(self, observation: Observation, plan: Plan) -> Dict[str, Any]:
+        """observation 在 prompt / idempotency key 中的唯一读取口。
+
+        flag=off → Phase18 冻结字面值（字节等价 + key 命名空间不变）
+        flag=on  → R1 填充的真实证据（production 接线属 R2/R3）
+        """
+        if getattr(plan, "groundedDecisionContextEnabled", False):
+            return observation.to_grounded_prompt_view()
+        return observation.to_phase18_prompt_view()
 
     # ── Phase18 Extension: semantic replan（LLM 重新设计 unresolved suffix）──
 
@@ -328,6 +399,7 @@ class PlanningContinuationCoordinator:
         from backend.planning.replan_context import SemanticReplanContext
         snapshot = build_planner_capability_snapshot()
         completed_refs = self._completed_result_refs(parent.run_id)
+        view = self._observation_prompt_view(observation, plan)
         return SemanticReplanContext(
             goal=plan.goal,
             goalType=plan.goalType.value,
@@ -337,15 +409,16 @@ class PlanningContinuationCoordinator:
                 for s in plan.steps
             ],
             completedPrefixSummary=list(completed_refs.keys()),
-            failedStep={"stepId": observation.stepId or ""},
-            observation={"type": observation.type.value, "status": observation.status.value,
-                         "failureReason": observation.failureReason, "failureCode": observation.failureCode},
+            failedStep={"stepId": view["stepId"]},
+            # key 顺序即序列化顺序（json.dumps 无 sort_keys）——不得调整
+            observation={"type": view["type"], "status": view["status"],
+                         "failureReason": view["failureReason"], "failureCode": view["failureCode"]},
             criticRecommendation={},
             capabilitySnapshot=snapshot.to_prompt_dict(),
             rejectionConstraints=list(lineage.rejectionConstraints),
             policyDenyConstraints=list(lineage.policyDenyConstraints),
             remainingBudget={"usage": lineage.budgetUsage.to_dict(), "limits": lineage.budgetLimits.to_dict()},
-            evidenceRefs=list(observation.evidenceRefs),
+            evidenceRefs=list(view["evidenceRefs"]),
         )
 
     def _compile_suffix_from_raw(self, raw: Dict[str, Any], plan: Plan, parent: WorkflowRun) -> Any:
@@ -386,7 +459,8 @@ class PlanningContinuationCoordinator:
             return None
 
         root_run_id = lineage.rootRunId or parent.run_id
-        failed_step_id = observation.stepId or ""
+        # 经冻结投影读取：flag=off 时恒为 ""，semantic replan key 命名空间不变
+        failed_step_id = self._observation_prompt_view(observation, plan)["stepId"]
         key = f"{root_run_id}:{parent.run_id}:{plan.version}:{failed_step_id or 'unknown'}:{observation.type.value}"
 
         claim = self._repo.claim_semantic_replan_tx(parent.run_id, key)

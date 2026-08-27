@@ -283,6 +283,9 @@ class Plan:
     approvalIdentityVersion: int = 1
     plannerAudit: Dict[str, Any] = field(default_factory=dict)
     semanticReplanEnabled: bool = False
+    #: Phase19 R1：grounded DecisionContext 开关。默认 False，字段缺失 ⇒ False。
+    #: R1 只建立契约与装配，不接线 grounded 决策行为；production 启用属 R3。
+    groundedDecisionContextEnabled: bool = False
 
     def __post_init__(self):
         if not self.createdAt:
@@ -313,6 +316,7 @@ class Plan:
             "approvalIdentityVersion": self.approvalIdentityVersion,
             "plannerAudit": dict(self.plannerAudit),
             "semanticReplanEnabled": self.semanticReplanEnabled,
+            "groundedDecisionContextEnabled": self.groundedDecisionContextEnabled,
         }
 
     @classmethod
@@ -339,6 +343,8 @@ class Plan:
             approvalIdentityVersion=int(d.get("approvalIdentityVersion", 1)),
             plannerAudit=dict(d.get("plannerAudit", {})),
             semanticReplanEnabled=bool(d.get("semanticReplanEnabled", False)),
+            # 字段缺失（Phase18 及更早的持久化 plan）⇒ False
+            groundedDecisionContextEnabled=bool(d.get("groundedDecisionContextEnabled", False)),
         )
 
     def get_step(self, step_id: str) -> Optional[PlanStep]:
