@@ -785,13 +785,16 @@ class TestFlagAndSafety:
         assert build_revision(plan, {}, "run_p").groundedDecisionContextEnabled is False
         assert build_semantic_revision(plan, {}, "run_p", []).groundedDecisionContextEnabled is False
 
-        # LLM 计划编译路径（compile_proposal）不得自动开启 grounded
+        # LLM 计划编译路径（compile_proposal）：R3 更新说明 —— R1/R2 期间
+        # 「compiler 不得 auto-enable grounded」为阶段性冻结，Phase19 Round3
+        # §33 正式取代：grounded flag 与 semanticReplanEnabled 同一 eligibility
+        # 一起自动开启（§22：仅在真实 provider Fixture A/B 通过后落地）。
         src_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                 "planning", "proposal_compiler.py")
         with open(src_path, encoding="utf-8") as f:
             src = f.read()
         assert "semanticReplanEnabled=True" in src, "前提：编译器确实会自动开启语义重规划"
-        assert "groundedDecisionContextEnabled" not in src, "编译器不得自动开启 grounded"
+        assert "groundedDecisionContextEnabled=True" in src, "R3 §33：编译器应自动开启 grounded"
         assert compile_proposal is not None
 
     def test_r1_32_assembler_is_pure_and_degrades_safely(self, repo):

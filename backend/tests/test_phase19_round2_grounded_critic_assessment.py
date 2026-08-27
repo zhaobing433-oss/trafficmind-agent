@@ -785,13 +785,22 @@ class TestCriticGateAndBudget:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# R2-18 / R2-19：Replanner boundary —— R2 必须保持 Phase18
+# R2-18 / R2-19：Replanner boundary
 # ═══════════════════════════════════════════════════════════════════════════════
+# R3 更新说明：R2 期间的冻结「flag=true 时 Replanner 保持 Phase18」为阶段性
+# 状态，Phase19 Round3 §5/§9 正式取代 —— flag=true + kill 允许时 Semantic
+# Replanner 走 grounded prompt（与 Critic 同一 DecisionContext 管线）。
+# flag=false / kill=false 的 legacy 行为仍由 R2-35e / R3 legacy 测试锁定。
 
 class TestReplannerBoundary:
-    def test_r2_18_r2_19_grounded_critic_but_replanner_stays_phase18(
+    def test_r2_18_r2_19_r3_grounded_replanner_connected(
             self, patch_db, monkeypatch):
-        """flag=true：Critic grounded（YES），Semantic Replanner grounded（NO）。"""
+        """flag=true：Critic grounded（YES），Semantic Replanner grounded（YES，R3）。
+
+        同时验证 §6 strict critic binding：同 boundary COMPLETED 的 critic
+        recommendation 必须非空进入 grounded replan prompt（受信任区只有
+        封闭枚举 + confidence；FreeText 部分留在 envelope 内）。
+        """
         repo = SQLiteWorkflowRepository()
         plan = _event_plan(grounded=True, semantic_replan=True)
         _save_definition(repo, plan)
@@ -808,21 +817,27 @@ class TestReplannerBoundary:
         assert "untrustedEvidence" in client.critic_user
         assert action_id in client.critic_user
 
-        # Replanner 保持 Phase18
+        # Replanner grounded（R3：取代 R2 阶段性 Phase18 冻结）
         assert client.replan_calls == 1
         rp = client.replan_user
-        assert "untrustedEvidence" not in rp            # 无 grounded projection
-        assert "executionEvidence" not in rp            # 证据不进入 Replanner
-        assert '"criticRecommendation": {}' in rp       # R2-19：仍 {}
-        assert '"stepId": ""' in rp                     # Phase18 冻结 stepId
-        assert INJECTION not in rp                      # failureReason 冻结为 null
-        # legacy observation envelope 内全部字段为 Phase18 冻结字面值
-        # （stepId 冻结在顶层 failedStep，已由 '"stepId": ""' 断言覆盖）
-        obs_view, _raw, _out = _envelope_regions(rp)
-        assert obs_view["failureReason"] is None
-        assert obs_view["failureCode"] is None
-        assert obs_view["type"] == "tool_failed"
-        assert obs_view["status"] == "failure"
+        assert "untrustedEvidence" in rp            # grounded projection 已接线
+        assert "executionEvidence" in rp            # 执行证据进入 Replanner（envelope 内）
+        assert "capabilitySnapshot" in rp           # authority 快照仍在指令区
+        assert action_id in rp                      # 真实 stepId 可见
+        payload = _trusted_payload(rp)
+        # T0 字段在 trusted context 区（R3 §2A：SystemString 标记）
+        assert payload["context"]["observation"]["stepId"] == action_id
+        assert payload["context"]["observation"]["type"] == "tool_failed"
+        # §6 bound critic recommendation：同 boundary COMPLETED → 非空绑定
+        rec = payload["context"]["criticRecommendation"]
+        assert rec["recommendation"] == "replan"
+        assert rec["confidence"] == 0.9
+        inside, _raw, outside = _envelope_regions(rp)
+        # FreeText（reasonSummary / semanticFailureType / failureReason）在 envelope 内
+        assert inside["criticRecommendation"]["reasonSummary"] == "fake critic ok"
+        assert INJECTION in inside["observation"]["failureReason"]
+        assert INJECTION not in outside             # 注入文本绝不进入 trusted 指令区
+        assert WEBHOOK_SECRET_URL not in rp         # secret 已脱敏
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1061,7 +1076,10 @@ class TestGroundedAssessment:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestRolloutAndScope:
-    def test_r2_36_proposal_compiler_does_not_auto_enable(self):
+    def test_r2_36_auto_enable_eligibility_semantic_replan_coupled(self):
+        """R3 更新说明：R2 期间「compiler 不 auto-enable」为阶段性冻结，
+        Phase19 Round3 §33 正式取代 —— eligible LLM 计划（semanticReplanEnabled=True）
+        auto-enable grounded flag；确定性计划 / 字段缺失仍恒 False。"""
         from backend.planning.capability_snapshot import build_planner_capability_snapshot
         from backend.planning.context import build_planning_context
         from backend.planning.proposal import PlanProposal, PlanProposalStep
@@ -1077,9 +1095,11 @@ class TestRolloutAndScope:
             confidence=0.9, plannerModel="m", plannerReasonSummary="x",
             capabilitySnapshotHash=snap.snapshotHash)
         llm_plan = compile_proposal(proposal, snap, ctx)
-        assert llm_plan.groundedDecisionContextEnabled is False  # LLM plan 不 auto-enable
+        assert llm_plan.semanticReplanEnabled is True
+        assert llm_plan.groundedDecisionContextEnabled is True  # R3 §33 auto-enable
         det_plan = _event_plan(grounded=False)
         assert det_plan.groundedDecisionContextEnabled is False
+        assert det_plan.semanticReplanEnabled is False
         # absent → False（持久化往返）
         from backend.planning.models import Plan
         d = det_plan.to_dict()

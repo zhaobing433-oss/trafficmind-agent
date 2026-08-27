@@ -164,3 +164,43 @@ def invoke_critic_sync(client, ctx: CriticContext) -> CriticRecommendation:
     system, user = build_critic_messages(ctx)
     data, _usage, _attempts = client.call_structured_json_sync(system, user)
     return CriticRecommendation.from_dict_strict(data)
+
+
+def derive_critic_boundary_key(
+    root_run_id: str,
+    run_id: str,
+    plan_version: int,
+    observation_type: str,
+    failed_step_id: str,
+) -> str:
+    """R3 §6：为 semantic replan boundary 派生 criticBoundaryKey。
+
+    严格复用同一 key builder（字节级复现 Critic claim 时使用的 key，
+    不复制手写字符串格式）。root/run/version/observation type/stepId 全部
+    由当前 boundary 的 durable 身份派生 —— key 命中即边界完全匹配。
+    注意：Critic key 与 semantic replan key 字段顺序不同（Phase18 契约），
+    本 helper 只服务 Critic 侧查找，不得用于 semantic replan claim。
+    """
+    return build_critic_invocation_key(
+        root_run_id, run_id, plan_version, observation_type, failed_step_id
+    )
+
+
+def lookup_bound_critic_recommendation(run_state: Dict[str, Any],
+                                       critic_boundary_key: str) -> Dict[str, Any]:
+    """R3 §6：严格查找 bound critic recommendation（no best-effort fallback）。
+
+    只接受 registry 中 status == COMPLETED 且 recommendation 为非空 dict 的条目；
+    STARTED / missing / malformed / 空推荐 一律返回 {}（semantic replan 走
+    legacy criticRecommendation={} 语义，绝不拿弱证据喂 grounded prompt）。
+    """
+    if not critic_boundary_key or not isinstance(run_state, dict):
+        return {}
+    registry = run_state.get("criticInvocations", {}) or {}
+    entry = registry.get(critic_boundary_key)
+    if not isinstance(entry, dict) or entry.get("status") != "COMPLETED":
+        return {}
+    rec = entry.get("recommendation")
+    if not isinstance(rec, dict) or not rec:
+        return {}
+    return rec

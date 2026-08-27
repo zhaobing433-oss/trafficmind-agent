@@ -75,6 +75,21 @@ class FreeText(str):
     __slots__ = ()
 
 
+class SystemString(str):
+    """系统生成字符串标记（R3 §2A：trust fail-closed）。
+
+    仅允许包装**系统生成**的 T0 字段 —— 封闭枚举值 / 系统 ID / 结构状态码。
+    与 FreeText 互补：
+      - FreeText     → untrusted（哈希进 fingerprint，渲染在不可信 envelope）
+      - SystemString → trusted（literal 进 fingerprint，可进入指令区）
+      - 未包装的普通 str → untrusted（fail-closed，_walk_trust 一律拒绝）
+
+    与 FreeText 一样是 str 子类：序列化/等值比较与普通 str 完全一致，
+    R1 prompt_projection / fingerprint_projection 的语义值契约不变。
+    """
+    __slots__ = ()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # canonical / hash 基础设施
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -343,32 +358,35 @@ def prompt_projection(ctx: DecisionContext) -> Dict[str, Any]:
     """
     obs = ctx.observation
     payload: Dict[str, Any] = {
-        "decisionType": ctx.decisionType.value,
+        "decisionType": SystemString(ctx.decisionType.value),
         "planVersion": ctx.planVersion,
         "goal": FreeText(ctx.goal or ""),
-        "goalType": ctx.goalType or "",
-        "currentStepId": ctx.currentStepId or "",
-        "currentNodeId": ctx.currentNodeId or "",
+        "goalType": SystemString(ctx.goalType or ""),
+        "currentStepId": SystemString(ctx.currentStepId or ""),
+        "currentNodeId": SystemString(ctx.currentNodeId or ""),
         "observation": {
-            "type": obs.type if obs else "",
-            "status": obs.status if obs else "",
-            "stepId": obs.stepId if obs else "",
-            "nodeId": obs.nodeId if obs else "",
-            "failureCode": obs.failureCode if obs else "",
+            "type": SystemString(obs.type if obs else ""),
+            "status": SystemString(obs.status if obs else ""),
+            "stepId": SystemString(obs.stepId if obs else ""),
+            "nodeId": SystemString(obs.nodeId if obs else ""),
+            "failureCode": SystemString(obs.failureCode if obs else ""),
             "failureReason": FreeText(obs.failureReason if obs else ""),
             "outputSummary": FreeText(obs.outputSummary if obs else ""),
         },
         "executionEvidence": [
             {
-                "evidenceId": e.evidenceId,
-                "sourceType": e.sourceType,
-                "trustClass": e.trustClass.value,
+                "evidenceId": SystemString(e.evidenceId),
+                "sourceType": SystemString(e.sourceType),
+                "trustClass": SystemString(e.trustClass.value),
                 "summary": FreeText(e.summary),
             }
             for e in ctx.executionEvidence
         ],
         "trajectorySummary": dict(ctx.trajectorySummary),
-        "completedWorkSummary": [dict(w) for w in ctx.completedWorkSummary],
+        "completedWorkSummary": [
+            {"stepId": SystemString(w["stepId"]), "stepType": SystemString(w["stepType"])}
+            for w in ctx.completedWorkSummary
+        ],
         "remainingObjectives": [FreeText(o) for o in ctx.remainingObjectives],
         "budgetSnapshot": dict(ctx.budgetSnapshot),
         "truncated": ctx.truncated,
@@ -376,9 +394,12 @@ def prompt_projection(ctx: DecisionContext) -> Dict[str, Any]:
     if ctx.decisionType == DecisionType.SEMANTIC_REPLAN:
         rec = dict(ctx.criticRecommendation or {})
         payload["criticRecommendation"] = {
-            "recommendation": rec.get("recommendation", ""),
+            # recommendation 为 strict parser 产出的封闭枚举 → 系统侧可信任
+            "recommendation": SystemString(rec.get("recommendation", "")),
             "confidence": rec.get("confidence", 0.0),
-            "semanticFailureType": rec.get("semanticFailureType", ""),
+            # semanticFailureType 是 Critic 自由文本输出（T2 数据）→ FreeText
+            # （R3 §2B：原实现为 plain str 会误入 trusted 区，属 fail-open）
+            "semanticFailureType": FreeText(rec.get("semanticFailureType", "")),
             "reasonSummary": FreeText(rec.get("reasonSummary", "")),
         }
     return payload
@@ -387,15 +408,22 @@ def prompt_projection(ctx: DecisionContext) -> Dict[str, Any]:
 def _walk_trust(value: Any) -> Tuple[Optional[Any], Optional[Any]]:
     """机械递归拆分：返回 (trusted_part, untrusted_part)，无内容 → None。
 
-    判定只由 FreeText 标记驱动（与 fingerprint_projection 同理，不维护第二份
-    人工字段白名单）：
-      - FreeText 叶子 → untrusted（渲染为普通 str）
+    判定只由 FreeText / SystemString 标记驱动（与 fingerprint_projection 同理，
+    不维护第二份人工字段白名单）：
+      - FreeText 叶子     → untrusted（渲染为普通 str）
+      - SystemString 叶子 → trusted（系统枚举 / 系统 ID / 状态码）
       - dict → 按 key 递归拆分，trusted / untrusted 各自保持平行结构
       - list → 任一项含 FreeText 则整段进 untrusted（含 trusted 兄弟字段，
         保证模型能按 evidenceId 等 ID 关联证据条目）；否则整段 trusted
+      - int / float / bool / None / Enum → trusted（纯结构值，无法携带指令文本）
+      - 未标记的普通 str → **untrusted（R3 §2A fail-closed）**。任何未知字符串
+        一律按不可信数据处理；要进入 trusted 区必须在 prompt_projection
+        显式包装 SystemString（封闭枚举 / 系统 ID 才允许）。
     """
     if isinstance(value, FreeText):
         return None, str(value)
+    if isinstance(value, SystemString):
+        return str(value), None
     if isinstance(value, dict):
         trusted: Dict[str, Any] = {}
         untrusted: Dict[str, Any] = {}
@@ -421,7 +449,12 @@ def _walk_trust(value: Any) -> Tuple[Optional[Any], Optional[Any]]:
                 merged.update(uv)
                 rendered.append(merged)
         return None, rendered
-    # scalar（enum 值 / int / bool / None / 非 FreeText str）→ trusted
+    if isinstance(value, Enum):
+        return value.value, None
+    if isinstance(value, str):
+        # R3 §2A：fail-closed —— 未包装的普通 str 一律 untrusted
+        return None, str(value)
+    # int / float / bool / None → trusted
     return value, None
 
 
@@ -441,11 +474,14 @@ def fingerprint_projection(value: Any) -> Any:
     """机械递归映射（无人工白名单）。
 
     FreeText          → "h:" + contentHash
+    SystemString      → literal str（系统枚举 / ID —— 与历史 plain str 字节等价）
     enum/int/bool/id  → literal
     dict / list       → 递归（list 保序，因为顺序对模型可见）
     """
     if isinstance(value, FreeText):
         return "h:" + content_hash(str(value))
+    if isinstance(value, SystemString):
+        return str(value)
     if isinstance(value, dict):
         return {k: fingerprint_projection(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):

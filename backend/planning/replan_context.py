@@ -119,3 +119,39 @@ def build_semantic_replan_messages(ctx: SemanticReplanContext) -> tuple:
         '"parameterHints":{},"evidenceNeeds":[],"dependsOnProposalStepIds":[]} ]}'
     )
     return _SYSTEM_PROMPT, user
+
+
+def build_grounded_semantic_replan_messages(ctx, capability_snapshot: Optional[Dict[str, Any]] = None) -> tuple:
+    """grounded semantic replan prompt（Phase19 R3，仅 Plan flag=true + kill 允许）。
+
+    模型可见内容唯一来源 = R1 prompt_projection（DecisionType.SEMANTIC_REPLAN）
+    → split_trusted_projection：
+      - trusted「context」区：T0 系统枚举 / 系统 ID / 数值 / criticRecommendation
+        的封闭枚举与 confidence（bound recommendation 来自 strict parser）
+      - untrustedEvidence 区：goal / failureReason / outputSummary / 证据
+        summary / remainingObjectives / critic reasonSummary 与
+        semanticFailureType（FreeText），一律渲染在不可信数据 envelope 内
+    capability_snapshot 为系统生成的能力注册表（authority，compiler 校验同源），
+    与 R2 assessment 的 run identity 同属非 projection 系统字段：模型可见但
+    不进 contextFingerprint（静态配置，不随 run 变化）。
+    输出 schema 与 legacy 完全一致（suffixSteps / strict parser 复用），
+    权威不变：compiler / validator 仍为唯一裁决。
+    """
+    from backend.planning.decision_context import split_trusted_projection
+
+    trusted, untrusted = split_trusted_projection(ctx)
+    payload: Dict[str, Any] = {
+        "task": "为未完成部分设计线性续接 suffix",
+        "context": trusted,
+        "capabilitySnapshot": capability_snapshot or {},
+        "untrustedEvidence": _wrap_untrusted(untrusted),
+    }
+    user = (
+        "请输出 JSON（不要任何额外文字）：\n"
+        + json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+        + "\n\n输出结构（严格）：\n"
+        '{"reasonSummary": "...", "suffixSteps": [ {"proposalStepId":"s1","intent":"...",'
+        '"requiredCapabilities":["..."],"expectedOutcome":"...","actionIntent":null,'
+        '"parameterHints":{},"evidenceNeeds":[],"dependsOnProposalStepIds":[]} ]}'
+    )
+    return _SYSTEM_PROMPT, user
