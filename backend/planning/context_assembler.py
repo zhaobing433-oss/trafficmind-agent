@@ -637,8 +637,10 @@ def _observation_view(observation) -> Optional[ObservationView]:
         stepId=observation.stepId or "",
         nodeId=(observation.metadata or {}).get("nodeId", ""),
         failureCode=observation.failureCode or "",
-        failureReason=observation.failureReason or "",
-        outputSummary=summary,
+        # T1 文本（node error 可能内嵌 tool/agent 返回文本与 URL token）：
+        # 模型可见视图先脱敏（persistence 不受影响）
+        failureReason=_scrub_credentials(observation.failureReason or ""),
+        outputSummary=_scrub_credentials(summary),
     )
 
 

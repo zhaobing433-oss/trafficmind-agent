@@ -43,6 +43,9 @@ class ExecutionAssessment:
     assessmentMode: str = "deterministic"
     assessmentModel: Optional[str] = None
     assessmentFallbackReason: Optional[str] = None
+    #: Phase19 R2：grounded assessment 是否成功从 run 绑定的 exact-version Plan
+    #: 解析出 goal。legacy path 恒 False（完全 additive，不改变 legacy 行为）。
+    goalResolved: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -57,12 +60,62 @@ class ExecutionAssessment:
             "assessmentMode": self.assessmentMode,
             "assessmentModel": self.assessmentModel,
             "assessmentFallbackReason": self.assessmentFallbackReason,
+            "goalResolved": self.goalResolved,
         }
 
 
 def build_assessment_key(root_run_id: str, run_id: str, plan_version: int) -> str:
     """assessmentKey = rootRunId + finalLeafRunId + finalPlanVersion。"""
     return f"{root_run_id}:{run_id}:{plan_version}"
+
+
+def _load_plan_from_run(repo, run):
+    """加载 run 绑定的 exact-version Plan（Phase19 R2 grounded assessment 用）。
+
+    与 continuation._load_plan_from_run 完全相同的版本语义：
+      - 优先 exact version snapshot（child run 绑定到版本化 plan）。
+      - versioned child（version>1）snapshot 缺失/malformed → fail-closed None
+        （禁止 fallback 到最新 v1 / current definition）。
+      - legacy base v1 run（无 snapshot）→ fallback base definition metadata.plan。
+    """
+    try:
+        from backend.planning.models import Plan
+    except Exception:
+        return None
+    try:
+        ver = repo.get_definition_version(run.definition_id, run.version)
+        if ver is not None:
+            dj = ver.definition_json if isinstance(ver.definition_json, dict) else {}
+            metadata = dj.get("metadata", {}) or dj
+            plan_raw = metadata.get("plan")
+            if not plan_raw:
+                # versioned snapshot 存在但 plan 缺失 → fail-closed
+                return None
+            return _parse_plan_raw(Plan, plan_raw)
+        if run.version > 1:
+            # versioned child 但 snapshot 缺失 → fail-closed
+            return None
+        definition = repo.get_definition(run.definition_id)
+        if definition is None:
+            return None
+        return _parse_plan_raw(Plan, definition.metadata.get("plan"))
+    except Exception:
+        return None
+
+
+def _parse_plan_raw(plan_cls, plan_raw):
+    if not plan_raw:
+        return None
+    if isinstance(plan_raw, str):
+        import json
+        try:
+            plan_raw = json.loads(plan_raw)
+        except Exception:
+            return None
+    try:
+        return plan_cls.from_dict(plan_raw)
+    except Exception:
+        return None
 
 
 def assessment_eligible(run) -> bool:
@@ -157,8 +210,16 @@ async def _llm_semantic_assessment(client, run, repo) -> ExecutionAssessment:
     return result
 
 
-async def assess_terminal_run(repo, run_id: str, client=None, lineage_root_run_id: str = "") -> Optional[ExecutionAssessment]:
-    """terminal assessment orchestration（idempotent，绝不修改 run.status）。"""
+async def assess_terminal_run(repo, run_id: str, client=None, lineage_root_run_id: str = "",
+                              grounded_decision_context_enabled: Optional[bool] = None) -> Optional[ExecutionAssessment]:
+    """terminal assessment orchestration（idempotent，绝不修改 run.status）。
+
+    Phase19 R2：grounded_decision_context_enabled 为 process kill-switch ——
+    False → force off；None/True → follow Plan.groundedDecisionContextEnabled。
+    顺序（§19）：eligibility → hard facts → deterministic short-circuit →
+    grounded/legacy context → claim → provider。hard-fact gate 先于一切
+    assembly，hard 路径 provider=0 不变。
+    """
     run = repo.get_run(run_id)
     if run is None or not assessment_eligible(run):
         return None
@@ -175,13 +236,36 @@ async def assess_terminal_run(repo, run_id: str, client=None, lineage_root_run_i
         _save_assessment_event(repo, run_id, key, result)
         return result
 
-    # COMPLETED → hard-fact gate
+    # COMPLETED → hard-fact gate（先于 grounded assembly，§19）
     facts = _collect_hard_facts(repo, run)
     if facts:
         result = deterministic_assessment(repo, run)
         repo.complete_assessment_tx(run_id, key, result.to_dict())
         _save_assessment_event(repo, run_id, key, result)
         return result
+
+    # Phase19 R2 grounded gate：exact-version Plan 解析 + DecisionContext assembly。
+    # plan 缺失/无法恢复 → goalResolved=False，输入 degrade 到 Phase18 等价
+    # legacy assessment input（§14/§20：fail safe，不 throw，不 fail workflow）。
+    kill_on = grounded_decision_context_enabled is not False
+    goal_resolved = False
+    grounded_ctx = None
+    if kill_on:
+        plan = _load_plan_from_run(repo, run)
+        if plan is not None and bool(getattr(plan, "groundedDecisionContextEnabled", False)):
+            if bool(plan.goal):
+                goal_resolved = True
+            try:
+                from backend.planning.budget import ExecutionLineage
+                from backend.planning.context_assembler import assemble_or_empty
+                from backend.planning.decision_context import DecisionType
+                lineage = ExecutionLineage.from_dict(state.get("executionLineage", {}) or {})
+                dctx = assemble_or_empty(repo, run, plan, None, DecisionType.ASSESSMENT,
+                                         lineage=lineage)
+                if not dctx.isEmpty:
+                    grounded_ctx = dctx
+            except Exception:
+                grounded_ctx = None
 
     # semantic assessment → claim + reserve + STARTED → provider → COMPLETED
     if client is None:
@@ -195,6 +279,8 @@ async def assess_terminal_run(repo, run_id: str, client=None, lineage_root_run_i
             goalAchievement=GoalAchievement.UNKNOWN,
             assessmentFallbackReason="client_unavailable",
         )
+        if kill_on:
+            result.goalResolved = goal_resolved
         repo.complete_assessment_tx(run_id, key, result.to_dict())
         _save_assessment_event(repo, run_id, key, result)
         return result
@@ -209,22 +295,37 @@ async def assess_terminal_run(repo, run_id: str, client=None, lineage_root_run_i
             goalAchievement=GoalAchievement.UNKNOWN,
             assessmentFallbackReason=claim.get("result"),
         )
+        if kill_on:
+            result.goalResolved = goal_resolved
         repo.complete_assessment_tx(run_id, key, result.to_dict())
         _save_assessment_event(repo, run_id, key, result)
         return result
 
-    # claimed → provider
+    # claimed → provider（grounded / legacy 二选一，1 decision ≤1 provider call）
     try:
-        result = await _llm_semantic_assessment(client, run, repo)
+        if grounded_ctx is not None:
+            from backend.planning.assessment_prompts import (
+                build_grounded_assessment_messages,
+                parse_assessment,
+            )
+            system, user = build_grounded_assessment_messages(grounded_ctx, run, root_run_id)
+            data, _usage, _attempts = await client.call_structured_json(system, user)
+            result = parse_assessment(data)
+        else:
+            result = await _llm_semantic_assessment(client, run, repo)
         result.assessmentStatus = AssessmentStatus.ASSESSED
         result.assessmentMode = "llm"
         result.assessmentModel = getattr(client, "_model", None)
+        if kill_on:
+            result.goalResolved = goal_resolved
     except Exception as e:
         result = ExecutionAssessment(
             assessmentStatus=AssessmentStatus.FALLBACK,
             goalAchievement=GoalAchievement.UNKNOWN,
             assessmentFallbackReason=str(e)[:200],
         )
+        if kill_on:
+            result.goalResolved = goal_resolved
     repo.complete_assessment_tx(run_id, key, result.to_dict())
     _save_assessment_event(repo, run_id, key, result)
     return result
@@ -243,6 +344,7 @@ def _from_dict(d: Dict[str, Any]) -> ExecutionAssessment:
         assessmentMode=d.get("assessmentMode", "deterministic"),
         assessmentModel=d.get("assessmentModel"),
         assessmentFallbackReason=d.get("assessmentFallbackReason"),
+        goalResolved=bool(d.get("goalResolved", False)),
     )
 
 

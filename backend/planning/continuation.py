@@ -58,12 +58,25 @@ class PlanningContinuationCoordinator:
     """control plane：串 Observation → Decision → Replanner → child。"""
 
     def __init__(self, repository: Optional[SQLiteWorkflowRepository] = None, critic_client: Any = None,
-                 semantic_replan_enabled: Optional[bool] = None):
+                 semantic_replan_enabled: Optional[bool] = None,
+                 grounded_decision_context_enabled: Optional[bool] = None):
         self._repo = repository or SQLiteWorkflowRepository()
         self._engine = ReplanDecisionEngine()
         self._critic_client = critic_client  # None → critic disabled（Phase17 语义）
         # None → follow durable Plan.semanticReplanEnabled；False → explicit kill-switch（测试）
         self._semantic_replan_enabled = semantic_replan_enabled
+        # Phase19 R2：grounded 开关。None/True → follow Plan.groundedDecisionContextEnabled；
+        # False → process kill-switch（force off）。Plan flag=false 恒为 off。
+        self._grounded_decision_context_enabled = grounded_decision_context_enabled
+
+    def _grounded_enabled(self, plan: Plan) -> bool:
+        """grounded DecisionContext 是否启用（kill-switch 语义同 semantic_replan_enabled）。
+
+        Plan flag false → off；process kill-switch false → force off；None/true → follow Plan flag。
+        """
+        if self._grounded_decision_context_enabled is False:
+            return False
+        return bool(getattr(plan, "groundedDecisionContextEnabled", False))
 
     @property
     def repo(self) -> SQLiteWorkflowRepository:
@@ -167,9 +180,26 @@ class PlanningContinuationCoordinator:
         if classify_observation(observation, lineage) != "semantic_review":
             return None, None
 
+        # Phase19 R2：grounded assembly（flag + kill-switch 双门，claim 之前）。
+        # assembler 本身 0 provider / 0 claim / 0 持久化；失败 → grounded_ctx=None，
+        # 后续走 Phase18-equivalent legacy input（§9：绝不 fail workflow）。
+        grounded_ctx = None
+        if self._grounded_enabled(plan):
+            try:
+                from backend.planning.context_assembler import assemble_or_empty
+                from backend.planning.decision_context import DecisionType
+                dctx = assemble_or_empty(self._repo, run, plan, observation,
+                                         DecisionType.CRITIC, lineage=lineage)
+                if not dctx.isEmpty:
+                    grounded_ctx = dctx
+            except Exception:
+                grounded_ctx = None
+
         state = run.state if isinstance(run.state, dict) else {}
         root_run_id = lineage.rootRunId or run.run_id
-        # 经冻结投影读取：flag=off 时恒为 ""，critic invocation key 命名空间不变
+        # Final Identity Rule：decision identity 只由 durable Plan flag 决定
+        # （kill-switch 不参与）：flag=off 恒为 ""（legacy 命名空间不变）；
+        # flag=on → 真实 stepId（enriched grounded 命名空间）
         failed_step_id = self._observation_prompt_view(observation, plan)["stepId"]
         key = build_critic_invocation_key(
             root_run_id, run.run_id, plan.version, observation.type.value, failed_step_id
@@ -194,10 +224,18 @@ class PlanningContinuationCoordinator:
         if result != "claimed":
             return None, None
 
-        # claimed → invoke provider（sync），失败 → deterministic fallback
+        # claimed → invoke provider（sync），失败 → deterministic fallback。
+        # 每个 Critic decision 最多 1 次 provider：grounded 调用失败后
+        # 禁止再做第二次 legacy provider call（§9）。
         try:
-            ctx = self._build_critic_context(observation, plan, run, lineage)
-            rec = invoke_critic_sync(client, ctx)
+            if grounded_ctx is not None:
+                from backend.planning.critic_prompts import build_grounded_critic_messages
+                system, user = build_grounded_critic_messages(grounded_ctx)
+                data, _usage, _attempts = client.call_structured_json_sync(system, user)
+                rec = CriticRecommendation.from_dict_strict(data)
+            else:
+                ctx = self._build_critic_context(observation, plan, run, lineage)
+                rec = invoke_critic_sync(client, ctx)
             self._repo.complete_critic_invocation_tx(run.run_id, key, rec.to_dict())
             return rec, None
         except Exception as e:
@@ -206,7 +244,9 @@ class PlanningContinuationCoordinator:
     def _build_critic_context(self, observation: Observation, plan: Plan,
                               run: WorkflowRun, lineage: ExecutionLineage) -> CriticContext:
         state = run.state if isinstance(run.state, dict) else {}
-        view = self._observation_prompt_view(observation, plan)
+        # legacy builder 恒消费 Phase18 冻结投影：flag=true 时本 builder 仅作为
+        # grounded assembly 失败的 degrade 输入，必须与 Phase18 字节等价（§9）。
+        view = observation.to_phase18_prompt_view()
         return CriticContext(
             goal=plan.goal,
             goalType=plan.goalType.value,
@@ -377,10 +417,20 @@ class PlanningContinuationCoordinator:
         }
 
     def _observation_prompt_view(self, observation: Observation, plan: Plan) -> Dict[str, Any]:
-        """observation 在 prompt / idempotency key 中的唯一读取口。
+        """critic invocation **boundary identity** 的读取口（R2 后仅此一处使用）。
 
-        flag=off → Phase18 冻结字面值（字节等价 + key 命名空间不变）
-        flag=on  → R1 填充的真实证据（production 接线属 R2/R3）
+        Final Identity Rule（Round2 closure）—— decision identity 与 prompt
+        mode 职责分离：
+          - 本函数 = decision identity：只由 durable Plan flag 决定，与
+            process kill-switch 完全无关。
+              flag=false/absent → Phase18 冻结字面值（legacy key 命名空间不变）
+              flag=true        → R1 填充的真实证据（enriched grounded 命名空间）
+            kill-switch None/True/False 三种取值下 key 必须相同。
+          - prompt mode = runtime operational control，由 _grounded_enabled
+            （kill-switch AND Plan flag）决定。kill=false 时 prompt legacy、
+            key 仍 grounded —— 刻意允许 prompt mode ≠ key mode。
+
+        Replanner 相关读取点已改为恒消费 to_phase18_prompt_view()（§12）。
         """
         if getattr(plan, "groundedDecisionContextEnabled", False):
             return observation.to_grounded_prompt_view()
@@ -399,7 +449,10 @@ class PlanningContinuationCoordinator:
         from backend.planning.replan_context import SemanticReplanContext
         snapshot = build_planner_capability_snapshot()
         completed_refs = self._completed_result_refs(parent.run_id)
-        view = self._observation_prompt_view(observation, plan)
+        # §12：Semantic Replanner 在 R2 保持 Phase18 行为 —— 即使 flag=true、
+        # Critic 已 grounded，replanner 仍恒消费 Phase18 冻结投影
+        # （trajectory/evidence 不进入 Replanner，R3 才做 grounded replanner）。
+        view = observation.to_phase18_prompt_view()
         return SemanticReplanContext(
             goal=plan.goal,
             goalType=plan.goalType.value,
@@ -459,8 +512,9 @@ class PlanningContinuationCoordinator:
             return None
 
         root_run_id = lineage.rootRunId or parent.run_id
-        # 经冻结投影读取：flag=off 时恒为 ""，semantic replan key 命名空间不变
-        failed_step_id = self._observation_prompt_view(observation, plan)["stepId"]
+        # §12：恒用 Phase18 冻结投影 —— flag=true 也不改变 semantic replan key
+        # 命名空间（R2 Replanner 保持 Phase18 行为）
+        failed_step_id = observation.to_phase18_prompt_view()["stepId"]
         key = f"{root_run_id}:{parent.run_id}:{plan.version}:{failed_step_id or 'unknown'}:{observation.type.value}"
 
         claim = self._repo.claim_semantic_replan_tx(parent.run_id, key)

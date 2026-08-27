@@ -384,6 +384,59 @@ def prompt_projection(ctx: DecisionContext) -> Dict[str, Any]:
     return payload
 
 
+def _walk_trust(value: Any) -> Tuple[Optional[Any], Optional[Any]]:
+    """机械递归拆分：返回 (trusted_part, untrusted_part)，无内容 → None。
+
+    判定只由 FreeText 标记驱动（与 fingerprint_projection 同理，不维护第二份
+    人工字段白名单）：
+      - FreeText 叶子 → untrusted（渲染为普通 str）
+      - dict → 按 key 递归拆分，trusted / untrusted 各自保持平行结构
+      - list → 任一项含 FreeText 则整段进 untrusted（含 trusted 兄弟字段，
+        保证模型能按 evidenceId 等 ID 关联证据条目）；否则整段 trusted
+    """
+    if isinstance(value, FreeText):
+        return None, str(value)
+    if isinstance(value, dict):
+        trusted: Dict[str, Any] = {}
+        untrusted: Dict[str, Any] = {}
+        for k, v in value.items():
+            tv, uv = _walk_trust(v)
+            if tv is not None:
+                trusted[k] = tv
+            if uv is not None:
+                untrusted[k] = uv
+        return (trusted or None), (untrusted or None)
+    if isinstance(value, (list, tuple)):
+        parts = [_walk_trust(v) for v in value]
+        if all(uv is None for _tv, uv in parts):
+            return list(value), None
+        rendered: List[Any] = []
+        for tv, uv in parts:
+            if tv is None:
+                rendered.append(uv)
+            elif uv is None:
+                rendered.append(tv)
+            else:
+                merged = dict(tv)
+                merged.update(uv)
+                rendered.append(merged)
+        return None, rendered
+    # scalar（enum 值 / int / bool / None / 非 FreeText str）→ trusted
+    return value, None
+
+
+def split_trusted_projection(ctx: DecisionContext) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """把 prompt_projection 拆成 trusted / untrusted 两区（R2 grounded prompt 共用）。
+
+    trusted：整棵子树不含 FreeText（T0 枚举 / 系统 ID / 数值），可进入指令区。
+    untrusted：含 FreeText 的字段（goal / failureReason / outputSummary /
+    executionEvidence summary / remainingObjectives 等），渲染时必须包在
+    不可信数据 envelope 内（§7：T1-T4 一律 UNTRUSTED AS INSTRUCTIONS）。
+    """
+    trusted, untrusted = _walk_trust(prompt_projection(ctx))
+    return dict(trusted or {}), dict(untrusted or {})
+
+
 def fingerprint_projection(value: Any) -> Any:
     """机械递归映射（无人工白名单）。
 
