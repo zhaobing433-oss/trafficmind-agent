@@ -335,6 +335,11 @@ def compile_proposal(
         memoryRefs=[],
         approvalIdentityVersion=2,
         semanticReplanEnabled=True,
+        # Phase19 R3 §33 auto-enable：grounded DecisionContext 对新 eligible LLM
+        # 计划默认打开（eligibility == semanticReplanEnabled）。
+        # 落地前置条件（§22 顺序）：R1+R2+R3 确定性验收 + 真实 provider
+        # Fixture A/B 通过。kill-switch（process 级）仍可强制关闭。
+        groundedDecisionContextEnabled=True,
     )
 
     # ── 复用现有 validate_plan() fail-closed ──────────────────────

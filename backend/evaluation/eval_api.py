@@ -18,6 +18,16 @@ async def api_get_report(report_id: str):
     return sanitize_observability(report)
 
 
+@router.get("/reports/{report_id}/summary", summary="获取 Evaluation Report 的最小结构化 summary")
+async def api_get_report_summary(report_id: str):
+    """Phase19 R4：评测中心数据源（只读投影，不伪造 PASS，白名单字段，无 secret）。"""
+    report = get_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    from backend.evaluation.summary import build_eval_summary
+    return build_eval_summary(report, report_id=report_id)
+
+
 @router.get("/reports/{report_id}/cases/{case_id}", summary="获取单个 Evaluation Case")
 async def api_get_case(report_id: str, case_id: str):
     case = get_case(report_id, case_id)

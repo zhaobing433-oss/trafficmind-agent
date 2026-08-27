@@ -95,6 +95,7 @@ def build_revision(
         metadata=dict(plan.metadata),
         approvalIdentityVersion=plan.approvalIdentityVersion,
         semanticReplanEnabled=plan.semanticReplanEnabled,
+        groundedDecisionContextEnabled=plan.groundedDecisionContextEnabled,
     )
 
 
@@ -152,6 +153,7 @@ def build_semantic_revision(
         metadata=dict(plan.metadata),
         approvalIdentityVersion=plan.approvalIdentityVersion,
         semanticReplanEnabled=plan.semanticReplanEnabled,
+        groundedDecisionContextEnabled=plan.groundedDecisionContextEnabled,
     )
 
 

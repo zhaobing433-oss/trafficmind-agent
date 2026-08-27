@@ -63,3 +63,34 @@ def build_critic_messages(ctx: CriticContext) -> tuple:
         '"evidenceGaps": [], "unresolvedRisks": []}'
     )
     return CRITIC_SYSTEM_PROMPT, user
+
+
+def build_grounded_critic_messages(ctx) -> tuple:
+    """构建 grounded critic prompt（Phase19 R2，仅 groundedDecisionContextEnabled=true）。
+
+    模型可见内容唯一来源 = R1 prompt_projection → split_trusted_projection：
+      - trusted 区：T0 枚举 / 系统 ID / 数值（observation type/status/stepId/
+        nodeId/failureCode、trajectorySummary、completedWorkSummary、budgetSnapshot）
+      - untrustedEvidence 区：goal / failureReason / outputSummary /
+        executionEvidence summary / remainingObjectives —— 全部 FreeText，
+        渲染在不可信数据 envelope 内，与 legacy builder 同一信任边界。
+
+    输出 schema 与 legacy 完全一致（replan|abort|escalate_human），authority 不变。
+    """
+    from backend.planning.decision_context import split_trusted_projection
+
+    trusted, untrusted = split_trusted_projection(ctx)
+    payload: Dict[str, Any] = {
+        "task": "基于运行时观察与执行证据给出 replan/abort/escalate_human 建议",
+        "context": trusted,
+        "untrustedEvidence": _wrap_untrusted(untrusted),
+    }
+    user = (
+        "请输出 JSON（不要任何额外文字）：\n"
+        + json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+        + "\n\n输出结构（严格）：\n"
+        '{"recommendation": "replan|abort|escalate_human", "confidence": 0.0-1.0, '
+        '"reasonSummary": "...", "semanticFailureType": "...", '
+        '"evidenceGaps": [], "unresolvedRisks": []}'
+    )
+    return CRITIC_SYSTEM_PROMPT, user

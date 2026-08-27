@@ -43,6 +43,37 @@ def build_assessment_messages(run, root_run_id: str) -> tuple:
     return ASSESSMENT_SYSTEM_PROMPT, user
 
 
+def build_grounded_assessment_messages(ctx, run, root_run_id: str) -> tuple:
+    """构建 grounded assessment prompt（Phase19 R2，仅 flag=true）。
+
+    模型可见内容唯一来源 = R1 prompt_projection → split_trusted_projection：
+      - trusted 区：T0 系统字段（terminal status / trajectorySummary /
+        completedWorkSummary / remainingObjectives 之外的枚举与数值）
+      - untrustedEvidence 区：goal / 证据 summary / remainingObjectives 等
+        FreeText，一律渲染在不可信数据 envelope 内。
+    输出 schema 与 legacy 完全一致（achieved|not_achieved|unknown）。
+    """
+    from backend.planning.critic_prompts import _wrap_untrusted
+    from backend.planning.decision_context import split_trusted_projection
+
+    trusted, untrusted = split_trusted_projection(ctx)
+    payload: Dict[str, Any] = {
+        "task": "评估处置目标是否达成",
+        "rootRunId": root_run_id,
+        "runId": run.run_id,
+        "status": run.status.value,
+        "context": trusted,
+        "untrustedEvidence": _wrap_untrusted(untrusted),
+    }
+    user = (
+        "请输出 JSON（不要任何额外文字）：\n"
+        + json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+        + '\n\n输出结构：{"goalAchievement": "achieved|not_achieved|unknown", '
+        '"confidence": 0.0-1.0, "reasonSummary": "..."}'
+    )
+    return ASSESSMENT_SYSTEM_PROMPT, user
+
+
 def _count_nodes(state: Dict[str, Any]) -> int:
     return len(state.get("nodeOutputs", {}) or {})
 

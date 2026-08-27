@@ -410,6 +410,18 @@ async def start_run(body: StartRunRequest):
     )
 
 
+def _decision_provenance_or_empty(run: WorkflowRun) -> List[Dict[str, Any]]:
+    """Phase19 R4：decision provenance 只读投影（0 provider / 0 写；异常 → []）。
+
+    Phase20 Workflow Detail 可直接消费，无需再解析 state_json。
+    """
+    try:
+        from backend.planning.decision_provenance import build_decision_provenance
+        return build_decision_provenance(run, _repo)
+    except Exception:
+        return []
+
+
 @router.get("/runs/{run_id}", summary="查询 Workflow Run 详情")
 async def get_run(run_id: str):
     """查询单个 Workflow Run 的完整详情，包含状态、节点执行记录和 Trace。"""
@@ -437,6 +449,7 @@ async def get_run(run_id: str):
         "actionRecords": [a.to_dict() for a in action_records],
         "nodeCount": len(node_runs),
         "eventCount": len(events),
+        "decisionProvenance": _decision_provenance_or_empty(run),
     }
 
 
