@@ -190,6 +190,106 @@ async def history(limit: int = 50):
     return {"total": len(records), "records": records}
 
 
+# ── Phase 20: 真实事件批量导入（确定性管线）────────────────────────────────
+# 复用既有 标准化/评分/存储 路径；无 LLM、无 Agent 触发、无 Workflow、无删除。
+
+EVENT_IMPORT_MAX_BATCH = 200
+# 仅允许 Event 模型字段：白名单过滤，其余键一律丢弃、不持久化
+EVENT_IMPORT_ALLOWED_FIELDS = {
+    "eventId", "eventType", "cameraId", "roadName", "direction", "lane",
+    "avgSpeed", "queueLength", "duration", "vehicleCount", "confidence",
+    "weather", "timePeriod", "isMainRoad", "nearbySchool", "nearbyHospital",
+}
+
+
+class EventImportRequest(BaseModel):
+    """批量导入事件请求体。"""
+    events: List[Dict[str, Any]]
+
+
+@app.post("/events/import", summary="批量导入真实交通事件（确定性管线）")
+async def import_events(body: EventImportRequest):
+    """
+    批量导入事件，复用既有标准化/评分/存储路径（与 /analyze_event 同一存储表）。
+
+    确定性管线：validate_event → standardize_event → calculate_risk_score → save。
+    不调用 LLM、不触发任何 Agent、不启动 Workflow、不删除任何数据。
+    已存在的 eventId 一律跳过（绝不静默覆盖）。逐条返回结果（fail-closed per item）。
+    """
+    from backend.tools.event_tools import validate_event, standardize_event
+    from backend.tools.risk_tools import calculate_risk_score
+    from backend.tools.report_tools import generate_event_report
+    from backend.tools.db_tools import save_event_analysis
+
+    if len(body.events) > EVENT_IMPORT_MAX_BATCH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"单次最多导入 {EVENT_IMPORT_MAX_BATCH} 条事件（收到 {len(body.events)} 条）",
+        )
+
+    imported, skipped = 0, 0
+    results: List[Dict[str, Any]] = []
+    for raw in body.events:
+        if not isinstance(raw, dict):
+            results.append({"eventId": None, "status": "failed", "message": "事件必须为 JSON 对象"})
+            continue
+
+        # 白名单过滤：仅保留 Event 模型字段，其余字段不持久化
+        event = {k: v for k, v in raw.items() if k in EVENT_IMPORT_ALLOWED_FIELDS}
+        event_id = str(event.get("eventId", "")).strip()
+
+        ok, err = validate_event(event)
+        if not ok:
+            results.append({"eventId": event_id or None, "status": "failed", "message": err})
+            continue
+        if not event_id:
+            results.append({"eventId": None, "status": "failed", "message": "eventId 不能为空"})
+            continue
+
+        # 重复检查：已存在的 eventId 绝不静默覆盖
+        if get_event_by_id(event_id) is not None:
+            results.append({"eventId": event_id, "status": "skipped", "message": "eventId 已存在，跳过（不覆盖）"})
+            skipped += 1
+            continue
+
+        standardized = standardize_event(event)
+        risk = calculate_risk_score(standardized)
+        report_text = generate_event_report(standardized, risk, {"rule": ""}, [], "")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        saved = save_event_analysis({
+            "eventId": event_id,
+            "standardEvent": standardized,
+            "riskScore": risk.get("riskScore", 0),
+            "riskLevel": risk.get("riskLevel", ""),
+            "riskReasons": risk.get("riskReasons", []),
+            "matchedRule": "",
+            "suggestions": [],
+            "dispatchMessage": "",
+            "publicMessage": "",
+            "report": report_text,
+            "status": "待派单",
+            "analyzedAt": now,
+        })
+        if not saved:
+            results.append({"eventId": event_id, "status": "failed", "message": "数据库保存失败"})
+            continue
+
+        results.append({
+            "eventId": event_id,
+            "status": "imported",
+            "message": f"已导入（{risk.get('riskLevel', '')}，{risk.get('riskScore', 0)} 分）",
+        })
+        imported += 1
+
+    return {
+        "total": len(body.events),
+        "imported": imported,
+        "skipped": skipped,
+        "failed": len(body.events) - imported - skipped,
+        "results": results,
+    }
+
+
 @app.get("/event/{event_id}", summary="查询单条事件详情")
 async def get_event(event_id: str):
     """

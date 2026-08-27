@@ -2,9 +2,20 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { listPlans, getPlan, getPlanDiff, getTrajectory, listObservations } from '../../api/planningApi';
+import { getDefinition } from '../../api/workflowApi';
 import type {
-  PlanListItem, PlanRunSummary, TrajectoryResponse, VersionDiff, ObservationItem,
+  PlanListItem, PlanRunSummary, PlanDetail as PlanDetailData, TrajectoryResponse, VersionDiff, ObservationItem,
 } from '../../types/planning';
+
+/** 真实 Workflow Definition 版本（来自 GET /workflow/definitions/{id} 的 versions[]） */
+interface DefinitionVersion {
+  id: string;
+  definitionId: string;
+  version: number;
+  definitionJson: Record<string, unknown>;
+  changelog: string | null;
+  createdAt: string | null;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   completed: '#16A34A', failed: '#DC2626', running: '#2563EB', pending: '#9CA3AF',
@@ -48,11 +59,20 @@ function PlanList({ onSelect }: { onSelect: (id: string) => void }) {
   const [items, setItems] = useState<PlanListItem[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const pageSize = 20;
 
   useEffect(() => {
-    listPlans({ page, pageSize }).then(r => { setItems(r.plans); setTotal(r.total); }).catch(() => {});
-  }, [page]);
+    let cancelled = false;
+    setLoading(true); setError(null);
+    listPlans({ page, pageSize })
+      .then(r => { if (!cancelled) { setItems(r.plans); setTotal(r.total); } })
+      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : '加载失败'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, reloadKey]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -60,7 +80,9 @@ function PlanList({ onSelect }: { onSelect: (id: string) => void }) {
     <div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>Plan Center</h2>
       <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 12px' }}>自适应计划 · 执行血缘 · 重规划轨迹 · 预算与恢复</p>
-      {items.length === 0 ? <Empty text="暂无计划" /> : (
+      {loading ? <Empty text="加载计划..." />
+      : error ? <div style={{ background: '#FFF', borderRadius: 12, padding: 24, border: '1px solid #FECACA', textAlign: 'center', color: '#DC2626', fontSize: 13 }}>计划列表加载失败：{error} <button onClick={() => setReloadKey(k => k + 1)} style={{ cursor: 'pointer', border: '1px solid #E5E7EB', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#374151', background: '#FFF' }}>重试</button></div>
+      : items.length === 0 ? <Empty text="暂无计划" /> : (
         <div style={{ display: 'grid', gap: 8 }}>
           {items.map(p => (
             <button key={p.planId} onClick={() => onSelect(p.planId)}
@@ -99,14 +121,47 @@ function Empty({ text }: { text: string }) {
 
 function PlanDetail(props: PlanCenterProps) {
   const { planId, rootRunId, fromVersion, toVersion } = props;
-  const [plan, setPlan] = useState<{ goal: string; goalType: string; version: number; planFingerprint: string; definitionStatus: string; createdAt: string } | null>(null);
+  const [plan, setPlan] = useState<PlanDetailData | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [planReloadKey, setPlanReloadKey] = useState(0);
   const [runs, setRuns] = useState<PlanRunSummary[]>([]);
   const [trajectory, setTrajectory] = useState<TrajectoryResponse | null>(null);
   const [observations, setObservations] = useState<ObservationItem[]>([]);
+  // 真实版本历史（复用 Workflow Definition Version API，无新端点）
+  const [defVersions, setDefVersions] = useState<DefinitionVersion[]>([]);
+  const [defVersionsLoading, setDefVersionsLoading] = useState(true);
+  const [defVersionsError, setDefVersionsError] = useState<string | null>(null);
+  const [defVersionsReloadKey, setDefVersionsReloadKey] = useState(0);
 
   useEffect(() => {
-    getPlan(planId!).then(r => { setPlan(r.plan); setRuns(r.runs); }).catch(() => {});
-  }, [planId]);
+    let cancelled = false;
+    setPlanError(null);
+    getPlan(planId!)
+      .then(r => { if (!cancelled) { setPlan(r.plan); setRuns(r.runs); } })
+      .catch((e: unknown) => { if (!cancelled) setPlanError(e instanceof Error ? e.message : '加载失败'); });
+    return () => { cancelled = true; };
+  }, [planId, planReloadKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDefVersionsLoading(true); setDefVersionsError(null);
+    getDefinition(planId!)
+      .then(r => {
+        if (cancelled) return;
+        const vs: DefinitionVersion[] = (r.versions || []).map((v: Record<string, unknown>) => ({
+          id: String(v.id ?? ''),
+          definitionId: String(v.definitionId ?? ''),
+          version: Number(v.version ?? 0),
+          definitionJson: (v.definitionJson ?? {}) as Record<string, unknown>,
+          changelog: (v.changelog as string | null) ?? null,
+          createdAt: (v.createdAt as string | null) ?? null,
+        }));
+        setDefVersions(vs);
+      })
+      .catch((e: unknown) => { if (!cancelled) setDefVersionsError(e instanceof Error ? e.message : '加载失败'); })
+      .finally(() => { if (!cancelled) setDefVersionsLoading(false); });
+    return () => { cancelled = true; };
+  }, [planId, defVersionsReloadKey]);
 
   // 分组 rootRunId
   const lineages = useMemo(() => {
@@ -146,6 +201,22 @@ function PlanDetail(props: PlanCenterProps) {
         {plan?.planFingerprint ? <span style={{ fontFamily: 'monospace' }}> · fp {plan.planFingerprint.slice(0, 10)}</span> : null}
       </p>
 
+      {planError && (
+        <div style={{ background: '#FEF2F2', borderRadius: 8, padding: '10px 14px', border: '1px solid #FECACA', color: '#DC2626', fontSize: 12, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>计划详情加载失败：{planError}</span>
+          <button onClick={() => setPlanReloadKey(k => k + 1)} style={{ cursor: 'pointer', border: '1px solid #FECACA', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#DC2626', background: '#FFF' }}>重试</button>
+        </div>
+      )}
+
+      {plan && <PlanMetaPanel plan={plan} />}
+      <VersionHistoryPanel
+        versions={defVersions}
+        runs={runs}
+        loading={defVersionsLoading}
+        error={defVersionsError}
+        onRetry={() => setDefVersionsReloadKey(k => k + 1)}
+      />
+
       {lineages.length > 0 && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
           {lineages.map(([root]) => (
@@ -161,8 +232,98 @@ function PlanDetail(props: PlanCenterProps) {
       <BudgetPanel runs={runs.filter(r => (r.rootRunId || r.runId) === activeRoot)} />
       <ObservationTimeline observations={observations} />
       <TrajectoryPanel trajectory={trajectory} />
-      <DiffPanel planId={planId!} versions={runs.map(r => r.version)} fromVersion={fromVersion} toVersion={toVersion} onDiffChange={props.onDiffChange} />
+      <DiffPanel planId={planId!} versions={defVersions.map(v => v.version)} fromVersion={fromVersion} toVersion={toVersion} onDiffChange={props.onDiffChange} />
     </div>
+  );
+}
+
+// ── Plan Meta（真实字段，缺失 → 未记录）────────────────────────────────────
+
+function PlanMetaPanel({ plan }: { plan: PlanDetailData }) {
+  const audit = plan.plannerAudit || {};
+  const fallbackReason = audit.fallbackReason
+    || (audit.planningModeRequested && audit.planningModeRequested !== audit.planningModeUsed ? '请求模式与使用模式不一致' : '—');
+  const items: [string, string][] = [
+    ['目标类型', plan.goalType || '未记录'],
+    ['置信度', plan.confidence === null || plan.confidence === undefined ? '未记录' : String(plan.confidence)],
+    ['规划模式', plan.planningMode || '未记录'],
+    ['语义重规划', plan.semanticReplanEnabled ? '已启用' : '未启用'],
+    ['Grounded 决策上下文', plan.groundedDecisionContextEnabled ? '已启用' : '未启用'],
+    ['Planner 模型', audit.plannerModel || (audit.planningModeUsed === 'deterministic' ? 'deterministic（无 LLM）' : '未记录')],
+    ['Planner 回退', fallbackReason],
+    ['Goal 覆盖', audit.goalCoverage || '未记录'],
+    ['创建者', plan.createdBy || '未记录'],
+    ['事件绑定', plan.eventId || '未绑定'],
+  ];
+  return (
+    <Panel title="计划信息">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+        {items.map(([l, v]) => (
+          <div key={l} style={{ background: '#F9FAFB', borderRadius: 8, padding: '8px 10px', border: '1px solid #F3F4F6' }}>
+            <div style={{ fontSize: 11, color: '#9CA3AF' }}>{l}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// ── Version History ──────────────────────────────────────────────────────────
+// 优先展示 workflow_definition_versions 快照（diff 的依据）；
+// 历史计划未写快照时回退到真实执行记录（plan detail runs[]，来自 workflow_runs），绝不伪造。
+
+function VersionHistoryPanel({ versions, runs, loading, error, onRetry }: {
+  versions: DefinitionVersion[]; runs: PlanRunSummary[]; loading: boolean; error: string | null; onRetry: () => void;
+}) {
+  const sorted = useMemo(() => [...versions].sort((a, b) => b.version - a.version), [versions]);
+  // 回退行：从真实执行记录派生版本信息（同版本取最近一次执行的 run）
+  const runRows = useMemo(() => {
+    const byVersion = new Map<number, PlanRunSummary>();
+    for (const r of runs) {
+      const cur = byVersion.get(r.version);
+      if (!cur || (r.startedAt || '') >= (cur.startedAt || '')) byVersion.set(r.version, r);
+    }
+    return Array.from(byVersion.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([version, r]) => ({ version, createdAt: r.startedAt, status: r.status }));
+  }, [runs]);
+
+  const isEmpty = sorted.length === 0 && runRows.length === 0;
+  return (
+    <Panel title={`版本历史（${sorted.length > 0 ? sorted.length : runRows.length}）`}>
+      {loading ? <Empty text="加载版本历史..." />
+      : error ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#DC2626', fontSize: 12 }}>
+          <span>版本历史加载失败：{error}</span>
+          <button onClick={onRetry} style={{ cursor: 'pointer', border: '1px solid #E5E7EB', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#374151', background: '#FFF' }}>重试</button>
+        </div>
+      )
+      : isEmpty ? <Empty text="暂无版本记录" /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {sorted.length === 0 && (
+            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 2 }}>
+              该计划无 workflow_definition_versions 版本快照，以下版本信息来自真实执行记录（workflow_runs）。
+            </div>
+          )}
+          {sorted.length > 0 ? sorted.map(v => (
+            <div key={v.id} style={{ fontSize: 12, padding: '6px 8px', borderBottom: '1px solid #F3F4F6', display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, color: '#111827' }}>v{v.version}</span>
+              <span style={{ fontSize: 11, padding: '0 6px', borderRadius: 6, background: '#F0FDFA', color: '#0F766E' }}>定义快照</span>
+              <span style={{ color: '#9CA3AF' }}>{v.createdAt ? new Date(v.createdAt).toLocaleString() : '创建时间未记录'}</span>
+              <span style={{ color: '#6B7280', flex: 1 }} title={v.changelog || ''}>{v.changelog || '无变更说明'}</span>
+            </div>
+          )) : runRows.map(r => (
+            <div key={`run-v${r.version}`} style={{ fontSize: 12, padding: '6px 8px', borderBottom: '1px solid #F3F4F6', display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, color: '#111827' }}>v{r.version}</span>
+              <span style={{ fontSize: 11, padding: '0 6px', borderRadius: 6, background: '#F3F4F6', color: '#6B7280' }}>执行记录</span>
+              <span style={{ fontSize: 11, padding: '0 6px', borderRadius: 6, background: '#FFF7ED', color: STATUS_COLORS[r.status] || '#9A3412' }}>{statusLabel(r.status)}</span>
+              <span style={{ color: '#9CA3AF' }}>{r.createdAt ? new Date(r.createdAt).toLocaleString() : '开始时间未记录'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -339,7 +500,11 @@ function DiffPanel({ planId, versions, fromVersion, toVersion, onDiffChange }: {
 
   return (
     <Panel title="版本对比">
-      {uniq.length < 2 ? <Empty text="暂无可比较版本" /> : (
+      {uniq.length < 2 ? (
+        <Empty text={uniq.length === 0
+          ? '无版本快照，无法对比（diff 依赖 workflow_definition_versions 快照，该计划未生成）'
+          : '暂无可比较版本（仅有 1 个快照）'} />
+      ) : (
         <div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
             <select value={effFrom != null ? String(effFrom) : ''} onChange={e => onDiffChange(e.target.value ? Number(e.target.value) : null, effTo)} style={sel}>

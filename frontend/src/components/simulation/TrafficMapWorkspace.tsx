@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TrafficMapView } from './TrafficMapView';
 import { TrafficMapToolbar } from './TrafficMapToolbar';
 import { TrafficContextPanel } from './TrafficContextPanel';
+import { RealEventsPanel } from './RealEventsPanel';
 import {
   listScenarios, createSimulation, getSimulation, getNetwork, getSnapshot,
   injectEvent, resetSimulation,
@@ -131,6 +132,9 @@ export const TrafficMapWorkspace: React.FC<Props> = ({ workflowRunId: appWfRunId
           beforeSnapshot={beforeSnapshot}
         />
       </div>
+
+      {/* 真实事件（数据库 /history，与模拟路网区分展示） */}
+      <RealEventsPanel />
     </div>
   );
 };

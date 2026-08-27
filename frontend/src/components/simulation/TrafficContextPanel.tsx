@@ -46,6 +46,10 @@ export const TrafficContextPanel: React.FC<Props> = ({ snapshot, events, run, wo
 
   return (
     <div style={{ width: 340, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
+      {/* 模拟数据标识（与下方真实事件面板区分） */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', border: '1px solid #FED7AA' }}>模拟数据</span>
+      </div>
       {/* A. Event Situation */}
       <Section title="当前事件" color="#DC2626">
         {mainEvent ? (

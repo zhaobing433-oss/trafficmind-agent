@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ChatWorkspace from '../ChatWorkspace';
 import {
-  listDocuments, getDocument, getChunks, createDocument, deleteDocument, reindexDocument, getIndexStatus, getConsistency,
+  listDocuments, getDocument, getChunks, createDocument, deleteDocument, reindexDocument, getIndexStatus, getConsistency, uploadDocument,
 } from '../../api/knowledgeApi';
 import type { KnowledgeDocument, KnowledgeDocumentDetail, KnowledgeChunk, KnowledgeIndexStatus, KnowledgeConsistency } from '../../types/knowledge';
 import { DOC_TYPE_LABELS, DOC_STATUS_LABELS, DOC_STATUS_COLORS } from '../../types/knowledge';
@@ -63,11 +63,16 @@ export const KnowledgeWorkspace: React.FC<Props> = ({ onRefresh, activeSessionId
 
   // Ingest modal
   const [ingestOpen, setIngestOpen] = useState(false);
+  const [ingestMode, setIngestMode] = useState<'text' | 'upload'>('text');
   const [ingestName, setIngestName] = useState('');
   const [ingestType, setIngestType] = useState('rule');
   const [ingestContent, setIngestContent] = useState('');
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<string | null>(null);
+  // File upload (TXT/MD)
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const MAX_UPLOAD_BYTES = 100_000; // 与后端 MAX_UPLOAD_BYTES 对齐
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -130,6 +135,36 @@ export const KnowledgeWorkspace: React.FC<Props> = ({ onRefresh, activeSessionId
     } catch (e: unknown) { setIngestError(e instanceof Error ? e.message : '创建失败'); }
     finally { setIngesting(false); }
   }, [ingestName, ingestType, ingestContent, loadDocs, loadHealth]);
+
+  // Upload — 客户端先做扩展名/大小校验，最终以后端响应为准（不伪造成功）
+  const handleSelectFile = useCallback((f: File | null) => {
+    setIngestError(null);
+    if (!f) { setUploadFile(null); return; }
+    const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+    if (ext !== '.txt' && ext !== '.md') {
+      setUploadFile(null);
+      setIngestError(`不支持的文件类型（${ext || '无扩展名'}），仅支持 .txt / .md 文本文件`);
+      return;
+    }
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setUploadFile(null);
+      setIngestError(`文件超过大小上限 ${MAX_UPLOAD_BYTES / 1000}KB`);
+      return;
+    }
+    setUploadFile(f);
+  }, []);
+
+  const handleUpload = useCallback(async () => {
+    if (!uploadFile) return;
+    setUploading(true); setIngestError(null);
+    try {
+      await uploadDocument(uploadFile, ingestType);
+      // 成功 → 关闭并刷新真实列表（后端已返回文档创建结果）
+      setIngestOpen(false); setIngestName(''); setIngestContent(''); setUploadFile(null);
+      loadDocs(); loadHealth();
+    } catch (e: unknown) { setIngestError(e instanceof Error ? e.message : '上传失败'); }
+    finally { setUploading(false); }
+  }, [uploadFile, ingestType, loadDocs, loadHealth]);
 
   // Delete
   const handleDelete = useCallback(async () => {
@@ -339,24 +374,66 @@ export const KnowledgeWorkspace: React.FC<Props> = ({ onRefresh, activeSessionId
           onClick={() => setIngestOpen(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: '#FFF', borderRadius: 12, maxWidth: 600, width: '90%', padding: 20 }}>
             <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>添加知识</h3>
+            {/* 录入方式切换 */}
+            <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: '1px solid #E5E7EB' }}>
+              {(['text', 'upload'] as const).map(m => (
+                <button key={m} onClick={() => { setIngestMode(m); setIngestError(null); }}
+                  style={{ padding: '6px 16px', fontSize: 13, fontWeight: ingestMode === m ? 600 : 400,
+                    color: ingestMode === m ? '#0F766E' : '#6B7280', background: 'none', border: 'none',
+                    borderBottom: ingestMode === m ? '2px solid #0F766E' : '2px solid transparent', cursor: 'pointer' }}>
+                  {m === 'text' ? '文本录入' : '文件上传'}
+                </button>
+              ))}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <input placeholder="名称" value={ingestName}
-                onChange={e => setIngestName(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none' }} />
-              <select value={ingestType} onChange={e => setIngestType(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, background: '#FFF' }}>
-                {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-              <textarea placeholder="Markdown / 文本内容" value={ingestContent}
-                onChange={e => setIngestContent(e.target.value)} rows={10}
-                style={{ padding: '8px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 12, resize: 'vertical', fontFamily: 'monospace' }} />
+              {ingestMode === 'text' ? (
+                <>
+                  <input placeholder="名称" value={ingestName}
+                    onChange={e => setIngestName(e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none' }} />
+                  <select value={ingestType} onChange={e => setIngestType(e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, background: '#FFF' }}>
+                    {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                  <textarea placeholder="Markdown / 文本内容" value={ingestContent}
+                    onChange={e => setIngestContent(e.target.value)} rows={10}
+                    style={{ padding: '8px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 12, resize: 'vertical', fontFamily: 'monospace' }} />
+                </>
+              ) : (
+                <>
+                  <select value={ingestType} onChange={e => setIngestType(e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, background: '#FFF' }}>
+                    {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                  <div style={{ padding: '14px', borderRadius: 6, border: '1px dashed #D1D5DB', textAlign: 'center', background: '#F9FAFB' }}>
+                    <input type="file" accept=".txt,.md"
+                      onChange={e => handleSelectFile(e.target.files?.[0] ?? null)}
+                      style={{ fontSize: 12 }} />
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
+                      仅支持 .txt / .md 文本文件（UTF-8 编码，≤100KB），内容将直接进入索引管道
+                    </div>
+                    {uploadFile && (
+                      <div style={{ fontSize: 12, color: '#0F766E', marginTop: 6 }}>
+                        已选择：{uploadFile.name}（{(uploadFile.size / 1024).toFixed(1)} KB）
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
               {ingestError && <div style={{ color: '#DC2626', fontSize: 12 }}>{ingestError}</div>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button onClick={() => setIngestOpen(false)} style={{ padding: '6px 16px', borderRadius: 6, border: '1px solid #E5E7EB', background: '#FFF', cursor: 'pointer', fontSize: 12 }}>取消</button>
-                <button onClick={handleIngest} disabled={ingesting || !ingestName.trim() || !ingestContent.trim()}
-                  style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: ingesting ? '#D1D5DB' : '#0F766E', color: '#FFF', cursor: ingesting ? 'not-allowed' : 'pointer', fontSize: 12 }}>
-                  {ingesting ? '创建中...' : '创建'}
-                </button>
+                {ingestMode === 'text' ? (
+                  <button onClick={handleIngest} disabled={ingesting || !ingestName.trim() || !ingestContent.trim()}
+                    style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: ingesting ? '#D1D5DB' : '#0F766E', color: '#FFF', cursor: ingesting ? 'not-allowed' : 'pointer', fontSize: 12 }}>
+                    {ingesting ? '创建中...' : '创建'}
+                  </button>
+                ) : (
+                  <button onClick={handleUpload} disabled={uploading || !uploadFile}
+                    style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: uploading || !uploadFile ? '#D1D5DB' : '#0F766E', color: '#FFF', cursor: uploading || !uploadFile ? 'not-allowed' : 'pointer', fontSize: 12 }}>
+                    {uploading ? '上传中...' : '上传并索引'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
