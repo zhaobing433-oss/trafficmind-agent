@@ -20,9 +20,17 @@ import type {
 interface Props {
   workflowRunId: string | null;
   onWorkflowRunIdChange: (runId: string | null) => void;
+  onOpenWorkflowRun: (runId: string) => void;
+  focusEventId: string | null;
+  focusRoadName: string | null;
+  focusRisk: string | null;
+  onClearFocus: () => void;
 }
 
-export const TrafficMapWorkspace: React.FC<Props> = ({ workflowRunId: appWfRunId, onWorkflowRunIdChange }) => {
+export const TrafficMapWorkspace: React.FC<Props> = ({
+  workflowRunId: appWfRunId, onWorkflowRunIdChange, onOpenWorkflowRun,
+  focusEventId, focusRoadName, focusRisk, onClearFocus,
+}) => {
   const [scenarios, setScenarios] = useState<SimulationScenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState('scenario_c_accident');
   const [run, setRun] = useState<SimulationRun | null>(null);
@@ -79,7 +87,8 @@ export const TrafficMapWorkspace: React.FC<Props> = ({ workflowRunId: appWfRunId
 
   const handleReject = async () => { if (!wfRunId) return; try { const detail = await fetch(`/api/workflow/runs/${encodeURIComponent(wfRunId)}`).then(r => r.json()); const pending = (detail.state as Record<string,unknown>)?.pendingApproval as Record<string,unknown> | undefined; const approvalId = pending?.approvalId as string; if (!approvalId) { setError('找不到审批ID'); return; } await processApproval(wfRunId, approvalId, { action: 'reject', comment: '驳回' }); setWfStatus('rejected'); } catch (err) { setError(`驳回失败: ${err instanceof Error ? err.message : String(err)}`); } };
 
-  const handleViewWorkflow = () => { if (wfRunId && run) { updateUrl(run.runId, wfRunId); onWorkflowRunIdChange(wfRunId); } const el = document.querySelector('[data-nav="workflow"]') as HTMLElement | null; el?.click(); };
+  // F1 修复：wfRunId 缺失时不跳转（按钮 disabled，不假装跳列表成功）
+  const handleViewWorkflow = () => { if (!wfRunId) return; onOpenWorkflowRun(wfRunId); };
 
   // ── Map callbacks ────────────────────────────────────────────
   const handleRoadClick = useCallback((roadId: string, state: TrafficRoadState) => { setSelectedRoad({ roadId, state }); setSelectedCameraId(null); }, []);
@@ -134,7 +143,12 @@ export const TrafficMapWorkspace: React.FC<Props> = ({ workflowRunId: appWfRunId
       </div>
 
       {/* 真实事件（数据库 /history，与模拟路网区分展示） */}
-      <RealEventsPanel />
+      <RealEventsPanel
+        focusEventId={focusEventId}
+        focusRoadName={focusRoadName}
+        focusRisk={focusRisk}
+        onClearFocus={onClearFocus}
+      />
     </div>
   );
 };

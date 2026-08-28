@@ -38,7 +38,9 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
       setTrace(t);
       setDetail(d);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load trace');
+      // Phase20 R2：404 → 运行不存在（未找到 / 已删除）。不得 fallback 到 parent 或其它运行。
+      const msg = e instanceof Error ? e.message : '';
+      setError(/404/.test(msg) ? '未找到 / 已删除' : (msg || 'Failed to load trace'));
     } finally {
       setLoading(false);
     }

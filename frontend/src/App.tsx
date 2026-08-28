@@ -13,6 +13,7 @@ import { TrafficMapWorkspace } from './components/simulation/TrafficMapWorkspace
 import { EvaluationDashboard } from './components/evaluation/EvaluationDashboard';
 import { KnowledgeWorkspace } from './components/knowledge/KnowledgeWorkspace';
 import { PlanCenter } from './components/planning/PlanCenter';
+import { RelatedWorkflowRuns } from './components/workflow/RelatedWorkflowRuns';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
@@ -36,6 +37,9 @@ export default function App() {
   const urlRootRunId = urlParams.get('rootRunId');
   const urlFromVersion = urlParams.get('fromVersion');
   const urlToVersion = urlParams.get('toVersion');
+  const urlEventId = urlParams.get('eventId');
+  const urlRoadName = urlParams.get('roadName');
+  const urlRisk = urlParams.get('risk');
   const initialSessionId = urlSessionId || null;
   const initialWorkflowRunId = urlWorkflowRunId || null;
   const initialSimulationRunId = urlSimulationRunId || null;
@@ -58,6 +62,10 @@ export default function App() {
   const [toVersion, setToVersion] = useState<number | null>(urlToVersion ? Number(urlToVersion) : null);
   const [draftInput, setDraftInput] = useState('');
   const [draftMode, setDraftMode] = useState('react');
+  // Phase20 R2：Traffic 视图深度链接聚焦（真实持久化 ID / 路段名 / 风险过滤）
+  const [trafficEventId, setTrafficEventId] = useState<string | null>(urlEventId || null);
+  const [trafficRoadName, setTrafficRoadName] = useState<string | null>(urlRoadName || null);
+  const [trafficRisk, setTrafficRisk] = useState<string | null>(urlRisk || null);
   const [recentRefresh, setRecentRefresh] = useState(0);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   // Stable key: only change when we WANT to reset the workspace (new conv / recent click)
@@ -132,6 +140,81 @@ export default function App() {
     window.history.pushState({}, '', url.toString());
   }, []);
 
+  // Phase20 R2：Run → Plan（authority: definitionId == planId，仅 plan 物化定义成立）
+  const handleOpenPlan = useCallback((planIdValue: string) => {
+    setView('planning');
+    setPlanId(planIdValue);
+    setRootRunId(null); setFromVersion(null); setToVersion(null);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'planning');
+    url.searchParams.set('planId', planIdValue);
+    url.searchParams.delete('workflowRunId');
+    url.searchParams.delete('rootRunId');
+    url.searchParams.delete('fromVersion');
+    url.searchParams.delete('toVersion');
+    window.history.pushState({}, '', url.toString());
+  }, []);
+
+  // Phase20 R2：Risk → Traffic 事件聚焦（authority: 真实 event_records eventId）
+  const handleOpenTrafficEvent = useCallback((eventId: string) => {
+    setView('simulation');
+    setWorkflowRunId(null);
+    setTrafficEventId(eventId);
+    setTrafficRoadName(null);
+    setTrafficRisk(null);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'simulation');
+    url.searchParams.set('eventId', eventId);
+    url.searchParams.delete('workflowRunId');
+    url.searchParams.delete('roadName');
+    url.searchParams.delete('risk');
+    window.history.pushState({}, '', url.toString());
+  }, []);
+
+  // Phase20 R2：高风险路口 → Traffic 路段过滤（authority: 真实 roadName 值）
+  const handleOpenTrafficRoad = useCallback((roadName: string) => {
+    setView('simulation');
+    setWorkflowRunId(null);
+    setTrafficRoadName(roadName);
+    setTrafficEventId(null);
+    setTrafficRisk(null);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'simulation');
+    url.searchParams.set('roadName', roadName);
+    url.searchParams.delete('workflowRunId');
+    url.searchParams.delete('eventId');
+    url.searchParams.delete('risk');
+    window.history.pushState({}, '', url.toString());
+  }, []);
+
+  // Phase20 R2：高风险事件 KPI → Traffic 风险过滤（authority: 真实 riskLevel 枚举）
+  const handleOpenTrafficRisk = useCallback((risk: string) => {
+    setView('simulation');
+    setWorkflowRunId(null);
+    setTrafficRisk(risk);
+    setTrafficEventId(null);
+    setTrafficRoadName(null);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'simulation');
+    url.searchParams.set('risk', risk);
+    url.searchParams.delete('workflowRunId');
+    url.searchParams.delete('eventId');
+    url.searchParams.delete('roadName');
+    window.history.pushState({}, '', url.toString());
+  }, []);
+
+  // Traffic 面板清除深度链接聚焦（用户主动清除，replaceState 不产生历史条目）
+  const handleClearTrafficFocus = useCallback(() => {
+    setTrafficEventId(null);
+    setTrafficRoadName(null);
+    setTrafficRisk(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('eventId');
+    url.searchParams.delete('roadName');
+    url.searchParams.delete('risk');
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
   // Browser Back / Forward：重新从 URL 解析并同步 React view/state
   useEffect(() => {
     const onPopState = () => {
@@ -147,6 +230,9 @@ export default function App() {
       const tv = params.get('toVersion');
       setFromVersion(fv ? Number(fv) : null);
       setToVersion(tv ? Number(tv) : null);
+      setTrafficEventId(params.get('eventId'));
+      setTrafficRoadName(params.get('roadName'));
+      setTrafficRisk(params.get('risk'));
       const sid = params.get('sessionId');
       if (sid) setActiveSessionId(sid);
     };
@@ -226,6 +312,15 @@ export default function App() {
       url.searchParams.delete('rootRunId');
       url.searchParams.delete('fromVersion');
       url.searchParams.delete('toVersion');
+    }
+    if (v === 'simulation') {
+      // Explicit nav to 交通态势 → clear traffic deep-link focus params
+      setTrafficEventId(null);
+      setTrafficRoadName(null);
+      setTrafficRisk(null);
+      url.searchParams.delete('eventId');
+      url.searchParams.delete('roadName');
+      url.searchParams.delete('risk');
     }
     // 离开 planning 时清理 planning 残留参数
     if (v !== 'planning') {
@@ -308,19 +403,19 @@ export default function App() {
   return (
     <LayoutShell activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
       <div style={view === 'simulation' ? { width: '100%', padding: '16px 24px 32px' } as React.CSSProperties : { maxWidth: 960, margin: '0 auto', width: '100%', padding: '0 24px 32px' }}>
-        {view === 'alert' ? <AlertDashboard /> :
+        {view === 'alert' ? <AlertDashboard onOpenEvent={handleOpenTrafficEvent} onOpenRoad={handleOpenTrafficRoad} onOpenRun={handleOpenWorkflowRun} /> :
          view === 'guide' ? <GuidePage /> :
-         view === 'report' ? <ReportDashboard /> :
+         view === 'report' ? <ReportDashboard onOpenRoad={handleOpenTrafficRoad} onOpenRisk={handleOpenTrafficRisk} /> :
          view === 'qa' ? <KnowledgeWorkspace onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
-         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} /> :
-         view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} /> :
-         view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} /> :
+         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} onOpenRun={handleOpenWorkflowRun} /> :
+         view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} onOpenRun={handleOpenWorkflowRun} onOpenPlan={handleOpenPlan} /> :
+         view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} onOpenWorkflowRun={handleOpenWorkflowRun} focusEventId={trafficEventId} focusRoadName={trafficRoadName} focusRisk={trafficRisk} onClearFocus={handleClearTrafficFocus} /> :
          view === 'planning' ? <PlanCenter planId={planId} rootRunId={rootRunId} fromVersion={fromVersion} toVersion={toVersion} onPlanSelect={handlePlanSelect} onRootRunIdChange={handleRootRunIdChange} onDiffChange={handleDiffChange} onOpenWorkflowRun={handleOpenWorkflowRun} /> :
          view === 'evaluation' ? <EvaluationDashboard /> : (
           <>
             <HomeHero />
             <ScenarioGrid onSelect={handleScenario} />
-            <ChatWorkspace key={workspaceKey} sessionId={activeSessionId || undefined} pendingCreate={pendingCreate} draftInput={draftInput} draftMode={draftMode} onDraftConsumed={() => setDraftInput('')} defaultMode={info.defaultMode} showFullModes={info.showFullModes} onSessionCreated={handleSessionCreated} onConversationUpdate={refreshSessions} onNewConversation={handleNewConversation} view={view} />
+            <ChatWorkspace key={workspaceKey} sessionId={activeSessionId || undefined} pendingCreate={pendingCreate} draftInput={draftInput} draftMode={draftMode} onDraftConsumed={() => setDraftInput('')} defaultMode={info.defaultMode} showFullModes={info.showFullModes} onSessionCreated={handleSessionCreated} onConversationUpdate={refreshSessions} onNewConversation={handleNewConversation} view={view} onOpenWorkflowRun={handleOpenWorkflowRun} />
           </>
         )}
         <div style={{ textAlign: 'center', padding: '24px 0 12px', fontSize: 11, color: '#D1D5DB' }}>TrafficMind Agent · 智慧交通事件研判与协同决策工作台</div>
@@ -355,15 +450,11 @@ function buildFusionSummary(results: Record<string,unknown>): string {
 
 // ========== Multi-Agent Workspace ==========
 
-/** Agent streaming step */
-type Step = { id: string; agentName: string; status: 'pending' | 'thinking' | 'done'; message: string; result?: Record<string,unknown> };
-const AGENT_STEPS = ['CongestionAgent', 'SignalAgent', 'PublicSafetyAgent', 'DispatchAgent', 'ReportAgent'];
-
-function CollaborationWorkspace({ activeSessionId, onRefresh, onSessionCreated }: { activeSessionId: string | null; onRefresh: () => void; onSessionCreated: (id: string) => void }) {
-  return <CollaborationWorkspaceInner activeSessionId={activeSessionId} onRefresh={onRefresh} onSessionCreated={onSessionCreated} />;
+function CollaborationWorkspace({ activeSessionId, onRefresh, onSessionCreated, onOpenRun }: { activeSessionId: string | null; onRefresh: () => void; onSessionCreated: (id: string) => void; onOpenRun: (runId: string) => void }) {
+  return <CollaborationWorkspaceInner activeSessionId={activeSessionId} onRefresh={onRefresh} onSessionCreated={onSessionCreated} onOpenRun={onOpenRun} />;
 }
 
-function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCreated }: { activeSessionId: string | null; onRefresh: () => void; onSessionCreated: (id: string) => void }) {
+function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCreated, onOpenRun }: { activeSessionId: string | null; onRefresh: () => void; onSessionCreated: (id: string) => void; onOpenRun: (runId: string) => void }) {
   // Core multi-run state
   const [activeRunId, setActiveRunId] = useState<string>('');
   const [runsById, setRunsById] = useState<Record<string, CollaborationRun>>({});
@@ -690,6 +781,11 @@ function CollaborationWorkspaceInner({ activeSessionId, onRefresh, onSessionCrea
 
       {/* Collaboration Run View */}
       {activeRun && <CollaborationRunView run={activeRun} />}
+
+      {/* Phase20 R2：相关 Workflow Runs（session-level 真实关系，0..N 全部展示） */}
+      {sessionIdRef.current && (
+        <RelatedWorkflowRuns sessionId={sessionIdRef.current} onOpenRun={onOpenRun} />
+      )}
     </div>
   );
 }
@@ -715,15 +811,13 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 
 // ========== Report Dashboard ==========
 
-function ReportDashboard() {
+function ReportDashboard({ onOpenRoad, onOpenRisk }: { onOpenRoad: (roadName: string) => void; onOpenRisk: (risk: string) => void }) {
   const [stats, setStats] = useState<Record<string,unknown>>({});
   const [roads, setRoads] = useState<Record<string,unknown>[]>([]);
-  const [alerts, setAlerts] = useState<Record<string,unknown>[]>([]);
   const [daily, setDaily] = useState<Record<string,unknown> | null>(null);
   useEffect(() => {
     fetch('/api/stats').then(r => r.json()).then(setStats).catch(() => {});
     fetch('/api/stats/high_risk_roads?days=30').then(r => r.json()).then(d => setRoads(d.topRoads || [])).catch(() => {});
-    fetch('/api/alerts/unclosed?hours=720').then(r => r.json()).then(d => setAlerts(d.alerts || [])).catch(() => {});
     fetch('/api/reports/daily').then(r => r.json()).then(setDaily).catch(() => {});
   }, []);
 
@@ -735,10 +829,16 @@ function ReportDashboard() {
   return (
     <div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 12px' }}>统计报告</h2>
-      {/* Top metrics */}
+      {/* Top metrics — 高风险卡片点击 → 交通态势按风险等级过滤（明确 filter scope，不伪造 eventId） */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
-        {[{ l: '总事件数', v: String(stats.totalEvents || 0), c: '#0F766E' }, { l: '高风险', v: String(stats.highRiskCount || 0), c: '#EF4444' }, { l: '待处置', v: String(stats.pendingDispatch || 0), c: '#F59E0B' }, { l: '平均风险分', v: String(stats.avgRiskScore || 0), c: '#3B82F6' }].map(x => (
-          <div key={x.l} style={{ background: '#FFF', borderRadius: 14, padding: '12px 16px', border: '1px solid #E5E7EB' }}><div style={{ fontSize: 11, color: '#9CA3AF' }}>{x.l}</div><div style={{ fontSize: 24, fontWeight: 700, color: x.c }}>{x.v}</div></div>
+        {[{ l: '总事件数', v: String(stats.totalEvents || 0), c: '#0F766E', click: null }, { l: '高风险', v: String(stats.highRiskCount || 0), c: '#EF4444', click: '高风险' }, { l: '待处置', v: String(stats.pendingDispatch || 0), c: '#F59E0B', click: null }, { l: '平均风险分', v: String(stats.avgRiskScore || 0), c: '#3B82F6', click: null }].map(x => (
+          <div key={x.l}
+            onClick={x.click ? () => onOpenRisk(x.click as string) : undefined}
+            title={x.click ? '跳转交通态势并按风险等级过滤' : undefined}
+            style={{ background: '#FFF', borderRadius: 14, padding: '12px 16px', border: '1px solid #E5E7EB', cursor: x.click ? 'pointer' : undefined }}>
+            <div style={{ fontSize: 11, color: '#9CA3AF' }}>{x.l}{x.click && <span style={{ marginLeft: 6, color: '#3B82F6' }}>查看 →</span>}</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: x.c }}>{x.v}</div>
+          </div>
         ))}
       </div>
 
@@ -758,27 +858,37 @@ function ReportDashboard() {
             ))}
         </div>
 
-        {/* Risk distribution */}
+        {/* Risk distribution — 点击行 → 交通态势按该风险等级过滤 */}
         <div style={{ background: '#FFF', borderRadius: 14, padding: 14, border: '1px solid #E5E7EB' }}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>风险等级分布</div>
           {riskDist.length === 0 ? <div style={{ fontSize: 12, color: '#9CA3AF' }}>暂无数据</div> :
             riskDist.map((r, i) => (
-              <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12 }}>
+              <div key={i} onClick={() => r.level && onOpenRisk(String(r.level))} title={r.level ? '跳转交通态势并按风险等级过滤' : undefined}
+                style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, cursor: r.level ? 'pointer' : undefined }}>
                 <span style={{ flex: 1 }}>{String(r.level || '')}</span>
                 <span style={{ fontWeight: 600 }}>{String(r.count)}</span>
+                <span style={{ color: '#3B82F6', fontSize: 11 }}>查看 →</span>
               </div>
             ))}
         </div>
       </div>
 
-      {/* High Risk Roads */}
+      {/* High Risk Roads — 查看该路段事件 → view=simulation&roadName= */}
       <div style={{ background: '#FFF', borderRadius: 14, padding: 14, border: '1px solid #E5E7EB', marginTop: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>高风险路口 ({roads.length})</div>
         {roads.length === 0 ? <div style={{ fontSize: 12, color: '#9CA3AF' }}>暂无数据</div> :
           roads.slice(0, 5).map((r, i) => (
-            <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12 }}>
-              <strong>{String(r.roadName)}</strong> · {String(r.totalEvents)}起 · 均分{String(r.avgRiskScore)} · 最常见{String(r.mostCommonEventType)}
-              <div style={{ color: '#6B7280', fontSize: 11 }}>{String(r.suggestedAction || '').slice(0, 80)}</div>
+            <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <strong>{String(r.roadName)}</strong> · {String(r.totalEvents)}起 · 均分{String(r.avgRiskScore)} · 最常见{String(r.mostCommonEventType)}
+                <div style={{ color: '#6B7280', fontSize: 11 }}>{String(r.suggestedAction || '').slice(0, 80)}</div>
+              </div>
+              {Boolean(r.roadName) && (
+                <button onClick={() => onOpenRoad(String(r.roadName))}
+                  style={{ padding: '2px 10px', borderRadius: 6, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#2563EB', cursor: 'pointer', fontSize: 11, flexShrink: 0 }}>
+                  查看该路段事件 →
+                </button>
+              )}
             </div>
           ))}
       </div>
@@ -801,9 +911,11 @@ function ReportDashboard() {
 
 // ========== Alert Dashboard ==========
 
-function AlertDashboard() {
+function AlertDashboard({ onOpenEvent, onOpenRoad, onOpenRun }: { onOpenEvent: (eventId: string) => void; onOpenRoad: (roadName: string) => void; onOpenRun: (runId: string) => void }) {
   const [alerts, setAlerts] = useState<unknown[]>([]);
   const [roads, setRoads] = useState<unknown[]>([]);
+  // Phase20 R2：每条提醒可展开「相关 Workflow Runs」（真实关系 0..N，绝不默认挑 latest）
+  const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
   useEffect(() => {
     fetch('/api/alerts/unclosed?hours=720').then(r => r.json()).then(d => setAlerts(d.alerts || [])).catch(() => {});
     fetch('/api/stats/high_risk_roads?days=30').then(r => r.json()).then(d => setRoads(d.topRoads || [])).catch(() => {});
@@ -816,18 +928,47 @@ function AlertDashboard() {
           未闭环事件 = 已被系统发现和研判，但尚未完成处置闭环的交通事件。闭环流程：发现 → 研判 → 派发 → 处置 → 归档。系统中「待派单」「处置中」「待复盘」等状态为<strong>系统内模拟处置状态</strong>，不代表已接入真实交管系统或已向真实单位派发任务。
         </div>
         <h3 style={{ fontSize: 15, fontWeight: 600, color: '#EF4444' }}>未闭环列表 ({alerts.length})</h3>
-        {(alerts as Record<string,unknown>[]).slice(0, 10).map((a, i) => (
-          <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12 }}>
-            <strong>{String(a.eventId)}</strong> {String(a.eventType)} · {String(a.roadName)} · {String(a.riskLevel)}
-            <span style={{ color: '#9CA3AF' }}> · {String(a.durationSinceCreated)}</span>
-          </div>
-        ))}
+        {(alerts as Record<string,unknown>[]).slice(0, 10).map((a, i) => {
+          const eventId = String(a.eventId || '');
+          const expanded = expandedEvent === eventId && Boolean(eventId);
+          return (
+            <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <strong style={{ fontFamily: 'monospace', fontSize: 11 }}>{eventId}</strong>
+                <span>{String(a.eventType)} · {String(a.roadName)} · {String(a.riskLevel)}</span>
+                <span style={{ color: '#9CA3AF' }}> · {String(a.durationSinceCreated)}</span>
+                {eventId && (
+                  <button onClick={() => onOpenEvent(eventId)}
+                    style={{ padding: '1px 8px', borderRadius: 6, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#2563EB', cursor: 'pointer', fontSize: 10 }}>
+                    查看事件 →
+                  </button>
+                )}
+                {eventId && (
+                  <button onClick={() => setExpandedEvent(expanded ? null : eventId)}
+                    style={{ padding: '1px 8px', borderRadius: 6, border: '1px solid #99F6E4', background: '#F0FDFA', color: '#0F766E', cursor: 'pointer', fontSize: 10 }}>
+                    {expanded ? '收起相关运行' : '相关运行'}
+                  </button>
+                )}
+              </div>
+              {expanded && <RelatedWorkflowRuns eventId={eventId} onOpenRun={onOpenRun} />}
+            </div>
+          );
+        })}
+        {(alerts as Record<string,unknown>[]).length === 0 && (
+          <div style={{ fontSize: 12, color: '#9CA3AF', padding: '8px 0' }}>当前没有未闭环事件</div>
+        )}
       </div>
       <div style={{ background: '#FFF', borderRadius: 16, padding: 16, border: '1px solid #E5E7EB' }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, color: '#0F766E' }}>高风险路口 TopN</h3>
         {(roads as Record<string,unknown>[]).map((r, i) => (
-          <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12 }}>
-            <strong>{String(r.roadName)}</strong> · {String(r.totalEvents)}起 · 均分{String(r.avgRiskScore)}
+          <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <span><strong>{String(r.roadName)}</strong> · {String(r.totalEvents)}起 · 均分{String(r.avgRiskScore)}</span>
+            {Boolean(r.roadName) && (
+              <button onClick={() => onOpenRoad(String(r.roadName))}
+                style={{ padding: '1px 8px', borderRadius: 6, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#2563EB', cursor: 'pointer', fontSize: 10, flexShrink: 0 }}>
+                查看该路段事件 →
+              </button>
+            )}
           </div>
         ))}
       </div>

@@ -16,6 +16,7 @@ import { listDefinitions, startRun, getRun, resumeRun, cancelRun, retryNode, pro
 import { WorkflowTracePanel } from './WorkflowTracePanel';
 import { WorkflowErrorBoundary } from './WorkflowErrorBoundary';
 import { WorkflowRunHistory } from './WorkflowRunHistory';
+import { DecisionChainPanel } from './DecisionChainPanel';
 import type { WorkflowDefinition } from '../../api/workflowApi';
 
 const POLL_INTERVAL_MS = 3000;
@@ -31,12 +32,14 @@ interface Props {
   workflowRunId: string | null;
   sessionId: string | null;
   onRunIdChange: (runId: string | null) => void;
+  onOpenRun?: (runId: string) => void;
+  onOpenPlan?: (planId: string) => void;
 }
 
 type PageState = 'center' | 'running';
 type WorkflowTab = 'history' | 'templates';
 
-export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, onRunIdChange }) => {
+export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, onRunIdChange, onOpenRun, onOpenPlan }) => {
   // ── Read workflowTab from URL ──
   const [workflowTab, setWorkflowTabState] = useState<WorkflowTab>(() => {
     const p = new URLSearchParams(window.location.search);
@@ -466,6 +469,16 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
             runId={workflowRunId}
             visible={true}
             onRefresh={() => setTraceRefreshKey(k => k + 1)}
+          />
+        )}
+
+        {/* Phase20 R2：决策链（只消费 decisionProvenance 安全投影）+ Run→Plan */}
+        {workflowRunId && (
+          <DecisionChainPanel
+            key={`decision-${workflowRunId}`}
+            runId={workflowRunId}
+            onOpenChildRun={onOpenRun}
+            onOpenPlan={onOpenPlan}
           />
         )}
       </div>

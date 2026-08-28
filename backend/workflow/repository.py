@@ -452,6 +452,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         session_id: str = "",
         definition_id: str = "",
         status: Optional[str] = None,
+        event_id: str = "",
         limit: int = 50,
         offset: int = 0,
     ) -> List[WorkflowRun]:
@@ -468,6 +469,11 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         if status:
             query += " AND status=?"
             params.append(status)
+        if event_id:
+            # Phase20 R2：按事件 ID 精确匹配（只读，无 schema 变更）。
+            # 绑定源是 state_json 内 $.currentEvent.eventId（仅启动方提供时存在）。
+            query += " AND CASE WHEN json_valid(state_json) THEN json_extract(state_json, '$.currentEvent.eventId') END=?"
+            params.append(event_id)
         query += " ORDER BY updated_at DESC, run_id DESC LIMIT ? OFFSET ?"
         params.append(limit)
         params.append(offset)
@@ -480,6 +486,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         session_id: str = "",
         definition_id: str = "",
         status: Optional[str] = None,
+        event_id: str = "",
     ) -> int:
         """统计符合条件的 Run 总数（用于分页）。"""
         init_workflow_tables()
@@ -495,6 +502,9 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         if status:
             query += " AND status=?"
             params.append(status)
+        if event_id:
+            query += " AND CASE WHEN json_valid(state_json) THEN json_extract(state_json, '$.currentEvent.eventId') END=?"
+            params.append(event_id)
         row = conn.execute(query, params).fetchone()
         conn.close()
         return row["cnt"] if row else 0
