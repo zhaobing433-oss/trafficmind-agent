@@ -78,7 +78,7 @@ function PlanList({ onSelect }: { onSelect: (id: string) => void }) {
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>Plan Center</h2>
+      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>计划中心</h2>
       <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 12px' }}>自适应计划 · 执行血缘 · 重规划轨迹 · 预算与恢复</p>
       {loading ? <Empty text="加载计划..." />
       : error ? <div style={{ background: '#FFF', borderRadius: 12, padding: 24, border: '1px solid #FECACA', textAlign: 'center', color: '#DC2626', fontSize: 13 }}>计划列表加载失败：{error} <button onClick={() => setReloadKey(k => k + 1)} style={{ cursor: 'pointer', border: '1px solid #E5E7EB', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#374151', background: '#FFF' }}>重试</button></div>
@@ -222,7 +222,7 @@ function PlanDetail(props: PlanCenterProps) {
           {lineages.map(([root]) => (
             <button key={root} onClick={() => props.onRootRunIdChange(root)}
               style={{ padding: '4px 10px', borderRadius: 10, border: '1px solid #E5E7EB', background: root === activeRoot ? '#F0FDFA' : '#FFF', cursor: 'pointer', fontSize: 12 }}>
-              lineage {root.slice(0, 12)}
+              血缘 {root.slice(0, 12)}
             </button>
           ))}
         </div>

@@ -82,12 +82,12 @@ export const DecisionChainPanel: React.FC<Props> = ({ runId, onOpenChildRun, onO
   const renderEntry = (e: DecisionProvenanceEntry, i: number) => {
     const typeLabel = DECISION_TYPE_LABELS[e.decisionType] || '未知决策类型';
     return (
-      <div key={`${e.boundaryKey}-${i}`} style={{ background: '#FFF', borderRadius: 10, border: '1px solid #E5E7EB', padding: '10px 12px', marginBottom: 8 }}>
+      <div key={`${e.boundaryKey}-${i}`} style={{ background: '#F9FAFB', borderRadius: 8, border: '1px solid #E5E7EB', padding: '10px 12px', marginBottom: 8 }}>
         {/* 主层信息 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{typeLabel}</span>
-          <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 8, background: '#F9FAFB', color: '#6B7280' }}>plan v{e.planVersion ?? '?'}</span>
-          <span style={{ fontSize: 11, color: statusColor(e.decisionStatus) }}>{fmt(e.decisionStatus)}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{typeLabel}</span>
+          <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 6, background: '#FFF', color: '#6B7280', border: '1px solid #E5E7EB' }}>plan v{e.planVersion ?? '?'}</span>
+          <span style={{ fontSize: 11, color: statusColor(e.decisionStatus), fontWeight: 600 }}>{fmt(e.decisionStatus)}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '2px 12px', fontSize: 11 }}>
           <div><span style={{ color: '#9CA3AF' }}>groundedMode：</span>{fmt(e.groundedMode)}</div>
@@ -146,10 +146,10 @@ export const DecisionChainPanel: React.FC<Props> = ({ runId, onOpenChildRun, onO
   };
 
   return (
-    <div style={{ background: '#F9FAFB', borderRadius: 12, border: '1px solid #E5E7EB', padding: 12, marginTop: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+    <div style={{ background: '#FFF', borderRadius: 8, border: '1px solid #E5E7EB', padding: 14, marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>决策链</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {definitionId && planState === 'is_plan' && onOpenPlan && (
             <button onClick={() => onOpenPlan(definitionId)}
               style={{ padding: '2px 10px', borderRadius: 6, border: '1px solid #99F6E4', background: '#F0FDFA', color: '#0F766E', cursor: 'pointer', fontSize: 11 }}>
@@ -167,11 +167,11 @@ export const DecisionChainPanel: React.FC<Props> = ({ runId, onOpenChildRun, onO
       </div>
 
       {error ? (
-        <div style={{ fontSize: 11, color: '#DC2626' }}>{error === '未找到 / 已删除' ? '未找到 / 已删除' : `决策链加载失败：${error}`}</div>
+        <div style={{ fontSize: 12, color: '#DC2626', padding: '8px 0' }}>{error === '未找到 / 已删除' ? '未找到 / 已删除' : `决策链加载失败：${error}`}</div>
       ) : entries === null ? (
-        <div style={{ fontSize: 11, color: '#9CA3AF' }}>正在加载决策记录…</div>
+        <div style={{ fontSize: 12, color: '#9CA3AF', padding: '8px 0' }}>正在加载决策记录…</div>
       ) : entries.length === 0 ? (
-        <div style={{ fontSize: 11, color: '#9CA3AF', padding: '8px 0' }}>本次运行未生成决策记录</div>
+        <div style={{ fontSize: 12, color: '#9CA3AF', padding: '8px 0' }}>本次运行未生成决策记录</div>
       ) : (
         [...entries]
           .sort((a, b) => {

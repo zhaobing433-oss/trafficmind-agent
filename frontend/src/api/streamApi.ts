@@ -37,7 +37,6 @@ export async function streamRoutedAnalyze(
     mode: body.mode ?? 'collaboration',
     contextPolicy: body.contextPolicy ?? 'fresh_event',
   };
-  console.log('[STREAMAPI_REQUEST]', { sessionId: reqBody.sessionId, content: String(reqBody.content).slice(0, 50) });
   await consumeSSE(`${API}/agent/routed_analyze/stream`, reqBody, callbacks);
 }
 

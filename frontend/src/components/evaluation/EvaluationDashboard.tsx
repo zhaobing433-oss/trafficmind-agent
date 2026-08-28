@@ -17,6 +17,15 @@ const statusBadge = (s: string | null | undefined): React.ReactNode => {
   return <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 8, background: st.bg, color: st.fg, fontWeight: 600 }}>{v}</span>;
 };
 
+const displayCount = (val: number | null | undefined): string => (
+  val === null || val === undefined ? '—' : String(val)
+);
+
+const fmtGateValue = (val: number | null | undefined): string => {
+  if (val === null || val === undefined) return '—';
+  return Number.isFinite(val) ? String(val) : '—';
+};
+
 export const EvaluationDashboard: React.FC = () => {
   const [reports, setReports] = useState<EvalReportSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
@@ -117,6 +126,7 @@ export const EvaluationDashboard: React.FC = () => {
     if (val === undefined || val === null) return '—';
     return `${(val * 100).toFixed(1)}%`;
   };
+  const summaryGates = Array.isArray(summary?.gates) ? summary.gates : [];
 
   return (
     <div style={{ fontSize: 12 }}>
@@ -127,7 +137,7 @@ export const EvaluationDashboard: React.FC = () => {
       <div style={{ display:'flex',gap:8,alignItems:'center',marginBottom:12,flexWrap:'wrap' }}>
         <select value={selectedId} onChange={e => persistId(e.target.value)} style={{ padding:'4px 8px',borderRadius:6,border:'1px solid #D1D5DB',fontSize:12 }}>
           <option value="">选择评测报告...</option>
-          {reports.map(r => (<option key={r.reportId} value={r.reportId}>{r.reportId.slice(-15)} — {r.datasetVersion} — {(r.overallScore*100).toFixed(1)}% — {r.passedCases}/{r.totalCases}</option>))}
+          {reports.map(r => (<option key={r.reportId} value={r.reportId}>{r.reportId.slice(-15)} — {r.datasetVersion || '未记录'} — {fmtMetric(r.overallScore)} — {r.passedCases}/{r.totalCases}</option>))}
         </select>
         {reportCount > 0 && <span style={{ color:'#9CA3AF',fontSize:11 }}>显示最近{reportCount}份</span>}
       </div>
@@ -151,15 +161,15 @@ export const EvaluationDashboard: React.FC = () => {
                   <span><span style={{ color:'#9CA3AF' }}>指标：</span>{statusBadge(summary.metricsStatus)}</span>
                   <span><span style={{ color:'#9CA3AF' }}>门槛：</span>{statusBadge(summary.gateStatus)}</span>
                   <span style={{ color:'#374151' }}>
-                    用例 {summary.totalCases} 个 · 通过 {summary.passedCases} · 失败 {summary.failedCases}
-                    {summary.overallScore != null && <span> · 总体得分 {summary.overallScore}</span>}
+                    用例 {displayCount(summary.totalCases)} 个 · 通过 {displayCount(summary.passedCases)} · 失败 {displayCount(summary.failedCases)}
+                    <span> · 总体得分 {fmtMetric(summary.overallScore)}</span>
                   </span>
                 </div>
-                {summary.gates.length > 0 && (
+                {summaryGates.length > 0 && (
                   <div style={{ display:'flex',gap:8,flexWrap:'wrap',fontSize:10,marginBottom:4 }}>
-                    {summary.gates.map(g => (
+                    {summaryGates.map(g => (
                       <span key={g.gateId} style={{ background:'#F9FAFB',borderRadius:6,padding:'2px 8px',color:'#374151' }}>
-                        {g.gateId} {statusBadge(g.status)} <span style={{ color:'#9CA3AF' }}>{g.actual} / 阈值 {g.threshold}</span>
+                        {g.gateId} {statusBadge(g.status)} <span style={{ color:'#9CA3AF' }}>{fmtGateValue(g.actual)} / 阈值 {fmtGateValue(g.threshold)}</span>
                       </span>
                     ))}
                   </div>
@@ -177,9 +187,9 @@ export const EvaluationDashboard: React.FC = () => {
 
           {/* Metric cards */}
           <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8,marginBottom:12 }}>
-            {[
-              {l:'Overall',v:`${(m.overallScore*100).toFixed(1)}%`,c:summary?.overallStatus==='PASS'?'#0F766E':summary?.overallStatus==='FAIL'?'#EF4444':'#6B7280'},
-              {l:'Gate',v:summary?summary.gateStatus:'未记录',c:summary?.gateStatus==='PASS'?'#0F766E':summary?.gateStatus==='FAIL'?'#EF4444':'#6B7280'},
+              {[
+                {l:'Overall',v:`${(m.overallScore*100).toFixed(1)}%`,c:summary?.overallStatus==='PASS'?'#0F766E':summary?.overallStatus==='FAIL'?'#EF4444':'#6B7280'},
+                {l:'Gate',v:summary?(summary.gateStatus || '未记录'):'未记录',c:summary?.gateStatus==='PASS'?'#0F766E':summary?.gateStatus==='FAIL'?'#EF4444':'#6B7280'},
               {l:'Passed',v:`${m.passedCases}/${m.totalCases}`},
               {l:'Event',v:`${(m.eventFieldAccuracy*100).toFixed(0)}%`},
               {l:'Recall',v:`${(m.requiredAgentRecall*100).toFixed(1)}%`},
@@ -222,12 +232,12 @@ export const EvaluationDashboard: React.FC = () => {
           </div>
 
           {/* Case table */}
-          <div style={{ background:'#FFF',borderRadius:8,border:'1px solid #E5E7EB',overflow:'hidden' }}>
-            <div style={{ display:'grid',gridTemplateColumns:'60px 1fr 80px 60px 120px',gap:4,padding:'4px 8px',background:'#F9FAFB',fontSize:10,fontWeight:600,color:'#6B7280' }}>
+          <div style={{ background:'#FFF',borderRadius:8,border:'1px solid #E5E7EB',overflowX:'auto' }}>
+            <div style={{ display:'grid',gridTemplateColumns:'60px 1fr 80px 60px 120px',gap:4,padding:'4px 8px',background:'#F9FAFB',fontSize:10,fontWeight:600,color:'#6B7280',minWidth:560 }}>
               <span>ID</span><span>名称</span><span>评分</span><span>状态</span><span>分类</span>
             </div>
             {filtered.map(c => (
-              <div key={c.caseId} onClick={()=>setDetailCase(detailCase?.caseId===c.caseId?null:c)} style={{ display:'grid',gridTemplateColumns:'60px 1fr 80px 60px 120px',gap:4,padding:'4px 8px',borderBottom:'1px solid #F3F4F6',cursor:'pointer',background:detailCase?.caseId===c.caseId?'#F0FDFA':'#FFF',fontSize:11 }}>
+              <div key={c.caseId} onClick={()=>setDetailCase(detailCase?.caseId===c.caseId?null:c)} style={{ display:'grid',gridTemplateColumns:'60px 1fr 80px 60px 120px',gap:4,padding:'4px 8px',borderBottom:'1px solid #F3F4F6',cursor:'pointer',background:detailCase?.caseId===c.caseId?'#F0FDFA':'#FFF',fontSize:11,minWidth:560 }}>
                 <span style={{ fontWeight:600 }}>{c.caseId}</span><span>{c.name}</span>
                 <span style={{ color:c.passed?'#0F766E':'#EF4444' }}>{(c.scores.overall*100).toFixed(0)}%</span>
                 <span>{c.passed?'✅':'❌'}</span>

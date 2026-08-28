@@ -57,12 +57,45 @@ const fromRecord = (r: EventRecord): FocusEvent => ({
   riskLevel: r.riskLevel, riskScore: r.riskScore ?? null, status: r.status,
 });
 
-/** AnalyzeResult → 聚焦展示字段 */
-const fromAnalyze = (a: AnalyzeResult): FocusEvent => ({
-  eventId: a.eventId, typeCn: a.standardEvent?.eventTypeCn || a.standardEvent?.eventType || '',
-  roadName: a.standardEvent?.roadName || '', riskLevel: a.riskLevel,
-  riskScore: a.riskScore ?? null, status: a.status || '',
-});
+type EventDetailResponse = Partial<AnalyzeResult> & Partial<EventRecord> & {
+  fullResult?: Partial<AnalyzeResult> | null;
+};
+
+/** /event/{id} → 聚焦展示字段：top-level 优先，其次 standardEvent，最后 fullResult.standardEvent */
+const fromAnalyze = (a: EventDetailResponse): FocusEvent => {
+  const top = a as Record<string, unknown>;
+  const standard = asObject(top.standardEvent);
+  const fullResult = asObject(top.fullResult);
+  const fullStandard = asObject(fullResult.standardEvent);
+
+  return {
+    eventId: pickText(top.eventId, standard.eventId, fullResult.eventId, fullStandard.eventId),
+    typeCn: pickText(top.eventTypeCn, top.eventType, standard.eventTypeCn, standard.eventType, fullStandard.eventTypeCn, fullStandard.eventType),
+    roadName: pickText(top.roadName, standard.roadName, fullStandard.roadName),
+    riskLevel: pickText(top.riskLevel, fullResult.riskLevel),
+    riskScore: pickNumber(top.riskScore, fullResult.riskScore),
+    status: pickText(top.status, fullResult.status),
+  };
+};
+
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function pickText(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '';
+}
+
+function pickNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
 
 export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, focusRisk, onClearFocus }) => {
   const [records, setRecords] = useState<EventRecord[]>([]);
@@ -142,8 +175,8 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
   };
 
   return (
-    <div style={{ marginTop: 12, background: '#FFF', borderRadius: 12, border: '1px solid #E5E7EB', padding: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+    <div style={{ marginTop: 12, background: '#FFF', borderRadius: 8, border: '1px solid #E5E7EB', padding: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', gap: 8 }}>
           真实事件记录（数据库）
           <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 8, background: '#F0FDFA', color: '#0F766E', border: '1px solid #99F6E4' }}>真实数据</span>
@@ -211,12 +244,12 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
         </div>
       )}
 
-      {loading ? <div style={{ textAlign: 'center', padding: 24, color: '#9CA3AF', fontSize: 12 }}>加载真实事件...</div>
+      {loading ? <div style={{ textAlign: 'center', padding: 24, color: '#9CA3AF', fontSize: 12 }}>正在加载真实事件...</div>
       : error ? <div style={{ textAlign: 'center', padding: 24, color: '#DC2626', fontSize: 12 }}>真实事件加载失败：{error} <button onClick={reload} style={{ cursor: 'pointer', border: '1px solid #E5E7EB', borderRadius: 4, padding: '2px 8px', fontSize: 11 }}>重试</button></div>
       : records.length === 0 ? <div style={{ textAlign: 'center', padding: 24, color: '#9CA3AF', fontSize: 12 }}>暂无真实事件记录</div>
       : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #E5E7EB', color: '#6B7280', textAlign: 'left' }}>
                 <th style={{ padding: '6px 8px', fontWeight: 600 }}>事件ID</th>

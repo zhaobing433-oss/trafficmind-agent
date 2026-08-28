@@ -45,7 +45,7 @@ export const TrafficContextPanel: React.FC<Props> = ({ snapshot, events, run, wo
     (roadState.avgSpeed !== beforeRs.avgSpeed || roadState.queueLength !== beforeRs.queueLength);
 
   return (
-    <div style={{ width: 340, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
+    <div style={{ flex: '1 1 300px', width: '100%', maxWidth: 340, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
       {/* 模拟数据标识（与下方真实事件面板区分） */}
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', border: '1px solid #FED7AA' }}>模拟数据</span>
@@ -62,7 +62,7 @@ export const TrafficContextPanel: React.FC<Props> = ({ snapshot, events, run, wo
             <MetricRow label="活跃事件" value={activeEvents.length} />
           </div>
         ) : (
-          <Muted>无活跃事件 — 点击「注入事故」创建模拟事件</Muted>
+          <Muted>无活跃事件，请先注入模拟事件</Muted>
         )}
       </Section>
 

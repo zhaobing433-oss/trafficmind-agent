@@ -115,11 +115,11 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
       />
 
       {/* Main: Map + Right Panel */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <TrafficMapView networkGeoJSON={networkGeoJSON} snapshot={snapshot} onRoadClick={handleRoadClick} onCameraClick={handleCameraClick} mapHeight={520} />
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 560px', minWidth: 320 }}>
+          <TrafficMapView networkGeoJSON={networkGeoJSON} snapshot={snapshot} onRoadClick={handleRoadClick} onCameraClick={handleCameraClick} mapHeight="min(520px, 68vh)" />
           {/* Selected details */}
-          <div style={{ display: 'grid', gridTemplateColumns: selectedRoad || selectedCameraId ? '1fr 1fr' : '1fr', gap: 8, marginTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: selectedRoad || selectedCameraId ? 'repeat(auto-fit, minmax(220px, 1fr))' : '1fr', gap: 8, marginTop: 8 }}>
             {selectedRoad && (
               <div style={{ background: '#FFF', borderRadius: 8, border: '1px solid #E5E7EB', padding: '8px 12px', fontSize: 11 }}>
                 <strong style={{ color: '#111827' }}>{selectedRoad.roadId}</strong>

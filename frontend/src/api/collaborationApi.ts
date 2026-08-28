@@ -89,7 +89,6 @@ export const collabApi = {
       contextPolicy: body.contextPolicy ?? 'fresh_event',
       clientRequestId: body.clientRequestId ?? '',
     };
-    console.log('[COLLAB_REQUEST]', { sessionId: reqBody.sessionId, content: String(reqBody.content).slice(0, 50) });
     return fetch(`${API}/agent/routed_analyze/stream`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(reqBody), signal,

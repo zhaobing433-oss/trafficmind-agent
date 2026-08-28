@@ -179,10 +179,10 @@ export const TrafficMapView: React.FC<Props> = ({ networkGeoJSON, snapshot, onRo
 
   // Render
   return (
-    <div style={{ position: 'relative', width: '100%', height: mapHeight }}>
+    <div style={{ position: 'relative', width: '100%', height: mapHeight, minHeight: 360, borderRadius: 8, overflow: 'hidden', border: '1px solid #E5E7EB', background: '#E8ECF0' }}>
       {mapError ? (
         <div style={{ width: '100%', height: '100%', background: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 13, flexDirection: 'column', gap: 8, borderRadius: 8 }}>
-          <span>🗺 地图加载失败</span>
+          <span>地图加载失败</span>
           <span style={{ fontSize: 11 }}>{mapError}</span>
         </div>
       ) : (

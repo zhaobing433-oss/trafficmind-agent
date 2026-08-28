@@ -61,7 +61,7 @@ export const TrafficMapToolbar: React.FC<Props> = ({
 
       {/* Status chips */}
       {run && (
-        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center', fontSize: 11 }}>
+        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center', fontSize: 11, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <StatusChip label="快照" value={run.snapshotCount} />
           <StatusChip label="状态" value={statusLabel(run.status)} color={run.status === 'running' ? '#0F766E' : undefined} />
           <span style={{ color: '#EF4444', fontWeight: 700, fontSize: 10, marginLeft: 4 }}>SIMULATED</span>

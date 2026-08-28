@@ -50,13 +50,13 @@ export interface EvalSummary {
   commitSha: string | null;
   provider: string | null;
   model: string | null;
-  datasetVersion: string;
-  overallStatus: string;
-  metricsStatus: string;
-  gateStatus: string;
-  totalCases: number;
-  passedCases: number;
-  failedCases: number;
-  overallScore: number;
-  gates: Array<{ gateId: string; status: string; threshold: number; actual: number }>;
+  datasetVersion: string | null;
+  overallStatus: string | null;
+  metricsStatus: string | null;
+  gateStatus: string | null;
+  totalCases: number | null;
+  passedCases: number | null;
+  failedCases: number | null;
+  overallScore: number | null;
+  gates: Array<{ gateId: string; status: string | null; threshold: number | null; actual: number | null }> | null;
 }
