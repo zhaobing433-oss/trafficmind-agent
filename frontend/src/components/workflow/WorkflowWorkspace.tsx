@@ -18,6 +18,7 @@ import { WorkflowErrorBoundary } from './WorkflowErrorBoundary';
 import { WorkflowRunHistory } from './WorkflowRunHistory';
 import { DecisionChainPanel } from './DecisionChainPanel';
 import type { WorkflowDefinition } from '../../api/workflowApi';
+import { workflowTemplateVersionLabel } from '../../utils/display';
 
 const POLL_INTERVAL_MS = 3000;
 const POLLABLE = new Set(['pending', 'running', 'paused']);
@@ -27,6 +28,14 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   congestion: '拥堵', accident: '事故', illegal_parking: '违停', wrong_way: '逆行',
   pedestrian_intrusion: '行人闯入', signal_fault: '信号灯异常', vehicle_stopped: '车辆滞留', construction_block: '施工占道',
 };
+
+function friendlyTemplateDescription(text?: string | null): string {
+  return (text || '暂无说明')
+    .replace(/RAG\s*检索/g, '知识检索')
+    .replace(/Memory\s*上下文/g, '历史上下文')
+    .replace(/拥堵\s*Agent\s*分析/g, '拥堵分析')
+    .replace(/多\s*Agent\s*协同/g, '多角色协同');
+}
 
 interface Props {
   workflowRunId: string | null;
@@ -343,6 +352,7 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
                   {definitions.map(def => {
                     const nodeCount = Array.isArray(def.nodes) ? def.nodes.length : 0;
                     const isSelected = selectedDefId === def.id;
+                    const templateVersion = Number((def.metadata || {}).version ?? (def.metadata || {}).templateVersion ?? 1);
                     return (
                       <div key={def.id} onClick={() => handleSelectTemplate(def.id)}
                         style={{
@@ -352,12 +362,16 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
                         }}>
                         <div>
                           <div style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>{def.name}</div>
-                          <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4, lineHeight: 1.5 }}>{def.description}</div>
-                          <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: '#9CA3AF' }}>
-                            <span>ID: {def.id.slice(0, 12)}...</span>
+                          <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4, lineHeight: 1.5 }}>{friendlyTemplateDescription(def.description)}</div>
+                          <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: '#9CA3AF', flexWrap: 'wrap' }}>
+                            <span>{workflowTemplateVersionLabel(Number.isFinite(templateVersion) ? templateVersion : 1)}</span>
                             <span>节点: {nodeCount}</span>
                             <span>分类: {def.category || '未分类'}</span>
                           </div>
+                          <details style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
+                            <summary style={{ cursor: 'pointer' }}>技术信息</summary>
+                            <div style={{ fontFamily: 'monospace', marginTop: 2, wordBreak: 'break-all' }}>模板 ID {def.id}</div>
+                          </details>
                         </div>
                         {isSelected && (
                           <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 8, background: '#F9FAFB', border: '1px solid #E5E7EB' }}
@@ -386,7 +400,7 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
                                 style={{
                                   marginTop: 4, padding: '8px 0', borderRadius: 8, border: 'none',
                                   cursor: creating ? 'not-allowed' : 'pointer',
-                                  background: formValues.roadName.trim() ? 'linear-gradient(135deg, #0F766E, #14B8A6)' : '#D1D5DB',
+                                  background: formValues.roadName.trim() ? '#0F766E' : '#D1D5DB',
                                   color: '#FFF', fontWeight: 600, fontSize: 13, opacity: creating ? 0.7 : 1,
                                 }}>
                                 {creating ? '启动中...' : '启动流程'}
@@ -419,7 +433,12 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
               ← 工作流中心
             </button>
             <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>工作流运行</span>
-            {workflowRunId && <code style={{ fontSize: 11, color: '#9CA3AF' }}>{workflowRunId}</code>}
+            {workflowRunId && (
+              <details style={{ fontSize: 11, color: '#9CA3AF' }}>
+                <summary style={{ cursor: 'pointer' }}>技术信息</summary>
+                <code style={{ fontSize: 10, color: '#9CA3AF' }}>{workflowRunId}</code>
+              </details>
+            )}
             {!isTerminal && pollTimerRef.current && (
               <span style={{ fontSize: 10, color: '#9CA3AF' }}>⟳ 自动检测状态变化</span>
             )}

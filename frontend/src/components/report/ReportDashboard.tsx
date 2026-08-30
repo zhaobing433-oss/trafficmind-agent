@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import ChatWorkspace from '../ChatWorkspace';
 import { getDailyReport, getHighRiskRoads, getStats } from '../../api/index';
 import type { DailyReportResponse, HighRiskRoad, StatsResponse } from '../../types/index';
+import { eventTypeLabel } from '../../utils/display';
 
 interface ReportDashboardProps {
   onOpenRoad: (roadName: string) => void;
@@ -92,7 +93,7 @@ export function ReportDashboard({ onOpenRoad, onOpenRisk }: ReportDashboardProps
           : typeDist.length === 0 ? <EmptyText text="暂无事件类型数据" />
           : typeDist.map((t, i) => (
             <div key={`${t.type}-${i}`} style={barRowStyle}>
-              <span style={{ flex: 1, minWidth: 72 }}>{t.type || '未记录'}</span>
+              <span style={{ flex: 1, minWidth: 72 }}>{eventTypeLabel(t.type) || '未记录'}</span>
               <div style={barTrackStyle}>
                 <div style={{ height: '100%', width: `${Math.min(100, ((Number(t.count) || 0) / maxTypeCount) * 100)}%`, background: '#0F766E', borderRadius: 4 }} />
               </div>
@@ -128,7 +129,7 @@ export function ReportDashboard({ onOpenRoad, onOpenRisk }: ReportDashboardProps
           <div key={`${r.roadName}-${i}`} style={roadRowStyle}>
             <div style={{ flex: '1 1 220px', minWidth: 0 }}>
               <strong>{r.roadName || '未记录路段'}</strong>
-              <span style={{ color: '#6B7280' }}> · {r.totalEvents} 起 · 均分 {r.avgRiskScore} · 最常见 {r.mostCommonEventType || '未记录'}</span>
+              <span style={{ color: '#6B7280' }}> · {r.totalEvents} 起 · 均分 {r.avgRiskScore} · 最常见 {eventTypeLabel(r.mostCommonEventType) || '未记录'}</span>
               <div style={{ color: '#6B7280', fontSize: 11, marginTop: 2 }}>{(r.suggestedAction || '暂无管理建议').slice(0, 120)}</div>
             </div>
             {r.roadName && (

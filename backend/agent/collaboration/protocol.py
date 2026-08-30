@@ -86,6 +86,7 @@ class AgentResult(BaseModel):
     suggestion: str = ""
     urgency: str = "low"
     evidence_refs: List[str] = Field(default_factory=list)
+    proposed_actions: List[Dict[str, Any]] = Field(default_factory=list)
     assumptions: List[str] = Field(default_factory=list)
     duration_ms: int = 0
 

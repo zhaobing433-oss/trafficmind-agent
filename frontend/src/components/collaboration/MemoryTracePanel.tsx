@@ -187,7 +187,7 @@ const MemoryTracePanel: React.FC<Props> = ({ runId, visible = true }) => {
                   <Tag color={colorMap[wr.action] || "default"}>{wr.action}</Tag>
                   <Tag>{MEMORY_TYPE_LABELS[wr.memoryType] || wr.memoryType}</Tag>
                   <Text>{wr.memoryKey}</Text>
-                  {wr.itemId && <Text type="secondary" style={{ marginLeft: 8 }}>ID: {wr.itemId.slice(0, 12)}</Text>}
+                  {wr.itemId && <Text type="secondary" style={{ marginLeft: 8 }}>记录编号: {wr.itemId.slice(0, 12)}</Text>}
                   {wr.supersededId && (
                     <div style={{ marginTop: 2 }}>
                       <Text type="secondary">

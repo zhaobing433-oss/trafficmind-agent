@@ -13,15 +13,16 @@ import { CollaborationWorkspace } from './components/collaboration/Collaboration
 import { ReportDashboard } from './components/report/ReportDashboard';
 import { AlertDashboard } from './components/alert/AlertDashboard';
 import { GuidePage } from './components/guide/GuidePage';
+import { visualTokens } from './styles/visualTokens';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
-  qa: { title: '知识库', sub: 'RAG 交通知识库 · 规则/预案/经验检索 · 证据问答', showFullModes: false, defaultMode: 'rag' },
+  qa: { title: '知识库', sub: '交通知识库 · 规则/预案/经验检索 · 证据问答', showFullModes: false, defaultMode: 'rag' },
   report: { title: '统计报告', sub: '日报/周报 · 高风险路口 · 事件趋势 · 管理建议', showFullModes: false, defaultMode: 'report' },
-  multi: { title: '协同分析', sub: '多 Agent 研判 · 冲突检测 · 融合处置建议', showFullModes: false, defaultMode: 'routed' },
+  multi: { title: '协同分析', sub: '多角色研判 · 冲突检测 · 融合处置建议', showFullModes: false, defaultMode: 'routed' },
   workflow: { title: '工作流中心', sub: '查看运行记录、跟踪执行状态或从模板启动新的工作流', showFullModes: false, defaultMode: 'routed' },
-  simulation: { title: '交通态势', sub: '模拟路网 · 真实事件记录 · 跨页聚焦', showFullModes: false, defaultMode: 'routed' },
-  planning: { title: '计划中心', sub: '自适应计划 · 执行血缘 · 重规划轨迹 · 预算与恢复', showFullModes: false, defaultMode: 'routed' },
+  simulation: { title: '交通态势', sub: '实时事件、路网风险与处置进展', showFullModes: false, defaultMode: 'routed' },
+  planning: { title: '处置方案中心', sub: '方案内容 · 执行记录 · 调整历史 · 审计信息', showFullModes: false, defaultMode: 'routed' },
 };
 
 export default function App() {
@@ -52,7 +53,7 @@ export default function App() {
     if (urlWorkflowRunId) return 'workflow';
     if (urlSimulationRunId) return 'simulation';
     if (urlPlanId) return 'planning';
-    return 'home';
+    return 'simulation';
   });
   const [workflowRunId, setWorkflowRunId] = useState<string | null>(initialWorkflowRunId);
   const [planId, setPlanId] = useState<string | null>(urlPlanId || null);
@@ -154,6 +155,24 @@ export default function App() {
     window.history.pushState({}, '', url.toString());
   }, []);
 
+  const handleOpenCollaborationSession = useCallback((sessionId: string) => {
+    setView('multi');
+    setActiveSessionId(sessionId);
+    setPendingCreate(false);
+    setDraftInput('');
+    setWorkflowRunId(null);
+    setPlanId(null); setRootRunId(null); setFromVersion(null); setToVersion(null);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'multi');
+    url.searchParams.set('sessionId', sessionId);
+    url.searchParams.delete('workflowRunId');
+    url.searchParams.delete('planId');
+    url.searchParams.delete('rootRunId');
+    url.searchParams.delete('fromVersion');
+    url.searchParams.delete('toVersion');
+    window.history.pushState({}, '', url.toString());
+  }, []);
+
   // Phase20 R2：Risk → Traffic 事件聚焦（authority: 真实 event_records eventId）
   const handleOpenTrafficEvent = useCallback((eventId: string) => {
     setView('simulation');
@@ -222,6 +241,7 @@ export default function App() {
       if (v && VALID_VIEWS.includes(v)) setView(v);
       else if (params.get('workflowRunId')) setView('workflow');
       else if (params.get('planId')) setView('planning');
+      else if (!params.get('sessionId')) setView('simulation');
       setWorkflowRunId(params.get('workflowRunId'));
       setPlanId(params.get('planId'));
       setRootRunId(params.get('rootRunId'));
@@ -408,7 +428,7 @@ export default function App() {
          view === 'qa' ? <KnowledgeWorkspace onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
          view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} onOpenRun={handleOpenWorkflowRun} /> :
          view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} onOpenRun={handleOpenWorkflowRun} onOpenPlan={handleOpenPlan} /> :
-         view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} onOpenWorkflowRun={handleOpenWorkflowRun} focusEventId={trafficEventId} focusRoadName={trafficRoadName} focusRisk={trafficRisk} onClearFocus={handleClearTrafficFocus} /> :
+         view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} onOpenWorkflowRun={handleOpenWorkflowRun} focusEventId={trafficEventId} focusRoadName={trafficRoadName} focusRisk={trafficRisk} onClearFocus={handleClearTrafficFocus} onOpenRoad={handleOpenTrafficRoad} onOpenPlan={handleOpenPlan} onOpenCollaboration={handleOpenCollaborationSession} onOpenKnowledge={() => handleNavigate('qa')} /> :
          view === 'planning' ? <PlanCenter planId={planId} rootRunId={rootRunId} fromVersion={fromVersion} toVersion={toVersion} onPlanSelect={handlePlanSelect} onRootRunIdChange={handleRootRunIdChange} onDiffChange={handleDiffChange} onOpenWorkflowRun={handleOpenWorkflowRun} /> :
          view === 'evaluation' ? <EvaluationDashboard /> : (
           <>
@@ -417,7 +437,7 @@ export default function App() {
             <ChatWorkspace key={workspaceKey} sessionId={activeSessionId || undefined} pendingCreate={pendingCreate} draftInput={draftInput} draftMode={draftMode} onDraftConsumed={() => setDraftInput('')} defaultMode={info.defaultMode} showFullModes={info.showFullModes} onSessionCreated={handleSessionCreated} onConversationUpdate={refreshSessions} onNewConversation={handleNewConversation} view={view} onOpenWorkflowRun={handleOpenWorkflowRun} />
           </>
         )}
-        <div style={{ textAlign: 'center', padding: '24px 0 12px', fontSize: 11, color: '#D1D5DB' }}>TrafficMind Agent · 智慧交通事件研判与协同决策工作台</div>
+        <div style={{ textAlign: 'center', padding: '24px 0 12px', fontSize: 11, color: visualTokens.color.textSubtle }}>TrafficMind · 智慧交通事件研判与协同决策工作台</div>
       </div>
     </LayoutShell>
   );

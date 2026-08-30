@@ -26,25 +26,8 @@ const STATUS_COLORS: Record<WorkflowRunStatus, { bg: string; text: string; borde
   cancelled:     { bg: '#F9FAFB', text: '#6B7280', border: '#E5E7EB' },
 };
 
-/** Terminal 状态图标 */
-const TERMINAL_ICONS: Partial<Record<WorkflowRunStatus, string>> = {
-  completed: '✅',
-  failed: '❌',
-  rejected: '🚫',
-  cancelled: '⏹️',
-};
-
-/** Active 状态图标 */
-const ACTIVE_ICONS: Partial<Record<WorkflowRunStatus, string>> = {
-  pending: '🕐',
-  running: '▶️',
-  paused: '⏸️',
-  awaiting_approval: '⏳',
-};
-
 export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
   const colors = STATUS_COLORS[run.status] || STATUS_COLORS.pending;
-  const icon = TERMINAL_ICONS[run.status] || ACTIVE_ICONS[run.status] || '';
   const statusLabel = RUN_STATUS_LABELS[run.status] || run.status;
   const es = run.eventSummary;
 
@@ -52,7 +35,7 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
   const parts: string[] = [];
   if (es?.roadName) parts.push(es.roadName);
   if (es?.eventTypeCn) parts.push(es.eventTypeCn);
-  const primaryTitle = parts.length > 0 ? parts.join(' · ') : (run.definitionName || 'Workflow Run');
+  const primaryTitle = parts.length > 0 ? parts.join(' · ') : (run.definitionName || '工作流运行');
 
   // ── 节点进度 ──
   let progressText = '';
@@ -118,7 +101,7 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
           color: colors.text,
           border: `1px solid ${colors.border}`,
         }}>
-          {icon} {statusLabel}
+          {statusLabel}
         </span>
       </div>
 
@@ -142,10 +125,10 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
         <span>{actionText}</span>
       </div>
 
-      {/* Row 5: Run ID + Time + CTA */}
+      {/* Row 5: technical metadata + Time + CTA */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 10, color: '#D1D5DB', fontFamily: 'monospace' }}>
-          {run.runId.slice(0, 20)}...
+        <span style={{ fontSize: 10, color: '#9CA3AF' }}>
+          技术信息可在详情查看
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 10, color: '#9CA3AF' }}>{timeLabel}</span>

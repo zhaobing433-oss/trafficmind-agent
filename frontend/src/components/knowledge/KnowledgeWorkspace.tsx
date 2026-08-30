@@ -10,6 +10,7 @@ import {
 import type { KnowledgeDocument, KnowledgeDocumentDetail, KnowledgeChunk, KnowledgeIndexStatus, KnowledgeConsistency } from '../../types/knowledge';
 import { DOC_TYPE_LABELS, DOC_STATUS_LABELS, DOC_STATUS_COLORS } from '../../types/knowledge';
 import { formatDateTime } from '../../utils/format';
+import { knowledgeVersionLabel } from '../../utils/display';
 
 type Tab = 'documents' | 'ask';
 
@@ -192,7 +193,7 @@ export const KnowledgeWorkspace: React.FC<Props> = ({ onRefresh, activeSessionId
   return (
     <div>
       <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>知识库</h2>
-      <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 12px' }}>交通知识文档管理 · RAG检索增强 · 证据问答</p>
+      <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 12px' }}>交通知识文档管理 · 检索增强 · 证据问答</p>
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid #E5E7EB' }}>
@@ -215,9 +216,9 @@ export const KnowledgeWorkspace: React.FC<Props> = ({ onRefresh, activeSessionId
             <div style={{ padding: '8px 14px', borderRadius: 8, marginBottom: 12, fontSize: 12,
               background: health.healthy ? '#F0FDF4' : '#FFF7ED', border: `1px solid ${health.healthy ? '#BBF7D0' : '#FED7AA'}`,
               color: health.healthy ? '#166534' : '#9A3412', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <span>{health.healthy ? '✅ 索引正常' : '⚠ 索引异常'} ·
-                模型 {health.embeddingModel || '?'} · {health.embeddingDimension}d ·
-                文档 {health.documentCount} · chunks {health.chunkCount} · vectors {health.vectorCount ?? '?'}
+              <span title={`模型 ${health.embeddingModel || '?'} · ${health.embeddingDimension}d`}>
+                {health.healthy ? '✅ 索引正常' : '⚠ 索引异常'} ·
+                文档 {health.documentCount} · 分块 {health.chunkCount} · 向量 {health.vectorCount ?? '?'}
                 {health.lastIndexedAt && ` · 更新于 ${formatDateTime(health.lastIndexedAt)}`}
               </span>
               {consistency && !consistency.healthy && (
@@ -254,11 +255,14 @@ export const KnowledgeWorkspace: React.FC<Props> = ({ onRefresh, activeSessionId
                       {doc.name}
                     </div>
                     <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
-                      {DOC_TYPE_LABELS[doc.docType] || doc.docType} · v{doc.version} · {doc.chunkCount} chunks
+                      {DOC_TYPE_LABELS[doc.docType] || doc.docType} · {knowledgeVersionLabel(doc.version)} · {doc.chunkCount} 个分块
                       {doc.status !== 'active' && <span style={{ marginLeft: 6, color: doc.status === 'failed' ? '#DC2626' : '#9CA3AF' }}>{DOC_STATUS_LABELS[doc.status] || doc.status}</span>}
                       {doc.errorMessage && <span style={{ marginLeft: 6, color: '#DC2626' }} title={doc.errorMessage}>⚠</span>}
                     </div>
-                    <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>{doc.documentId}</div>
+                    <details style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
+                      <summary style={{ cursor: 'pointer' }}>技术信息</summary>
+                      <div style={{ fontFamily: 'monospace', marginTop: 2, wordBreak: 'break-all' }}>{doc.documentId}</div>
+                    </details>
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button onClick={() => openDetail(doc.documentId)} style={{ padding: '3px 10px', borderRadius: 4, border: '1px solid #E5E7EB', background: '#FFF', cursor: 'pointer', fontSize: 11 }}>查看</button>
@@ -335,10 +339,16 @@ export const KnowledgeWorkspace: React.FC<Props> = ({ onRefresh, activeSessionId
             <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <span>类型: {DOC_TYPE_LABELS[detailDoc.docType] || detailDoc.docType}</span>
               <span>状态: {DOC_STATUS_LABELS[detailDoc.status] || detailDoc.status}</span>
-              <span>版本: v{detailDoc.version}</span>
-              <span>Chunks: {detailDoc.chunkCount}</span>
-              <span>Hash: {detailDoc.contentHash?.slice(0, 12)}...</span>
+              <span>{knowledgeVersionLabel(detailDoc.version)}</span>
+              <span>分块: {detailDoc.chunkCount}</span>
             </div>
+            <details style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 12 }}>
+              <summary style={{ cursor: 'pointer' }}>技术信息</summary>
+              <div style={{ marginTop: 4, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                Document ID: {detailDoc.documentId}<br />
+                Hash: {detailDoc.contentHash || '未记录'}
+              </div>
+            </details>
             <div style={{ fontSize: 12, marginBottom: 12, background: '#F9FAFB', borderRadius: 6, padding: 10, maxHeight: 150, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
               {detailDoc.content?.slice(0, 2000)}{(detailDoc.content?.length ?? 0) > 2000 ? '...' : ''}
             </div>

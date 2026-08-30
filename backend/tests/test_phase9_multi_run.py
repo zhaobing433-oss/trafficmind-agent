@@ -273,7 +273,7 @@ class TestDetailHydration:
         c = TestClient(app)
         r = c.post('/chat/sessions', json={"mode": "collaboration"})
         sid = r.json()["sessionId"]
-        body = {"eventId": "E_bud", "eventType": "congestion", "roadName": "测试", "direction": "东",
+        body = {"eventType": "congestion", "roadName": "测试", "direction": "东",
                 "avgSpeed": 8.0, "queueLength": 200, "duration": 600, "sessionId": sid}
         c.post('/agent/routed_analyze/stream', json=body)
         runs = c.get(f'/collaboration/sessions/{sid}/runs').json().get("runs", [])
@@ -1238,7 +1238,11 @@ class TestE2EContamination:
         detail_text = json.dumps(detail, ensure_ascii=False)
         # The entire run detail for Round 2 should NOT contain 8 and 400
         # (unless in previousRunContext which is explicitly separate)
-        assert "8km" not in detail_text.lower() or "previousRunContext" in detail_text, \
+        assert (
+            "8km" not in detail_text.lower()
+            or "previousRunContext" in detail_text
+            or "previous_run_context" in detail_text
+        ), \
             f"VERIFICATION 8 FAILED: Run 2 detail may contain 8: {detail_text[:300]}"
 
         # ================================================================

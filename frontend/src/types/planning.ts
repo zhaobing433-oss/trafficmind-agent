@@ -12,6 +12,7 @@ export interface PlanListItem {
   latestExecutionStatus: string | null;
   latestRootRunId: string | null;
   replanCount: number;
+  eventId: string | null;
 }
 
 export interface PlanListResponse {

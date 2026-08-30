@@ -11,13 +11,14 @@ TrafficMind Agent - FastAPI 主应用
 import sys
 import os
 import json
+import uuid
 from datetime import datetime
 from contextlib import asynccontextmanager
 
 # 确保 backend 的父目录在 sys.path 中，以便 `from backend.xxx` 可正常工作
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from typing import Any, Dict, List, Optional
@@ -30,9 +31,44 @@ from backend.tools.db_tools import (
     update_event_status,
     get_stats,
 )
+from backend.tools.event_identity import (
+    EventIdentityError,
+    compact_event_context,
+    extract_event_id,
+    hydrate_authoritative_event,
+)
 from backend.config import EVENT_STATUSES, LLM_ENABLED
 
 # -------------------- 应用生命周期 --------------------
+
+def _new_collaboration_session_id() -> str:
+    return f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
+
+
+def seed_workflow_templates(repo: Optional[Any] = None) -> int:
+    """Seed bundled workflow templates once per business template identity."""
+    from backend.workflow.templates import get_all_templates
+    from backend.workflow.repository import SQLiteWorkflowRepository
+
+    wf_repo = repo or SQLiteWorkflowRepository()
+    seeded = 0
+    for build_fn in get_all_templates():
+        try:
+            definition = build_fn()
+            existing = wf_repo.get_definition(definition.id)
+            if existing is None:
+                existing = wf_repo.find_definition_by_template_identity(
+                    definition.name,
+                    definition.category,
+                )
+            if existing is None:
+                wf_repo.save_definition(definition)
+                seeded += 1
+                print(f"  [Workflow Seed] {definition.id}: {definition.name}")
+        except Exception:
+            pass  # 模板 seeding 失败不阻止启动
+    return seeded
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -56,18 +92,7 @@ async def lifespan(app: FastAPI):
     from backend.simulation.repository import init_simulation_tables
     init_simulation_tables()
     # Phase 13 Round 2: Seed simulation_bridge template
-    from backend.workflow.templates import get_all_templates
-    from backend.workflow.repository import SQLiteWorkflowRepository
-    _wf_repo = SQLiteWorkflowRepository()
-    for build_fn in get_all_templates():
-        try:
-            definition = build_fn()
-            existing = _wf_repo.get_definition(definition.id)
-            if existing is None:
-                _wf_repo.save_definition(definition)
-                print(f"  [Workflow Seed] {definition.id}: {definition.name}")
-        except Exception:
-            pass  # 模板 seeding 失败不阻止启动
+    seed_workflow_templates()
     # Phase 12: Wait Scheduler
     from backend.workflow.wait_scheduler import get_wait_scheduler
     wait_scheduler = get_wait_scheduler()
@@ -991,6 +1016,41 @@ class RoutedStreamRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+def _event_identity_http_error(err: EventIdentityError) -> HTTPException:
+    status = {
+        "event_not_found": 404,
+        "event_id_mismatch": 409,
+        "event_session_conflict": 409,
+        "event_session_corrupt": 409,
+        "event_terminal": 409,
+    }.get(err.code, 400)
+    return HTTPException(status_code=status, detail={"code": err.code, "message": err.message})
+
+
+def _prepare_event_bound_stream(body: RoutedStreamRequest) -> Optional[Dict[str, Any]]:
+    event_id = extract_event_id(body.model_dump())
+    if not event_id:
+        return None
+    try:
+        snapshot = hydrate_authoritative_event(event_id, client_event=body.model_dump())
+        if body.sessionId:
+            from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+            bound_ids = SQLiteCollaborationRepository().get_session_bound_event_ids(body.sessionId)
+            if len(bound_ids) > 1:
+                raise EventIdentityError(
+                    "event_session_corrupt",
+                    f"会话 {body.sessionId} 已存在多个事件绑定，拒绝继续写入",
+                )
+            if bound_ids and bound_ids[0] != event_id:
+                raise EventIdentityError(
+                    "event_session_conflict",
+                    f"会话 {body.sessionId} 已绑定事件 {bound_ids[0]}，不能写入事件 {event_id}",
+                )
+        return snapshot
+    except EventIdentityError as err:
+        raise _event_identity_http_error(err)
+
+
 @app.post("/agent/routed_analyze/stream", summary="协同分析 SSE 流式")
 async def routed_analyze_stream(body: RoutedStreamRequest):
     """多 Agent 协同分析 SSE 流式。
@@ -998,9 +1058,10 @@ async def routed_analyze_stream(body: RoutedStreamRequest):
     COLLABORATION_ORCHESTRATOR_ENABLED=true → Orchestrator 执行
     COLLABORATION_ORCHESTRATOR_ENABLED=false → 旧实现
     """
+    authoritative_event = _prepare_event_bound_stream(body)
     if COLLABORATION_ORCHESTRATOR_ENABLED:
-        return await _orchestrated_analyze_stream(body)
-    return await _legacy_analyze_stream(body)
+        return await _orchestrated_analyze_stream(body, authoritative_event=authoritative_event)
+    return await _legacy_analyze_stream(body, authoritative_event=authoritative_event)
 
 
 async def _run_memory_extraction(
@@ -1130,7 +1191,10 @@ async def _run_memory_extraction(
         }
 
 
-async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
+async def _orchestrated_analyze_stream(
+    body: RoutedStreamRequest,
+    authoritative_event: Optional[Dict[str, Any]] = None,
+):
     """使用 CollaborationOrchestrator 执行协同分析。"""
     import asyncio as _asyncio
     from backend.agent.multi_agent import _get_event_info
@@ -1148,19 +1212,30 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
         context_policy = body.contextPolicy or "fresh_event"
 
         nl_parsed = {}
-        if content_text:
+        if authoritative_event:
+            nl_parsed = compact_event_context(authoritative_event)
+        elif content_text:
             nl_parsed = parse_content_to_event(content_text)
 
         # ===== Step 2: Build currentEvent — STRICTLY from current message =====
         # NEVER merge previous run data into currentEvent
         explicit = body.model_dump()
+        if authoritative_event:
+            explicit = {**explicit, **compact_event_context(authoritative_event)}
         current_event = build_current_event(nl_parsed, explicit, context_policy)
         field_sources = current_event.get("fieldSources", {})
+        if authoritative_event:
+            for key in compact_event_context(authoritative_event):
+                if key in current_event:
+                    field_sources[key] = "authoritative_event_record"
+            current_event["snapshotSource"] = "event_records"
+            current_event["capturedAt"] = authoritative_event.get("capturedAt", "")
+            current_event["fieldSources"] = field_sources
 
         # ===== Step 3: Load previous run context — SEPARATE object =====
         sid = body.sessionId
         if not sid:
-            sess = create_session(f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{id(datetime.now()) % 100000}", "collaboration")
+            sess = create_session(_new_collaboration_session_id(), "collaboration")
             sid = sess["sessionId"]
             yield sse_event("session_created", {"sessionId": sid})
 
@@ -1317,7 +1392,7 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
             # System error: degraded fallback
             degraded = True; fallback_reason = str(e)
             yield sse_event("fallback_started", {"reason": fallback_reason, "fallbackFrom": "orchestrator"})
-            async for ev in _legacy_analyze_stream_inner(body, sid):
+            async for ev in _legacy_analyze_stream_inner(body, sid, authoritative_event):
                 yield ev
         finally:
             # Guard: ensure collaboration_runs.status is never left in "running" if we crash
@@ -1372,20 +1447,27 @@ async def _orchestrated_analyze_stream(body: RoutedStreamRequest):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-async def _legacy_analyze_stream(body: RoutedStreamRequest):
+async def _legacy_analyze_stream(
+    body: RoutedStreamRequest,
+    authoritative_event: Optional[Dict[str, Any]] = None,
+):
     """旧协同分析实现。"""
     import asyncio as _asyncio
     async def agent_stream():
-        async for ev in _legacy_analyze_stream_inner(body, body.sessionId):
+        async for ev in _legacy_analyze_stream_inner(body, body.sessionId, authoritative_event):
             yield ev
     return StreamingResponse(agent_stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-async def _legacy_analyze_stream_inner(body: RoutedStreamRequest, sid: str):
+async def _legacy_analyze_stream_inner(
+    body: RoutedStreamRequest,
+    sid: str,
+    authoritative_event: Optional[Dict[str, Any]] = None,
+):
     import asyncio as _asyncio
     if not sid:
-        sess = create_session(f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{id(datetime.now()) % 100000}", "collaboration")
+        sess = create_session(_new_collaboration_session_id(), "collaboration")
         sid = sess["sessionId"]
         yield sse_event("session_created", {"sessionId": sid})
     user_content = f"协同分析: {body.eventType} {body.roadName} {body.direction or ''}"
@@ -1394,7 +1476,8 @@ async def _legacy_analyze_stream_inner(body: RoutedStreamRequest, sid: str):
     um_id = f"um_{int(datetime.now().timestamp() * 1000)}"
     add_message(um_id, sid, "user", user_content, "collaboration")
 
-    info = _get_event_info(body.model_dump())
+    info_source = compact_event_context(authoritative_event) if authoritative_event else body.model_dump()
+    info = _get_event_info(info_source)
     routing = route_agents(info)
     agents_order = [a for a in routing["selectedAgents"] if a != "ReportAgent"]
 
@@ -1486,6 +1569,29 @@ async def stats():
 
 
 # -------------------- Phase 9.3: 协作审计 API --------------------
+
+@app.get("/collaboration/runs", summary="按真实事件查询协作运行列表")
+async def list_event_collaboration_runs(
+    event_id: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Read-only event-bound collaboration discovery. Uses exact persisted eventId only."""
+    from backend.agent.collaboration.db_repository import SQLiteCollaborationRepository
+    canonical_event_id = str(event_id or "").strip()
+    if not canonical_event_id:
+        raise HTTPException(status_code=400, detail="event_id 不能为空")
+    repo = SQLiteCollaborationRepository()
+    total = repo.count_runs_by_event_id(canonical_event_id)
+    rows = repo.list_runs_by_event_id(canonical_event_id, limit=limit, offset=offset)
+    return {
+        "eventId": canonical_event_id,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "runs": [_safe_parse_json_fields(dict(r)) for r in rows],
+    }
+
 
 @app.get("/collaboration/runs/{run_id}", summary="查询协作运行详情")
 async def get_collaboration_run(run_id: str):
@@ -1708,4 +1814,3 @@ def _safe_json(s: str):
         return _j.loads(s)
     except Exception:
         return s
-

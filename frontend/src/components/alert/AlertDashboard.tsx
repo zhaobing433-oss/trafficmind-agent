@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { getHighRiskRoads, getUnclosedAlerts } from '../../api/index';
 import type { AlertItem, HighRiskRoad } from '../../types/index';
 import { RelatedWorkflowRuns } from '../workflow/RelatedWorkflowRuns';
+import { eventTitle, isIncompleteEvent } from '../../utils/display';
 
 interface AlertDashboardProps {
   onOpenEvent: (eventId: string) => void;
@@ -65,12 +66,16 @@ export function AlertDashboard({ onOpenEvent, onOpenRoad, onOpenRun }: AlertDash
         : alerts.slice(0, 10).map((a, i) => {
           const eventId = a.eventId || '';
           const expanded = expandedEvent === eventId && Boolean(eventId);
+          const title = eventTitle({ roadName: a.roadName, eventType: a.eventType }, '未知来源事件');
+          const incomplete = isIncompleteEvent({ roadName: a.roadName, eventType: a.eventType });
           return (
             <div key={`${eventId}-${i}`} style={alertRowStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <strong style={{ fontFamily: 'monospace', fontSize: 11 }}>{eventId || '未记录事件'}</strong>
-                <span>{a.eventType || '未记录类型'} · {a.roadName || '未记录路段'} · {a.riskLevel || '未记录风险'}</span>
-                <span style={{ color: '#9CA3AF' }}>{a.durationSinceCreated || '未记录时长'}</span>
+                <strong style={{ fontSize: 13, color: '#111827' }}>{title}</strong>
+                <span style={{ color: riskColor(a.riskLevel), fontWeight: 600 }}>{a.riskLevel || '未记录风险'}</span>
+                <span style={{ color: '#6B7280' }}>{a.status || '状态未记录'}</span>
+                <span style={{ color: '#9CA3AF' }}>已持续 {a.durationSinceCreated || '未记录'}</span>
+                {incomplete && <span style={{ color: '#D97706' }}>信息不完整</span>}
                 {eventId && (
                   <button onClick={() => onOpenEvent(eventId)} style={blueButtonStyle}>查看事件</button>
                 )}
@@ -80,6 +85,7 @@ export function AlertDashboard({ onOpenEvent, onOpenRoad, onOpenRun }: AlertDash
                   </button>
                 )}
               </div>
+              {eventId && <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 3, fontFamily: 'monospace' }}>事件编号 {eventId}</div>}
               {a.alertReason && <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>{a.alertReason}</div>}
               {expanded && <RelatedWorkflowRuns eventId={eventId} onOpenRun={onOpenRun} />}
             </div>
@@ -112,6 +118,13 @@ export function AlertDashboard({ onOpenEvent, onOpenRoad, onOpenRun }: AlertDash
 
 function EmptyText({ text }: { text: string }) {
   return <div style={{ fontSize: 12, color: '#9CA3AF', padding: '8px 0' }}>{text}</div>;
+}
+
+function riskColor(level?: string | null): string {
+  if (level === '重大风险') return '#B91C1C';
+  if (level === '高风险') return '#DC2626';
+  if (level === '中风险') return '#D97706';
+  return '#6B7280';
 }
 
 const panelStyle: CSSProperties = {

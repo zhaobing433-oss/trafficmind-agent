@@ -273,6 +273,24 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             return None
         return self._row_to_definition(dict(row))
 
+    def find_definition_by_template_identity(
+        self,
+        name: str,
+        category: str = "",
+    ) -> Optional[WorkflowDefinition]:
+        init_workflow_tables()
+        conn = _get_conn()
+        row = conn.execute(
+            """SELECT * FROM workflow_definitions
+               WHERE name=? AND category=? AND status IN (?, ?)
+               ORDER BY updated_at DESC, id DESC LIMIT 1""",
+            (name, category or "", DefinitionStatus.ACTIVE.value, DefinitionStatus.DRAFT.value),
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._row_to_definition(dict(row))
+
     def list_definitions(
         self, status: Optional[str] = None
     ) -> List[WorkflowDefinition]:
@@ -1521,6 +1539,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         goal_type: Optional[str] = None,
         status: Optional[str] = None,
         search: Optional[str] = None,
+        event_id: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> Tuple[int, List["WorkflowDefinition"]]:
@@ -1544,6 +1563,11 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
                     "LOWER(COALESCE(json_extract(metadata_json, '$.plan.goal'), '')) LIKE ?"
                 )
                 params.append(f"%{search.lower()}%")
+            if event_id:
+                where.append(
+                    "CASE WHEN json_valid(metadata_json) THEN json_extract(metadata_json, '$.plan.eventId') END = ?"
+                )
+                params.append(event_id)
             if status:
                 where.append(
                     """(SELECT r.status FROM workflow_runs r

@@ -76,7 +76,7 @@ export const RelatedWorkflowRuns: React.FC<Props> = ({ sessionId, eventId, onOpe
     <div style={{ background: '#FFF', borderRadius: 8, border: '1px solid #E5E7EB', padding: '10px 14px', marginTop: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>
-          相关 Workflow Runs
+          相关工作流
           {runs !== null && <span style={{ fontWeight: 400, color: '#9CA3AF', marginLeft: 6 }}>共 {totalCount} 条</span>}
         </div>
         {hasMore && <span style={{ fontSize: 10, color: '#D97706' }}>当前显示 {visibleCount} / 共 {totalCount}</span>}
@@ -91,6 +91,7 @@ export const RelatedWorkflowRuns: React.FC<Props> = ({ sessionId, eventId, onOpe
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {runs.map(r => (
             <button key={r.runId} onClick={() => onOpenRun(r.runId)}
+              title={`工作流技术编号 ${r.runId}`}
               style={{
                 display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
                 padding: '6px 10px', borderRadius: 8, border: '1px solid #E5E7EB',
@@ -100,8 +101,7 @@ export const RelatedWorkflowRuns: React.FC<Props> = ({ sessionId, eventId, onOpe
                 width: 8, height: 8, borderRadius: 4, flexShrink: 0,
                 background: RUN_STATUS_COLORS[r.status] || '#9CA3AF',
               }} />
-              <span style={{ color: '#6B7280', fontFamily: 'monospace' }}>{r.runId.slice(0, 12)}</span>
-              <span style={{ color: '#374151' }}>{r.definitionName || r.definitionId.slice(0, 12) || '未知模板'}</span>
+              <span style={{ color: '#374151', fontWeight: 500 }}>{r.definitionName || r.definitionId.slice(0, 12) || '未知模板'}</span>
               <span style={{ color: RUN_STATUS_COLORS[r.status] || '#6B7280' }}>{RUN_STATUS_LABELS[r.status] || r.status}</span>
               <span style={{ color: '#9CA3AF', marginLeft: 'auto' }}>
                 {r.startedAt ? new Date(r.startedAt).toLocaleString() : '未记录'}

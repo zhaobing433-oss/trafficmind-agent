@@ -24,7 +24,10 @@ def _get_event_info(event: Dict[str, Any]) -> Dict[str, Any]:
     norm = normalize_event(se)
 
     return {
+        "eventId": norm.get("eventId", event.get("eventId", "")),
         "eventType": norm.get("eventTypeCn", norm.get("eventType", "")),
+        "eventTypeCn": norm.get("eventTypeCn", ""),
+        "eventTypeCode": norm.get("eventType", ""),
         "roadName": norm.get("roadName", ""),
         "direction": se.get("direction", ""),
         "avgSpeed": norm.get("avgSpeed"),
@@ -32,6 +35,9 @@ def _get_event_info(event: Dict[str, Any]) -> Dict[str, Any]:
         "duration": norm.get("duration"),
         "vehicleCount": norm.get("vehicleCount"),
         "riskScore": norm.get("riskScore"),
+        "status": se.get("status", event.get("status", "")),
+        "snapshotSource": se.get("snapshotSource", event.get("snapshotSource", "")),
+        "capturedAt": se.get("capturedAt", event.get("capturedAt", "")),
         "weather": se.get("weather", "clear"),
         "timePeriod": se.get("timePeriod", "off_peak"),
         "isMainRoad": norm.get("isMainRoad", False),

@@ -23,12 +23,23 @@ from pydantic import BaseModel, ConfigDict
 
 from backend.agent.streaming import sse_event
 from backend.planning.adapter import plan_to_definition
+from backend.planning.agent_planning_adapter import (
+    AgentPlanningAdapterError,
+    build_planning_input_from_agent,
+)
 from backend.planning.context import build_planning_context
 from backend.planning.models import Plan, PlanDefinitionStatus
 from backend.planning.planner import build_plan_with_mode
 from backend.planning.proposal import PlannerFailure
 from backend.planning.status_projection import project_step_statuses
 from backend.planning.validator import has_errors, validate_plan
+from backend.tools.event_identity import (
+    EventIdentityError,
+    compact_event_context,
+    ensure_event_open_for_execution,
+    extract_event_id,
+    hydrate_authoritative_event,
+)
 from backend.workflow.executor import get_executor
 from backend.workflow.repository import SQLiteWorkflowRepository
 
@@ -69,6 +80,16 @@ class PlanRunRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class AgentPlanRequest(BaseModel):
+    """Create a plan from a persisted event-bound collaboration run."""
+    eventId: str
+    sessionId: Optional[str] = ""
+    collaborationRunId: str
+    plannerMode: Optional[str] = "deterministic"
+
+    model_config = ConfigDict(extra="allow")
+
+
 def _build_context(body: PlanPreviewRequest):
     return build_planning_context(
         raw_event=body.event,
@@ -91,6 +112,26 @@ def _normalize_planner_mode(body: PlanPreviewRequest) -> str:
             detail=f"非法 plannerMode '{body.plannerMode}'（仅 deterministic|llm|auto）",
         )
     return mode
+
+
+def _event_identity_http_error(err: EventIdentityError) -> HTTPException:
+    status = {
+        "event_not_found": 404,
+        "event_id_mismatch": 409,
+        "event_terminal": 409,
+    }.get(err.code, 400)
+    return HTTPException(status_code=status, detail={"code": err.code, "message": err.message})
+
+
+def _agent_adapter_http_error(err: AgentPlanningAdapterError) -> HTTPException:
+    status = {
+        "event_not_found": 404,
+        "collaboration_run_not_found": 404,
+        "event_id_mismatch": 409,
+        "session_mismatch": 409,
+        "collaboration_run_unbound": 409,
+    }.get(err.code, 400)
+    return HTTPException(status_code=status, detail={"code": err.code, "message": err.message})
 
 
 def _proposal_summary(proposal) -> Optional[Dict[str, Any]]:
@@ -185,6 +226,122 @@ async def create_plan(body: PlanPreviewRequest):
     }
 
 
+@router.post("/plans/from-agent", summary="从真实事件协作研判生成处置计划")
+async def create_plan_from_agent(body: AgentPlanRequest):
+    """Load persisted structured Agent output and materialize a Plan."""
+    requested_mode = (body.plannerMode or "deterministic").strip().lower()
+    if requested_mode != "deterministic":
+        raise HTTPException(
+            status_code=400,
+            detail="from-agent 仅支持 deterministic plannerMode，确保 Agent 结构化推荐被确定性消费",
+        )
+    try:
+        planning_input = build_planning_input_from_agent(
+            body.eventId,
+            body.sessionId or "",
+            body.collaborationRunId,
+        )
+    except AgentPlanningAdapterError as err:
+        raise _agent_adapter_http_error(err)
+
+    plan_body = PlanPreviewRequest(
+        goal=planning_input.goal,
+        event=planning_input.event,
+        ragEvidence=planning_input.ragEvidence,
+        memoryContext=planning_input.memoryContext,
+        constraints=planning_input.constraints,
+        plannerMode="deterministic",
+    )
+    planner_mode = _normalize_planner_mode(plan_body)
+    ctx = _build_context(plan_body)
+    try:
+        result = await build_plan_with_mode(ctx, planner_mode)
+    except PlannerFailure as f:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "planner 失败", "failure": f.to_dict()},
+        )
+
+    plan = result.plan
+    plan.definitionStatus = PlanDefinitionStatus.VALIDATED
+    plan.plannerAudit = result.planner_audit.to_dict()
+    plan.metadata.update(planning_input.planMetadata)
+
+    issues = validate_plan(plan)
+    if has_errors(issues):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "计划校验失败",
+                "validationIssues": [i.to_dict() for i in issues],
+            },
+        )
+
+    plan.definitionStatus = PlanDefinitionStatus.ACTIVE
+    definition = plan_to_definition(plan)
+    definition.metadata["validation"] = {
+        "valid": True,
+        "issueCount": len(issues),
+        "issues": [i.to_dict() for i in issues],
+    }
+    _repo.save_definition(definition)
+
+    audit = planning_input.constraints.get("agentRecommendationAudit", {})
+    return {
+        "planId": plan.planId,
+        "version": plan.version,
+        "fingerprint": plan.planFingerprint,
+        "definitionStatus": plan.definitionStatus.value,
+        "plannerAudit": result.planner_audit.to_dict(),
+        "sourceAgent": planning_input.constraints.get("sourceAgent", {}),
+        "agentRecommendationAudit": audit,
+        "plan": plan.to_dict(),
+    }
+
+
+def _plan_snapshot_fallback(plan: Plan) -> Optional[Dict[str, Any]]:
+    event_id = str(plan.eventId or "").strip()
+    snapshot = (plan.metadata or {}).get("eventSnapshot")
+    if not event_id or not isinstance(snapshot, dict):
+        return None
+    if extract_event_id(snapshot) != event_id:
+        return None
+    event = compact_event_context(snapshot)
+    event["eventId"] = event_id
+    event["snapshotSource"] = "plan_snapshot"
+    return event
+
+
+def _resolve_plan_run_event(plan: Plan, body: PlanRunRequest) -> Dict[str, Any]:
+    plan_event_id = str(plan.eventId or "").strip()
+    body_event = body.event or {}
+    body_event_id = extract_event_id(body_event)
+
+    if not plan_event_id:
+        legacy_event = dict(body_event)
+        legacy_event.pop("eventId", None)
+        legacy_event.pop("event_id", None)
+        return legacy_event
+
+    if body_event_id and body_event_id != plan_event_id:
+        raise _event_identity_http_error(EventIdentityError(
+            "event_id_mismatch",
+            f"请求事件 {body_event_id} 与方案绑定事件 {plan_event_id} 不一致",
+        ))
+
+    try:
+        snapshot = hydrate_authoritative_event(plan_event_id)
+        ensure_event_open_for_execution(snapshot)
+        return compact_event_context(snapshot)
+    except EventIdentityError as err:
+        if err.code == "event_not_found":
+            fallback = _plan_snapshot_fallback(plan)
+            if fallback is not None:
+                ensure_event_open_for_execution(fallback)
+                return fallback
+        raise _event_identity_http_error(err)
+
+
 @router.post("/plans/{plan_id}/run", summary="执行物化计划（SSE）")
 async def run_plan(plan_id: str, body: PlanRunRequest):
     """lookup materialized plan → revalidate 必要安全条件 → 委托 WorkflowExecutor。"""
@@ -207,9 +364,11 @@ async def run_plan(plan_id: str, body: PlanRunRequest):
             },
         )
 
+    initial_event = _resolve_plan_run_event(plan, body)
+
     # Phase17 Round3: 创建 durable planning run（PENDING + driver_managed），
     # RunDriver 异步执行；HTTP/SSE 只 observe。
-    run_id = _create_planning_run_record(plan_id, body)
+    run_id = _create_planning_run_record(plan_id, body, initial_event=initial_event)
     if run_id is None:
         raise HTTPException(status_code=400, detail="创建 planning run 失败")
 
@@ -307,6 +466,7 @@ async def list_plans(
     goalType: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
+    eventId: Optional[str] = None,
 ):
     """plan discovery。只返回 planning definitions。filter 在 SQL 侧先于分页。"""
     page = max(1, page)
@@ -316,6 +476,7 @@ async def list_plans(
     # filter（goalType/status/search）在 SQL 侧生效；只加载当前页，无 1000 硬上限
     total, definitions = _repo.list_planning_definitions_filtered(
         goal_type=goalType, status=status, search=search,
+        event_id=(eventId or "").strip() or None,
         limit=pageSize, offset=offset,
     )
     aggregates = _repo.batch_get_run_aggregates([d.id for d in definitions])
@@ -340,6 +501,7 @@ async def list_plans(
             "latestExecutionStatus": latest.get("status") if latest else None,
             "latestRootRunId": latest.get("rootRunId") if latest else None,
             "replanCount": agg.get("replanCount", 0),
+            "eventId": plan.eventId if plan else None,
         })
 
     return {"total": total, "page": page, "pageSize": pageSize, "plans": items}
@@ -408,7 +570,11 @@ def _auto_replan_if_needed(run_id: str) -> None:
         pass  # 自动 replan 失败不阻断主流程
 
 
-def _create_planning_run_record(plan_id: str, body) -> Optional[str]:
+def _create_planning_run_record(
+    plan_id: str,
+    body,
+    initial_event: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
     """创建 durable planning run（PENDING + driver_managed=1），不执行。
 
     返回 run_id；RunDriver 随后 claim + execute_created_run。
@@ -430,11 +596,12 @@ def _create_planning_run_record(plan_id: str, body) -> Optional[str]:
             return None
         version = mgr.create_version(definition, changelog="planning run")
         run_id = generate_run_id()
+        event_snapshot = initial_event if initial_event is not None else copy.deepcopy(body.event or {})
         state = TrafficWorkflowState(
             workflow_run_id=run_id, workflow_definition_id=plan_id,
             workflow_version=version.version,
             session_id=body.sessionId or "", event_thread_id=body.eventThreadId or "",
-            current_event=body.event or {}, original_input=copy.deepcopy(body.event or {}),
+            current_event=event_snapshot, original_input=copy.deepcopy(event_snapshot),
             status=WorkflowRunStatus.PENDING, current_node=definition.entry_node_id,
         )
         run = WorkflowRun(

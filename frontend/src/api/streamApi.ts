@@ -32,6 +32,7 @@ export async function streamRoutedAnalyze(
 ): Promise<void> {
   // Force sessionId: convert undefined → null so JSON.stringify includes it
   const reqBody = {
+    ...body,
     sessionId: body.sessionId ?? null,
     content: body.content ?? '',
     mode: body.mode ?? 'collaboration',
