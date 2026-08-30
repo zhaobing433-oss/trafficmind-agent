@@ -12,6 +12,7 @@ export interface PlanListItem {
   latestExecutionStatus: string | null;
   latestRootRunId: string | null;
   replanCount: number;
+  eventId: string | null;
 }
 
 export interface PlanListResponse {
@@ -37,8 +38,38 @@ export interface PlanRunSummary {
   stepStatuses: Record<string, string>;
 }
 
+/** Plan 详情（来自 GET /planning/plans/{id} 的 plan.to_dict()） */
+export interface PlanDetail {
+  planId: string;
+  goal: string;
+  goalType: string;
+  definitionStatus: string;
+  version: number;
+  planFingerprint: string;
+  planningMode: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  eventId: string | null;
+  confidence: number | null;
+  plannerAudit: {
+    planningModeRequested?: string;
+    planningModeUsed?: string;
+    plannerModel?: string | null;
+    proposalId?: string | null;
+    confidence?: number | null;
+    assumptions?: string[];
+    plannerReasonSummary?: string;
+    attemptCount?: number;
+    fallbackReason?: string | null;
+    goalCoverage?: string;
+  };
+  semanticReplanEnabled: boolean;
+  groundedDecisionContextEnabled: boolean;
+}
+
 export interface PlanDetailResponse {
-  plan: { planId: string; goal: string; goalType: string; definitionStatus: string; version: number; planFingerprint: string; createdAt: string };
+  plan: PlanDetail;
   definitionId: string;
   runs: PlanRunSummary[];
 }

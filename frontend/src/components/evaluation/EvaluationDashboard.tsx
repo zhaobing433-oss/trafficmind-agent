@@ -1,12 +1,38 @@
 /** Phase 14 Round 3 — Evaluation Dashboard */
 import React, { useEffect, useState } from 'react';
-import { listReports, getReport, compareReports } from '../../api/evaluationApi';
-import type { EvalReportSummary, EvalReportFull, EvalCaseDetail, ReportCompare } from '../../types/evaluation';
+import { listReports, getReport, compareReports, getReportSummary } from '../../api/evaluationApi';
+import type { EvalReportSummary, EvalReportFull, EvalCaseDetail, ReportCompare, EvalSummary } from '../../types/evaluation';
+
+/** 三态徽章：PASS / FAIL / UNKNOWN / 未记录（后端 summary 为 authority，不前端推算） */
+const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
+  PASS: { bg: '#ECFDF5', fg: '#059669' },
+  FAIL: { bg: '#FEF2F2', fg: '#DC2626' },
+  UNKNOWN: { bg: '#F3F4F6', fg: '#6B7280' },
+};
+
+const statusBadge = (s: string | null | undefined): React.ReactNode => {
+  const v = s || '';
+  if (!v) return <span style={{ fontSize: 10, color: '#9CA3AF' }}>未记录</span>;
+  const st = STATUS_STYLE[v] || STATUS_STYLE.UNKNOWN;
+  return <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 8, background: st.bg, color: st.fg, fontWeight: 600 }}>{v}</span>;
+};
+
+const displayCount = (val: number | null | undefined): string => (
+  val === null || val === undefined ? '—' : String(val)
+);
+
+const fmtGateValue = (val: number | null | undefined): string => {
+  if (val === null || val === undefined) return '—';
+  return Number.isFinite(val) ? String(val) : '—';
+};
 
 export const EvaluationDashboard: React.FC = () => {
   const [reports, setReports] = useState<EvalReportSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [report, setReport] = useState<EvalReportFull | null>(null);
+  // Phase20 R2：产品级总览 — GET /evaluation/reports/{id}/summary
+  const [summary, setSummary] = useState<EvalSummary | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [detailCase, setDetailCase] = useState<EvalCaseDetail | null>(null);
   const [compare, setCompare] = useState<ReportCompare | null>(null);
   const [compareTarget, setCompareTarget] = useState('');
@@ -36,6 +62,11 @@ export const EvaluationDashboard: React.FC = () => {
   useEffect(() => {
     if (!selectedId) return;
     getReport(selectedId).then(setReport).catch(() => setError('加载报告失败'));
+    // Phase20 R2：summary 单独加载，失败不阻塞 full report（case/detail 仍可用）
+    setSummary(null); setSummaryError(null);
+    getReportSummary(selectedId)
+      .then(setSummary)
+      .catch(e => setSummaryError(e instanceof Error ? e.message : 'summary 加载失败'));
     setDetailCase(null);
     setCompare(null);
   }, [selectedId]);
@@ -95,6 +126,7 @@ export const EvaluationDashboard: React.FC = () => {
     if (val === undefined || val === null) return '—';
     return `${(val * 100).toFixed(1)}%`;
   };
+  const summaryGates = Array.isArray(summary?.gates) ? summary.gates : [];
 
   return (
     <div style={{ fontSize: 12 }}>
@@ -105,18 +137,59 @@ export const EvaluationDashboard: React.FC = () => {
       <div style={{ display:'flex',gap:8,alignItems:'center',marginBottom:12,flexWrap:'wrap' }}>
         <select value={selectedId} onChange={e => persistId(e.target.value)} style={{ padding:'4px 8px',borderRadius:6,border:'1px solid #D1D5DB',fontSize:12 }}>
           <option value="">选择评测报告...</option>
-          {reports.map(r => (<option key={r.reportId} value={r.reportId}>{r.reportId.slice(-15)} — {r.datasetVersion} — {(r.overallScore*100).toFixed(1)}% — {r.passedCases}/{r.totalCases}</option>))}
+          {reports.map(r => (<option key={r.reportId} value={r.reportId}>{r.reportId.slice(-15)} — {r.datasetVersion || '未记录'} — {fmtMetric(r.overallScore)} — {r.passedCases}/{r.totalCases}</option>))}
         </select>
         {reportCount > 0 && <span style={{ color:'#9CA3AF',fontSize:11 }}>显示最近{reportCount}份</span>}
       </div>
 
       {report && m ? (
         <>
+          {/* Phase20 R2：产品级总览（summary 为 authority；full report 继续用于 case/detail） */}
+          <div style={{ background:'#FFF',borderRadius:8,border:'1px solid #E5E7EB',padding:'10px 12px',marginBottom:8 }}>
+            <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6 }}>
+              <div style={{ fontWeight:600,fontSize:12 }}>产品级总览</div>
+              <span style={{ fontSize:9,color:'#9CA3AF' }}>GET /evaluation/reports/{'{id}'}/summary</span>
+            </div>
+            {summaryError ? (
+              <div style={{ fontSize:11,color:'#DC2626' }}>summary 加载失败：{summaryError}</div>
+            ) : !summary ? (
+              <div style={{ fontSize:11,color:'#9CA3AF' }}>正在加载 summary…</div>
+            ) : (
+              <>
+                <div style={{ display:'flex',gap:12,flexWrap:'wrap',alignItems:'center',fontSize:11,marginBottom:6 }}>
+                  <span><span style={{ color:'#9CA3AF' }}>总体：</span>{statusBadge(summary.overallStatus)}</span>
+                  <span><span style={{ color:'#9CA3AF' }}>指标：</span>{statusBadge(summary.metricsStatus)}</span>
+                  <span><span style={{ color:'#9CA3AF' }}>门槛：</span>{statusBadge(summary.gateStatus)}</span>
+                  <span style={{ color:'#374151' }}>
+                    用例 {displayCount(summary.totalCases)} 个 · 通过 {displayCount(summary.passedCases)} · 失败 {displayCount(summary.failedCases)}
+                    <span> · 总体得分 {fmtMetric(summary.overallScore)}</span>
+                  </span>
+                </div>
+                {summaryGates.length > 0 && (
+                  <div style={{ display:'flex',gap:8,flexWrap:'wrap',fontSize:10,marginBottom:4 }}>
+                    {summaryGates.map(g => (
+                      <span key={g.gateId} style={{ background:'#F9FAFB',borderRadius:6,padding:'2px 8px',color:'#374151' }}>
+                        {g.gateId} {statusBadge(g.status)} <span style={{ color:'#9CA3AF' }}>{fmtGateValue(g.actual)} / 阈值 {fmtGateValue(g.threshold)}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display:'flex',gap:12,flexWrap:'wrap',fontSize:10,color:'#6B7280' }}>
+                  <span>数据集：{summary.datasetVersion || '未记录'}</span>
+                  <span>provider：{summary.provider || '未记录'}</span>
+                  <span>model：{summary.model || '未记录'}</span>
+                  <span>commit：{summary.commitSha || '未记录'}</span>
+                  <span>生成时间：{summary.generatedAt || '未记录'}</span>
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Metric cards */}
           <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8,marginBottom:12 }}>
-            {[
-              {l:'Overall',v:`${(m.overallScore*100).toFixed(1)}%`,c:gate?.passed?'#0F766E':'#EF4444'},
-              {l:'Gate',v:gate?.passed?'PASS':'FAIL',c:gate?.passed?'#0F766E':'#EF4444'},
+              {[
+                {l:'Overall',v:`${(m.overallScore*100).toFixed(1)}%`,c:summary?.overallStatus==='PASS'?'#0F766E':summary?.overallStatus==='FAIL'?'#EF4444':'#6B7280'},
+                {l:'Gate',v:summary?(summary.gateStatus || '未记录'):'未记录',c:summary?.gateStatus==='PASS'?'#0F766E':summary?.gateStatus==='FAIL'?'#EF4444':'#6B7280'},
               {l:'Passed',v:`${m.passedCases}/${m.totalCases}`},
               {l:'Event',v:`${(m.eventFieldAccuracy*100).toFixed(0)}%`},
               {l:'Recall',v:`${(m.requiredAgentRecall*100).toFixed(1)}%`},
@@ -159,12 +232,12 @@ export const EvaluationDashboard: React.FC = () => {
           </div>
 
           {/* Case table */}
-          <div style={{ background:'#FFF',borderRadius:8,border:'1px solid #E5E7EB',overflow:'hidden' }}>
-            <div style={{ display:'grid',gridTemplateColumns:'60px 1fr 80px 60px 120px',gap:4,padding:'4px 8px',background:'#F9FAFB',fontSize:10,fontWeight:600,color:'#6B7280' }}>
+          <div style={{ background:'#FFF',borderRadius:8,border:'1px solid #E5E7EB',overflowX:'auto' }}>
+            <div style={{ display:'grid',gridTemplateColumns:'60px 1fr 80px 60px 120px',gap:4,padding:'4px 8px',background:'#F9FAFB',fontSize:10,fontWeight:600,color:'#6B7280',minWidth:560 }}>
               <span>ID</span><span>名称</span><span>评分</span><span>状态</span><span>分类</span>
             </div>
             {filtered.map(c => (
-              <div key={c.caseId} onClick={()=>setDetailCase(detailCase?.caseId===c.caseId?null:c)} style={{ display:'grid',gridTemplateColumns:'60px 1fr 80px 60px 120px',gap:4,padding:'4px 8px',borderBottom:'1px solid #F3F4F6',cursor:'pointer',background:detailCase?.caseId===c.caseId?'#F0FDFA':'#FFF',fontSize:11 }}>
+              <div key={c.caseId} onClick={()=>setDetailCase(detailCase?.caseId===c.caseId?null:c)} style={{ display:'grid',gridTemplateColumns:'60px 1fr 80px 60px 120px',gap:4,padding:'4px 8px',borderBottom:'1px solid #F3F4F6',cursor:'pointer',background:detailCase?.caseId===c.caseId?'#F0FDFA':'#FFF',fontSize:11,minWidth:560 }}>
                 <span style={{ fontWeight:600 }}>{c.caseId}</span><span>{c.name}</span>
                 <span style={{ color:c.passed?'#0F766E':'#EF4444' }}>{(c.scores.overall*100).toFixed(0)}%</span>
                 <span>{c.passed?'✅':'❌'}</span>

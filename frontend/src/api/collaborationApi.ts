@@ -56,7 +56,25 @@ function normalizeEvent(raw: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-export interface RunListItem { run_id: string; session_id: string; status: string; selected_agents: string; started_at: string; updated_at: string; }
+export interface RunListItem {
+  run_id: string;
+  session_id: string;
+  status: string;
+  selected_agents: string[] | string;
+  normalized_event?: Record<string, unknown> | string;
+  final_decision?: Record<string, unknown> | string;
+  started_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
+export interface EventRunListResponse {
+  eventId: string;
+  total: number;
+  limit: number;
+  offset: number;
+  runs: RunListItem[];
+}
 
 async function apiGet<T>(path: string): Promise<T> {
   const r = await fetch(`${API}${path}`);
@@ -67,6 +85,9 @@ async function apiGet<T>(path: string): Promise<T> {
 export const collabApi = {
   listSessionRuns: (sessionId: string) =>
     apiGet<{ runs: RunListItem[] }>(`/collaboration/sessions/${sessionId}/runs`).then(d => d.runs),
+
+  listEventRuns: (eventId: string, limit = 20, offset = 0) =>
+    apiGet<EventRunListResponse>(`/collaboration/runs?event_id=${encodeURIComponent(eventId)}&limit=${limit}&offset=${offset}`),
 
   getRun: (runId: string) =>
     apiGet<{ run: Record<string,unknown>; tasks: Record<string,unknown>[]; messages: Record<string,unknown>[]; conflicts: Record<string,unknown>[]; events: Record<string,unknown>[] }>(`/collaboration/runs/${runId}`),
@@ -83,13 +104,13 @@ export const collabApi = {
     const { onEvent, onError, onDone, signal } = callbacks;
     // FORCE sessionId into payload: convert undefined → null so JSON.stringify includes it
     const reqBody: Record<string, unknown> = {
+      ...body,
       sessionId: body.sessionId ?? null,
       content: body.content ?? '',
       mode: body.mode ?? 'collaboration',
       contextPolicy: body.contextPolicy ?? 'fresh_event',
       clientRequestId: body.clientRequestId ?? '',
     };
-    console.log('[COLLAB_REQUEST]', { sessionId: reqBody.sessionId, content: String(reqBody.content).slice(0, 50) });
     return fetch(`${API}/agent/routed_analyze/stream`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(reqBody), signal,

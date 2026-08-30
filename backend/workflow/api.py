@@ -286,12 +286,16 @@ async def list_runs(
     status: Optional[str] = Query(None, description="按状态筛选: pending/running/paused/awaiting_approval/completed/failed/cancelled/rejected"),
     definition_id: Optional[str] = Query(None, description="按 Definition ID 筛选"),
     session_id: Optional[str] = Query(None, description="按 Session ID 筛选"),
+    event_id: Optional[str] = Query(None, description="按事件 ID 精确匹配（state_json $.currentEvent.eventId，只读）"),
     limit: int = Query(50, ge=1, le=200, description="每页条数（1-200）"),
     offset: int = Query(0, ge=0, description="偏移量"),
 ):
     """列出 Workflow Run 历史记录（只读）。
 
-    支持按状态、Definition、Session 筛选；支持分页（limit/offset）。
+    支持按状态、Definition、Session、事件 ID 筛选；支持分页（limit/offset）。
+    event_id 为 Phase20 R2 薄只读扩展：对 state_json 的
+    $.currentEvent.eventId 做精确匹配（JSON1），不写库、不改 schema、
+    不触发任何 Agent；仅启动方在初始事件中携带了 eventId 的 Run 会被命中。
     排序：updated_at DESC, run_id DESC（稳定排序）。
 
     返回 RunSummary DTO，包含：
@@ -317,6 +321,7 @@ async def list_runs(
         session_id=session_id or "",
         definition_id=definition_id or "",
         status=status,
+        event_id=event_id or "",
         limit=limit,
         offset=offset,
     )
@@ -324,6 +329,7 @@ async def list_runs(
         session_id=session_id or "",
         definition_id=definition_id or "",
         status=status,
+        event_id=event_id or "",
     )
 
     # ── 批量加载关联数据（避免 N+1）──

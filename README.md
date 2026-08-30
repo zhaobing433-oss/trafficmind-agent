@@ -8,10 +8,10 @@ TrafficMind Agent 是一个智能交通事件分析系统，支持从事件研�
 
 | 项 | 值 |
 |---|---|
-| 分支 | `master` |
-| Phase 18 | **CLOSED / MERGED_AND_VERIFIED**（PR #10） |
-| Phase 19 | **NOT_STARTED** |
-| 下一阶段推荐方向 | Grounded Cognitive Loop（Evidence-grounded Reflection / Replanning / Assessment） |
+| 主线分支 | `master` |
+| 当前产品化分支 | `feature/stage-20-product-integration-polish` |
+| Phase 20 | **Product Integration Polish**：Workflow / Plan / Traffic / Conversation / Collaboration / Evaluation 跨页集成 |
+| 当前重点 | 真实持久化关系、前端产品化收口、浏览器人工验收、维护文档同步 |
 
 **当前 Agent 主链：**
 
@@ -24,6 +24,14 @@ Capability-grounded Planning → Deterministic Compiler → Validator
 安全边界：LLM 只 **PROPOSE**；Compiler **确定性**编译；Validator **fail-closed**；
 ToolPolicy **权威**；WorkflowExecutor 是**唯一 runtime**；Approval V2 使用 exact `actionStepId`；
 completed prefix **frozen**；Assessment **只读**。
+
+**Phase 20 产品化契约：**
+
+- 跨页导航只使用真实持久化 ID：Workflow Run、Plan、Traffic Event、Conversation、Collaboration Run 和 Evaluation 之间不构造演示绑定。
+- 不存在的关系必须显示空态；子运行不存在时显示“未找到 / 已删除”，不得回退到 parent run。
+- Traffic 深链保留现有 URL contract：`eventId`、`roadName`、`risk` 三类 focus 互斥，并由 App 统一导航 handler 管理。
+- 相关 Workflow Runs 展示真实总数与当前加载数量；若分页未加载完，不暗示已经展示全部。
+- Evaluation summary 以 `/evaluation/reports/{id}/summary` 为 authority，缺失字段显示“未记录”或短横线，不在前端推算结论。
 
 > **一句话简历版**：独立设计并实现 TrafficMind Agent — 基于 FastAPI + LangGraph + React 的智慧交通多 Agent 协同研判系统，支持自然语言事件解析、动态 Agent 路由、DAG 任务编排、冲突检测仲裁、SSE 流式推送和历史会话完整恢复。
 
@@ -802,9 +810,9 @@ backend/.venv/bin/python -m pytest backend/tests -q
 ## 后续规划
 
 ### 近期
-- **Memory V2**：Session 长期摘要记忆，跨 Session 知识积累
-- **Evaluation**：路由准确率、冲突检测召回率、RAG groundedness 评测集
-- **Observability**：trace、延迟、失败率、Agent 调用统计
+- **Browser acceptance**：覆盖真实跨页关系、深链、Back/Forward、404 和空态
+- **CI/前端测试**：补充浏览器回归与前端单元测试脚本
+- **Production hardening**：鉴权、部署、并发和运行监控
 
 ### 中期
 - **Auth/RBAC**：多用户登录和数据隔离
@@ -840,7 +848,7 @@ HIGH_RISK_THRESHOLD=高风险
 
 ### 一句话版本
 
-> 独立设计并实现 TrafficMind Agent — 基于 FastAPI + LangGraph + React 的智慧交通多 Agent 协同研判系统，支持自然语言事件解析、动态 Agent 路由、DAG 任务编排、冲突检测仲裁、SSE 流式推送和历史会话完整恢复，283 个测试用例全部通过。
+> 独立设计并实现 TrafficMind Agent — 基于 FastAPI + LangGraph + React 的智慧交通多 Agent 协同研判系统，支持自然语言事件解析、动态 Agent 路由、DAG 任务编排、冲突检测仲裁、SSE 流式推送、历史会话完整恢复和真实跨页工作流追踪。
 
 ### 要点版本（适合技能列表）
 
@@ -852,7 +860,7 @@ HIGH_RISK_THRESHOLD=高风险
 - **SSE 真流式**（DeepSeek stream=true）全生命周期事件实时推送
 - **SQLite 9 张表**持久化（chat + collaboration 完整审计）
 - 前端使用 **React 18 + TypeScript + Ant Design 5 + ECharts 5 + Vite**
-- **283 个 pytest 测试用例**全部通过，覆盖端到端功能验证
+- 本地 pytest 回归覆盖核心 Agent、RAG、Workflow、Evaluation 与跨页集成链路
 
 ### STAR 版本（适合面试详细讲述）
 
@@ -874,7 +882,7 @@ HIGH_RISK_THRESHOLD=高风险
 - 前端 React + TypeScript，useRef 管理 sessionIdRef 防闭包过期，deserializeRunDetail 完整历史水合
 
 **R (Result)**：
-- 283 个 pytest 测试用例全部通过，TypeScript 0 errors
+- 本地 pytest 回归与 TypeScript 构建覆盖核心链路
 - 支持同一 Session 多轮协同、完整历史恢复、会话删除级联清理
 - 冲突仲裁场景（学校门口交通冲突）可正确检测 3 类 high 冲突并触发人工复核
 - 零外部依赖可降级运行，不配任何 API Key 也能使用核心功能

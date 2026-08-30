@@ -12,14 +12,14 @@
 - **LLM 只 PROPOSE，不直接执行**：LLM 产出计划提案，由确定性 Compiler 编译、fail-closed Validator 校验，
   ToolPolicy 为工具权威，WorkflowExecutor 是唯一 runtime。
 
-**当前基线（Phase 18 已 CLOSED / MERGED_AND_VERIFIED）：**
+**当前基线（Phase 20 Product Integration Polish）：**
 
 | 项 | 值 |
 |------|------|
-| 分支 | `master` |
-| Phase 18 | CLOSED / MERGED_AND_VERIFIED（PR #10） |
-| Phase 19 | **NOT_STARTED** |
-| 下一阶段推荐方向 | Grounded Cognitive Loop（Evidence-grounded Reflection / Replanning / Assessment） |
+| 主线分支 | `master` |
+| 当前产品化分支 | `feature/stage-20-product-integration-polish` |
+| Phase 20 Round2 | SEALED：真实跨页关系已进入 PR #13 |
+| Phase 20 Round3 | 产品化收尾：UI/UX、浏览器人工验收、bundle 组织、维护文档 |
 
 当前 Agent 主链：
 
@@ -28,6 +28,14 @@ Capability-grounded Planning → Deterministic Compiler → Validator
   → Durable Workflow Runtime → ToolPolicy → Approval V2 → Observation
   → Critic → Semantic Replanning → ExecutionAssessment → Trajectory
 ```
+
+Phase 20 固定契约：
+- CORE_BACKEND_AGENT_DEVELOPMENT = FROZEN
+- 跨页关系只能使用真实持久化 ID；不存在关系显示空态，不做 demo-only binding
+- Workflow child run 404 显示“未找到 / 已删除”，不得 fallback 到 parent run
+- 跨页导航继续由 `frontend/src/App.tsx` 统一 handler 管理，不新增散落 history 操作
+- Traffic focus URL contract 保持 `eventId` / `roadName` / `risk` 互斥
+- Evaluation summary 缺失字段显示“未记录”或短横线，summary 结论以后端为 authority
 
 ## 技术栈
 
@@ -357,6 +365,9 @@ backend/.venv/bin/python -m pytest backend/tests -q
 能力感知的 LLM 规划（Capability Snapshot + 哈希绑定）、有界反思（Critic）、语义重规划
 （completed prefix frozen，仅重设计 unresolved suffix）、只读 ExecutionAssessment。
 
+### Phase 20：Product Integration Polish
+前端产品化集成层：Workflow decision chain、Plan/Run 血缘、Traffic 深链聚焦、Alert/Event/Run、Conversation/Collaboration 相关 Workflow Runs、Evaluation summary 等页面之间以真实持久化 ID 建立关系。关系不存在时显示诚实空态；子运行 404 明确显示“未找到 / 已删除”。
+
 ## 测试与验收口径
 
 > 只记录可核实的验收证据，不等同于 CI 结论 —— 本项目当前**没有 CI**。
@@ -370,11 +381,9 @@ backend/.venv/bin/python -m pytest backend/tests -q
 
 ## 后续计划
 
-**Phase 19：NOT_STARTED**
+**Phase 20 Round3 后续验收**
 
-推荐方向：**Grounded Cognitive Loop** — Evidence-grounded Reflection / Replanning / Assessment。
-核心问题是决策层与已建成的 Memory V2 / RAG V2 管道断开：`PlanningContext` 带有
-`rag_evidence` / `memory_context` 字段，但没有任何 prompt builder 读取它们。
+浏览器人工验收需覆盖真实 persisted relationship、Traffic 深链清理、Back/Forward、child run 404、Evaluation nullable 空态和不存在关系空态。完成后再进入代码评审和提交，不在 Round3 扩展新的 Agent core 功能。
 
 ### 已知技术债（未处理，不在维护范围）
 - UNKNOWN_OUTCOME reconciliation 缺失

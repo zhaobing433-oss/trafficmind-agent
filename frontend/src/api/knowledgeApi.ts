@@ -42,6 +42,15 @@ export function createDocument(body: CreateKnowledgeRequest): Promise<KnowledgeD
   }).then(r => r.ok ? r.json() : r.json().then(e => { throw new Error((e as { detail?: string }).detail || `HTTP ${r.status}`); }));
 }
 
+/** 上传 TXT/MD 文件录入知识文档（多部分表单，与文本录入共用同一摄取管道） */
+export function uploadDocument(file: File, docType: string): Promise<KnowledgeDocument> {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('doc_type', docType);
+  return fetch(`${API}/knowledge/documents/upload`, { method: 'POST', body: fd })
+    .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error((e as { detail?: string }).detail || `HTTP ${r.status}`); }));
+}
+
 export function deleteDocument(id: string): Promise<{ documentId: string; status: string }> {
   return fetch(`${API}/knowledge/documents/${encodeURIComponent(id)}`, { method: 'DELETE' })
     .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error((e as { detail?: string }).detail || `HTTP ${r.status}`); }));

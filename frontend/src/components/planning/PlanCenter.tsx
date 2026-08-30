@@ -2,9 +2,21 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { listPlans, getPlan, getPlanDiff, getTrajectory, listObservations } from '../../api/planningApi';
+import { getDefinition } from '../../api/workflowApi';
 import type {
-  PlanListItem, PlanRunSummary, TrajectoryResponse, VersionDiff, ObservationItem,
+  PlanListItem, PlanRunSummary, PlanDetail as PlanDetailData, TrajectoryResponse, VersionDiff, ObservationItem,
 } from '../../types/planning';
+import { planVersionLabel } from '../../utils/display';
+
+/** 真实 Workflow Definition 版本（来自 GET /workflow/definitions/{id} 的 versions[]） */
+interface DefinitionVersion {
+  id: string;
+  definitionId: string;
+  version: number;
+  definitionJson: Record<string, unknown>;
+  changelog: string | null;
+  createdAt: string | null;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   completed: '#16A34A', failed: '#DC2626', running: '#2563EB', pending: '#9CA3AF',
@@ -22,6 +34,27 @@ function statusLabel(s: string): string {
     awaiting_approval: '待审批', paused: '暂停', cancelled: '已取消', rejected: '已驳回',
   };
   return m[s] || s;
+}
+
+function goalTypeLabel(s?: string | null): string {
+  const m: Record<string, string> = {
+    accident_response: '事故处置',
+    congestion_resolution: '拥堵疏导',
+    traffic_optimization: '交通优化',
+    emergency_response: '应急处置',
+  };
+  return s ? (m[s] || s) : '—';
+}
+
+function timeLabel(value?: string | null): string {
+  return value ? new Date(value).toLocaleString() : '未记录';
+}
+
+function latestRunFor(runs: PlanRunSummary[]): PlanRunSummary | null {
+  if (runs.length === 0) return null;
+  return [...runs].sort((a, b) =>
+    ((b.completedAt || b.startedAt || '') > (a.completedAt || a.startedAt || '') ? 1 : -1)
+  )[0];
 }
 
 export interface PlanCenterProps {
@@ -48,32 +81,57 @@ function PlanList({ onSelect }: { onSelect: (id: string) => void }) {
   const [items, setItems] = useState<PlanListItem[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const pageSize = 20;
 
   useEffect(() => {
-    listPlans({ page, pageSize }).then(r => { setItems(r.plans); setTotal(r.total); }).catch(() => {});
-  }, [page]);
+    let cancelled = false;
+    setLoading(true); setError(null);
+    listPlans({ page, pageSize })
+      .then(r => { if (!cancelled) { setItems(r.plans); setTotal(r.total); } })
+      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : '加载失败'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, reloadKey]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>Plan Center</h2>
-      <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 12px' }}>自适应计划 · 执行血缘 · 重规划轨迹 · 预算与恢复</p>
-      {items.length === 0 ? <Empty text="暂无计划" /> : (
-        <div style={{ display: 'grid', gap: 8 }}>
+      <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>处置方案中心</h2>
+      <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 12px' }}>查看交通事件的处置方案、执行状态和调整历史</p>
+      {loading ? <Empty text="加载处置方案..." />
+      : error ? <div style={{ background: '#FFF', borderRadius: 12, padding: 24, border: '1px solid #FECACA', textAlign: 'center', color: '#DC2626', fontSize: 13 }}>方案列表加载失败：{error} <button onClick={() => setReloadKey(k => k + 1)} style={{ cursor: 'pointer', border: '1px solid #E5E7EB', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#374151', background: '#FFF' }}>重试</button></div>
+      : items.length === 0 ? <Empty text="暂无处置方案" /> : (
+        <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: 8, overflowX: 'auto' }}>
+          <div style={{ minWidth: 760 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.5fr) minmax(120px, 0.8fr) 110px 140px 90px 160px', gap: 12, padding: '10px 14px', fontSize: 11, color: '#9CA3AF', borderBottom: '1px solid #E5E7EB', background: '#F9FAFB' }}>
+              <span>方案</span>
+              <span>关联事件</span>
+              <span>状态</span>
+              <span>当前版本/调整</span>
+              <span>执行次数</span>
+              <span>最近更新</span>
+            </div>
           {items.map(p => (
             <button key={p.planId} onClick={() => onSelect(p.planId)}
-              style={{ textAlign: 'left', background: '#FFF', borderRadius: 12, padding: '12px 16px', border: '1px solid #E5E7EB', cursor: 'pointer' }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{p.goal || '未命名计划'}</div>
-              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
-                类型 {p.goalType || '—'} · 版本 v{p.latestVersion} · 执行 {p.executionCount} 次 · 重规划 {p.replanCount} 次
-              </div>
-              <div style={{ fontSize: 12, color: p.latestExecutionStatus ? STATUS_COLORS[p.latestExecutionStatus] || '#6B7280' : '#9CA3AF', marginTop: 4 }}>
-                {p.latestExecutionStatus ? `最近状态：${statusLabel(p.latestExecutionStatus)}` : '未执行'} · 更新于 {p.updatedAt ? new Date(p.updatedAt).toLocaleString() : '—'}
-              </div>
+              style={{ width: '100%', display: 'grid', gridTemplateColumns: 'minmax(220px, 1.5fr) minmax(120px, 0.8fr) 110px 140px 90px 160px', gap: 12, alignItems: 'center', textAlign: 'left', background: '#FFF', padding: '11px 14px', border: 'none', borderBottom: '1px solid #F3F4F6', cursor: 'pointer', fontSize: 12, color: '#374151' }}>
+              <span style={{ minWidth: 0 }}>
+                <strong style={{ display: 'block', fontSize: 13, color: '#111827', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.goal || '未命名方案'}</strong>
+                <span style={{ display: 'block', color: '#6B7280', marginTop: 2 }}>{goalTypeLabel(p.goalType)}</span>
+              </span>
+              <span style={{ color: '#6B7280' }}>详情中查看</span>
+              <span style={{ color: p.latestExecutionStatus ? STATUS_COLORS[p.latestExecutionStatus] || '#6B7280' : '#9CA3AF', fontWeight: 600 }}>
+                {p.latestExecutionStatus ? statusLabel(p.latestExecutionStatus) : '未执行'}
+              </span>
+              <span>{planVersionLabel(p.latestVersion, p.replanCount)}</span>
+              <span>{p.executionCount} 次</span>
+              <span style={{ color: '#6B7280' }}>{timeLabel(p.updatedAt)}</span>
             </button>
           ))}
+          </div>
         </div>
       )}
       {pages > 1 && (
@@ -99,14 +157,47 @@ function Empty({ text }: { text: string }) {
 
 function PlanDetail(props: PlanCenterProps) {
   const { planId, rootRunId, fromVersion, toVersion } = props;
-  const [plan, setPlan] = useState<{ goal: string; goalType: string; version: number; planFingerprint: string; definitionStatus: string; createdAt: string } | null>(null);
+  const [plan, setPlan] = useState<PlanDetailData | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [planReloadKey, setPlanReloadKey] = useState(0);
   const [runs, setRuns] = useState<PlanRunSummary[]>([]);
   const [trajectory, setTrajectory] = useState<TrajectoryResponse | null>(null);
   const [observations, setObservations] = useState<ObservationItem[]>([]);
+  // 真实版本历史（复用 Workflow Definition Version API，无新端点）
+  const [defVersions, setDefVersions] = useState<DefinitionVersion[]>([]);
+  const [defVersionsLoading, setDefVersionsLoading] = useState(true);
+  const [defVersionsError, setDefVersionsError] = useState<string | null>(null);
+  const [defVersionsReloadKey, setDefVersionsReloadKey] = useState(0);
 
   useEffect(() => {
-    getPlan(planId!).then(r => { setPlan(r.plan); setRuns(r.runs); }).catch(() => {});
-  }, [planId]);
+    let cancelled = false;
+    setPlanError(null);
+    getPlan(planId!)
+      .then(r => { if (!cancelled) { setPlan(r.plan); setRuns(r.runs); } })
+      .catch((e: unknown) => { if (!cancelled) setPlanError(e instanceof Error ? e.message : '加载失败'); });
+    return () => { cancelled = true; };
+  }, [planId, planReloadKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDefVersionsLoading(true); setDefVersionsError(null);
+    getDefinition(planId!)
+      .then(r => {
+        if (cancelled) return;
+        const vs: DefinitionVersion[] = (r.versions || []).map((v: Record<string, unknown>) => ({
+          id: String(v.id ?? ''),
+          definitionId: String(v.definitionId ?? ''),
+          version: Number(v.version ?? 0),
+          definitionJson: (v.definitionJson ?? {}) as Record<string, unknown>,
+          changelog: (v.changelog as string | null) ?? null,
+          createdAt: (v.createdAt as string | null) ?? null,
+        }));
+        setDefVersions(vs);
+      })
+      .catch((e: unknown) => { if (!cancelled) setDefVersionsError(e instanceof Error ? e.message : '加载失败'); })
+      .finally(() => { if (!cancelled) setDefVersionsLoading(false); });
+    return () => { cancelled = true; };
+  }, [planId, defVersionsReloadKey]);
 
   // 分组 rootRunId
   const lineages = useMemo(() => {
@@ -120,6 +211,13 @@ function PlanDetail(props: PlanCenterProps) {
   }, [runs]);
 
   const activeRoot = rootRunId || (lineages.length > 0 ? lineages[lineages.length - 1][0] : null);
+  const activeRuns = useMemo(
+    () => runs.filter(r => (r.rootRunId || r.runId) === activeRoot),
+    [runs, activeRoot]
+  );
+  const latestRun = useMemo(() => latestRunFor(runs), [runs]);
+  const latestRunStatus = latestRun ? statusLabel(latestRun.status) : '未执行';
+  const adjustmentCount = Math.max(0, (plan?.version ?? 1) - 1);
 
   useEffect(() => {
     if (activeRoot) {
@@ -138,31 +236,193 @@ function PlanDetail(props: PlanCenterProps) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <button onClick={() => props.onPlanSelect('')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#0F766E', padding: 0 }}>← 计划列表</button>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: 0 }}>{plan?.goal || '计划详情'}</h2>
+        <button onClick={() => props.onPlanSelect('')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#0F766E', padding: 0 }}>← 处置方案中心</button>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: 0 }}>{plan?.goal || '处置方案详情'}</h2>
       </div>
       <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 12px' }}>
-        planId {planId} · v{plan?.version} · {plan?.goalType || '—'}
-        {plan?.planFingerprint ? <span style={{ fontFamily: 'monospace' }}> · fp {plan.planFingerprint.slice(0, 10)}</span> : null}
+        {planVersionLabel(plan?.version, adjustmentCount)} · {goalTypeLabel(plan?.goalType)} · 最近状态 {latestRunStatus}
       </p>
+
+      {planError && (
+        <div style={{ background: '#FEF2F2', borderRadius: 8, padding: '10px 14px', border: '1px solid #FECACA', color: '#DC2626', fontSize: 12, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>方案详情加载失败：{planError}</span>
+          <button onClick={() => setPlanReloadKey(k => k + 1)} style={{ cursor: 'pointer', border: '1px solid #FECACA', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#DC2626', background: '#FFF' }}>重试</button>
+        </div>
+      )}
+
+      {plan && <PlanOverviewPanel plan={plan} latestRun={latestRun} runCount={runs.length} adjustmentCount={adjustmentCount} />}
+      {plan && <PlanContentPanel plan={plan} />}
+      <VersionHistoryPanel
+        versions={defVersions}
+        runs={runs}
+        loading={defVersionsLoading}
+        error={defVersionsError}
+        onRetry={() => setDefVersionsReloadKey(k => k + 1)}
+      />
 
       {lineages.length > 0 && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-          {lineages.map(([root]) => (
+          {lineages.map(([root], index) => (
             <button key={root} onClick={() => props.onRootRunIdChange(root)}
+              title={`Run ID ${root}`}
               style={{ padding: '4px 10px', borderRadius: 10, border: '1px solid #E5E7EB', background: root === activeRoot ? '#F0FDFA' : '#FFF', cursor: 'pointer', fontSize: 12 }}>
-              lineage {root.slice(0, 12)}
+              执行链 {index + 1}
             </button>
           ))}
         </div>
       )}
 
-      <ExecutionLineage runs={runs.filter(r => (r.rootRunId || r.runId) === activeRoot)} onOpenRun={props.onOpenWorkflowRun} />
-      <BudgetPanel runs={runs.filter(r => (r.rootRunId || r.runId) === activeRoot)} />
-      <ObservationTimeline observations={observations} />
-      <TrajectoryPanel trajectory={trajectory} />
-      <DiffPanel planId={planId!} versions={runs.map(r => r.version)} fromVersion={fromVersion} toVersion={toVersion} onDiffChange={props.onDiffChange} />
+      <ExecutionLineage runs={activeRuns} onOpenRun={props.onOpenWorkflowRun} />
+      {observations.length > 0 && <ObservationTimeline observations={observations} />}
+      {trajectory && <TrajectoryPanel trajectory={trajectory} />}
+      {defVersions.length > 1 && <DiffPanel planId={planId!} versions={defVersions.map(v => v.version)} fromVersion={fromVersion} toVersion={toVersion} onDiffChange={props.onDiffChange} />}
+      {plan && <TechnicalAuditPanel plan={plan} definitionId={planId!} runs={activeRuns} />}
     </div>
+  );
+}
+
+// ── Plan Overview（业务首屏字段，缺失 → 未记录）─────────────────────────────
+
+function PlanOverviewPanel({ plan, latestRun, runCount, adjustmentCount }: {
+  plan: PlanDetailData;
+  latestRun: PlanRunSummary | null;
+  runCount: number;
+  adjustmentCount: number;
+}) {
+  const items: [string, string, string?][] = [
+    ['方案名称', plan.goal || '未命名方案'],
+    ['状态', latestRun ? statusLabel(latestRun.status) : '未执行', latestRun ? STATUS_COLORS[latestRun.status] : undefined],
+    ['关联事件', plan.eventId ? '已关联事件' : '未关联'],
+    ['当前方案', planVersionLabel(plan.version, adjustmentCount)],
+    ['执行情况', runCount > 0 ? `已执行 ${runCount} 次` : '尚未执行'],
+    ['最近更新', timeLabel(plan.updatedAt)],
+  ];
+  return (
+    <Panel title="方案概览">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+        {items.map(([l, v, tone]) => (
+          <div key={l} style={{ background: '#F9FAFB', borderRadius: 8, padding: '9px 11px', border: '1px solid #F3F4F6', minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: '#9CA3AF' }}>{l}</div>
+            <div style={{ fontSize: 13, fontWeight: 650, color: tone || '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function PlanContentPanel({ plan }: { plan: PlanDetailData }) {
+  const audit = plan.plannerAudit || {};
+  const reason = audit.plannerReasonSummary || audit.goalCoverage || '暂无处置内容说明';
+  const assumptions = Array.isArray(audit.assumptions) ? audit.assumptions : [];
+  return (
+    <Panel title="处置内容/步骤">
+      <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.7 }}>{reason}</div>
+      {assumptions.length > 0 && (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {assumptions.map((item, index) => (
+            <div key={`${item}-${index}`} style={{ fontSize: 12, color: '#6B7280', padding: '5px 8px', background: '#F9FAFB', borderRadius: 6, border: '1px solid #F3F4F6' }}>
+              {index + 1}. {item}
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ── Technical audit（真实字段折叠，缺失 → 未记录）───────────────────────────
+
+function TechnicalAuditPanel({ plan, definitionId, runs }: { plan: PlanDetailData; definitionId: string; runs: PlanRunSummary[] }) {
+  const audit = plan.plannerAudit || {};
+  const fallbackReason = audit.fallbackReason
+    || (audit.planningModeRequested && audit.planningModeRequested !== audit.planningModeUsed ? '请求模式与使用模式不一致' : '—');
+  const items: [string, string][] = [
+    ['Plan ID', plan.planId || definitionId],
+    ['Workflow definition ID', definitionId],
+    ['事件编号', plan.eventId || '未绑定'],
+    ['Fingerprint', plan.planFingerprint || '未记录'],
+    ['目标类型', goalTypeLabel(plan.goalType) || '未记录'],
+    ['置信度', plan.confidence === null || plan.confidence === undefined ? '未记录' : String(plan.confidence)],
+    ['规划模式', plan.planningMode || '未记录'],
+    ['语义重规划', plan.semanticReplanEnabled ? '已启用' : '未启用'],
+    ['Grounded 决策上下文', plan.groundedDecisionContextEnabled ? '已启用' : '未启用'],
+    ['Planner 模型', audit.plannerModel || (audit.planningModeUsed === 'deterministic' ? 'deterministic（无 LLM）' : '未记录')],
+    ['Planner 回退', fallbackReason],
+    ['Goal 覆盖', audit.goalCoverage || '未记录'],
+    ['创建者', plan.createdBy || '未记录'],
+    ['预算内部计数', runs.length > 0 ? `当前执行链 ${runs.length} 条` : '无执行记录'],
+  ];
+  return (
+    <details style={{ background: '#FFF', borderRadius: 8, padding: 14, border: '1px solid #E5E7EB', marginBottom: 12 }}>
+      <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#374151' }}>技术与审计信息</summary>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginTop: 10 }}>
+        {items.map(([l, v]) => (
+          <div key={l} style={{ background: '#F9FAFB', borderRadius: 8, padding: '8px 10px', border: '1px solid #F3F4F6', minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: '#9CA3AF' }}>{l}</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+// ── Version History ──────────────────────────────────────────────────────────
+// 优先展示 workflow_definition_versions 快照（diff 的依据）；
+// 历史计划未写快照时回退到真实执行记录（plan detail runs[]，来自 workflow_runs），绝不伪造。
+
+function VersionHistoryPanel({ versions, runs, loading, error, onRetry }: {
+  versions: DefinitionVersion[]; runs: PlanRunSummary[]; loading: boolean; error: string | null; onRetry: () => void;
+}) {
+  const sorted = useMemo(() => [...versions].sort((a, b) => b.version - a.version), [versions]);
+  // 回退行：从真实执行记录派生版本信息（同版本取最近一次执行的 run）
+  const runRows = useMemo(() => {
+    const byVersion = new Map<number, PlanRunSummary>();
+    for (const r of runs) {
+      const cur = byVersion.get(r.version);
+      if (!cur || (r.startedAt || '') >= (cur.startedAt || '')) byVersion.set(r.version, r);
+    }
+    return Array.from(byVersion.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([version, r]) => ({ version, createdAt: r.startedAt, status: r.status }));
+  }, [runs]);
+
+  const isEmpty = sorted.length === 0 && runRows.length === 0;
+  return (
+    <Panel title={`方案版本/调整历史（${sorted.length > 0 ? sorted.length : runRows.length}）`}>
+      {loading ? <Empty text="加载版本历史..." />
+      : error ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#DC2626', fontSize: 12 }}>
+          <span>版本历史加载失败：{error}</span>
+          <button onClick={onRetry} style={{ cursor: 'pointer', border: '1px solid #E5E7EB', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#374151', background: '#FFF' }}>重试</button>
+        </div>
+      )
+      : isEmpty ? <Empty text="暂无版本记录" /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {sorted.length === 0 && (
+            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 2 }}>
+              该方案暂无完整版本快照，以下版本信息来自真实执行记录。
+            </div>
+          )}
+          {sorted.length > 0 ? sorted.map(v => (
+            <div key={v.id} style={{ fontSize: 12, padding: '6px 8px', borderBottom: '1px solid #F3F4F6', display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, color: '#111827' }}>{planVersionLabel(v.version)}</span>
+              <span style={{ fontSize: 11, padding: '0 6px', borderRadius: 6, background: '#F0FDFA', color: '#0F766E' }}>定义快照</span>
+              <span style={{ color: '#9CA3AF' }}>{v.createdAt ? new Date(v.createdAt).toLocaleString() : '创建时间未记录'}</span>
+              <span style={{ color: '#6B7280', flex: 1 }} title={v.changelog || ''}>{v.changelog || '无变更说明'}</span>
+            </div>
+          )) : runRows.map(r => (
+            <div key={`run-v${r.version}`} style={{ fontSize: 12, padding: '6px 8px', borderBottom: '1px solid #F3F4F6', display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, color: '#111827' }}>{planVersionLabel(r.version)}</span>
+              <span style={{ fontSize: 11, padding: '0 6px', borderRadius: 6, background: '#F3F4F6', color: '#6B7280' }}>执行记录</span>
+              <span style={{ fontSize: 11, padding: '0 6px', borderRadius: 6, background: '#FFF7ED', color: STATUS_COLORS[r.status] || '#9A3412' }}>{statusLabel(r.status)}</span>
+              <span style={{ color: '#9CA3AF' }}>{r.createdAt ? new Date(r.createdAt).toLocaleString() : '开始时间未记录'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -190,23 +450,23 @@ function orderLineage(runs: PlanRunSummary[]): PlanRunSummary[] {
 
 function ExecutionLineage({ runs, onOpenRun }: { runs: PlanRunSummary[]; onOpenRun: (id: string) => void }) {
   const ordered = orderLineage(runs);
-  if (ordered.length === 0) return <Panel title="执行血缘"><Empty text="暂无执行" /></Panel>;
+  if (ordered.length === 0) return <Panel title="执行记录"><Empty text="暂无执行记录" /></Panel>;
   return (
-    <Panel title="执行血缘">
+    <Panel title="执行记录">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {ordered.map((r, i) => {
           const replanned = r.status === 'failed' && r.terminationReason === 'replanned';
           return (
             <div key={r.runId}>
               <div style={{ background: '#F9FAFB', borderRadius: 10, padding: '8px 12px', border: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600 }}>v{r.version}</span>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{planVersionLabel(r.version)}</span>
                 <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 8, background: replanned ? '#FEF3C7' : '#F3F4F6', color: replanned ? '#B45309' : STATUS_COLORS[r.status] || '#374151' }}>
-                  {replanned ? 'Replanned（原 run 失败）' : statusLabel(r.status)}
+                  {replanned ? '已重规划（原运行失败）' : statusLabel(r.status)}
                 </span>
-                {replanned && <span style={{ fontSize: 11, color: '#9CA3AF' }}>（Underlying status: Failed）</span>}
+                {replanned && <span style={{ fontSize: 11, color: '#9CA3AF' }}>原始状态：失败</span>}
                 {r.terminationReason && !replanned && <span style={{ fontSize: 11, color: '#6B7280' }}>{r.terminationReason}</span>}
                 <span style={{ flex: 1 }} />
-                <button onClick={() => onOpenRun(r.runId)} style={{ fontSize: 11, color: '#0F766E', border: 'none', background: 'none', cursor: 'pointer' }}>打开 Workflow Run →</button>
+                <button onClick={() => onOpenRun(r.runId)} title={`Run ID ${r.runId}`} style={{ fontSize: 11, color: '#0F766E', border: 'none', background: 'none', cursor: 'pointer' }}>查看工作流 →</button>
               </div>
               {i < ordered.length - 1 && <div style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 11, padding: '2px 0' }}>↓ 重规划 / 续接</div>}
             </div>
@@ -266,7 +526,7 @@ function TrajectoryPanel({ trajectory }: { trajectory: TrajectoryResponse | null
   ];
   return (
     <Panel title="轨迹指标">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
         {items.map(([l, v]) => (
           <div key={l} style={{ background: '#F9FAFB', borderRadius: 8, padding: '8px 10px', border: '1px solid #F3F4F6' }}>
             <div style={{ fontSize: 11, color: '#9CA3AF' }}>{l}</div>
@@ -338,21 +598,25 @@ function DiffPanel({ planId, versions, fromVersion, toVersion, onDiffChange }: {
   const isEmptyDiff = diff !== null && diff.addedSteps.length === 0 && diff.removedSteps.length === 0 && diff.changedSteps.length === 0 && diff.carriedForwardSteps.length === 0;
 
   return (
-    <Panel title="版本对比">
-      {uniq.length < 2 ? <Empty text="暂无可比较版本" /> : (
+    <Panel title="方案版本对比">
+      {uniq.length < 2 ? (
+        <Empty text={uniq.length === 0
+          ? '暂无版本快照，无法比较'
+          : '暂无可比较版本（仅有 1 个快照）'} />
+      ) : (
         <div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
             <select value={effFrom != null ? String(effFrom) : ''} onChange={e => onDiffChange(e.target.value ? Number(e.target.value) : null, effTo)} style={sel}>
-              {uniq.map(v => <option key={v} value={v}>v{v}</option>)}
+              {uniq.map(v => <option key={v} value={v}>{planVersionLabel(v)}</option>)}
             </select>
             <span style={{ color: '#9CA3AF' }}>→</span>
             <select value={effTo != null ? String(effTo) : ''} onChange={e => onDiffChange(effFrom, e.target.value ? Number(e.target.value) : null)} style={sel}>
-              {uniq.map(v => <option key={v} value={v}>v{v}</option>)}
+              {uniq.map(v => <option key={v} value={v}>{planVersionLabel(v)}</option>)}
             </select>
           </div>
           {loading ? <Empty text="加载版本差异..." /> :
            error ? <Empty text="版本差异加载失败" /> :
-           diff === null ? <Empty text="选择版本查看 diff" /> :
+           diff === null ? <Empty text="选择版本查看差异" /> :
            isEmptyDiff ? <Empty text="两个版本结构无差异" /> : (
             <div style={{ fontSize: 12 }}>
               <DiffRow label="新增" items={diff.addedSteps} color="#16A34A" />
@@ -380,7 +644,7 @@ function DiffRow({ label, items, color }: { label: string; items: string[]; colo
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#FFF', borderRadius: 12, padding: 14, border: '1px solid #E5E7EB', marginBottom: 12 }}>
+    <div style={{ background: '#FFF', borderRadius: 8, padding: 14, border: '1px solid #E5E7EB', marginBottom: 12 }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 8 }}>{title}</div>
       {children}
     </div>

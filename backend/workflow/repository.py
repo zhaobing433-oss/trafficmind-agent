@@ -273,6 +273,24 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
             return None
         return self._row_to_definition(dict(row))
 
+    def find_definition_by_template_identity(
+        self,
+        name: str,
+        category: str = "",
+    ) -> Optional[WorkflowDefinition]:
+        init_workflow_tables()
+        conn = _get_conn()
+        row = conn.execute(
+            """SELECT * FROM workflow_definitions
+               WHERE name=? AND category=? AND status IN (?, ?)
+               ORDER BY updated_at DESC, id DESC LIMIT 1""",
+            (name, category or "", DefinitionStatus.ACTIVE.value, DefinitionStatus.DRAFT.value),
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return self._row_to_definition(dict(row))
+
     def list_definitions(
         self, status: Optional[str] = None
     ) -> List[WorkflowDefinition]:
@@ -452,6 +470,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         session_id: str = "",
         definition_id: str = "",
         status: Optional[str] = None,
+        event_id: str = "",
         limit: int = 50,
         offset: int = 0,
     ) -> List[WorkflowRun]:
@@ -468,6 +487,11 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         if status:
             query += " AND status=?"
             params.append(status)
+        if event_id:
+            # Phase20 R2：按事件 ID 精确匹配（只读，无 schema 变更）。
+            # 绑定源是 state_json 内 $.currentEvent.eventId（仅启动方提供时存在）。
+            query += " AND CASE WHEN json_valid(state_json) THEN json_extract(state_json, '$.currentEvent.eventId') END=?"
+            params.append(event_id)
         query += " ORDER BY updated_at DESC, run_id DESC LIMIT ? OFFSET ?"
         params.append(limit)
         params.append(offset)
@@ -480,6 +504,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         session_id: str = "",
         definition_id: str = "",
         status: Optional[str] = None,
+        event_id: str = "",
     ) -> int:
         """统计符合条件的 Run 总数（用于分页）。"""
         init_workflow_tables()
@@ -495,6 +520,9 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         if status:
             query += " AND status=?"
             params.append(status)
+        if event_id:
+            query += " AND CASE WHEN json_valid(state_json) THEN json_extract(state_json, '$.currentEvent.eventId') END=?"
+            params.append(event_id)
         row = conn.execute(query, params).fetchone()
         conn.close()
         return row["cnt"] if row else 0
@@ -1511,6 +1539,7 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
         goal_type: Optional[str] = None,
         status: Optional[str] = None,
         search: Optional[str] = None,
+        event_id: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> Tuple[int, List["WorkflowDefinition"]]:
@@ -1534,6 +1563,11 @@ class SQLiteWorkflowRepository(AbstractWorkflowRepository):
                     "LOWER(COALESCE(json_extract(metadata_json, '$.plan.goal'), '')) LIKE ?"
                 )
                 params.append(f"%{search.lower()}%")
+            if event_id:
+                where.append(
+                    "CASE WHEN json_valid(metadata_json) THEN json_extract(metadata_json, '$.plan.eventId') END = ?"
+                )
+                params.append(event_id)
             if status:
                 where.append(
                     """(SELECT r.status FROM workflow_runs r

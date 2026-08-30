@@ -65,6 +65,8 @@ async def execute_single_agent(
                 confidence=min(safe_float(result_dict.get("confidence"), 0.5), 1.0),
                 suggestion=result_dict.get("suggestion", ""),
                 urgency=result_dict.get("urgency", "low"),
+                evidence_refs=result_dict.get("evidence_refs", []),
+                proposed_actions=result_dict.get("proposed_actions", []),
                 duration_ms=int(result_dict.get("duration_ms", 0)),
             )
 

@@ -33,7 +33,7 @@ export default function StatusCards() {
     { label: '今日事件数', value: stats.totalEvents, color: '#0F766E' },
     { label: '高风险事件', value: stats.highRiskCount, color: '#EF4444' },
     { label: '未闭环事件', value: alerts.count, color: '#F59E0B' },
-    { label: 'RAG 文档数', value: rag.documentCount, color: '#3B82F6' },
+    { label: '知识文档数', value: rag.documentCount, color: '#3B82F6' },
   ];
 
   return (

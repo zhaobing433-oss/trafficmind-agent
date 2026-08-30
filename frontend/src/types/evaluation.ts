@@ -42,3 +42,21 @@ export interface ReportCompare {
   baseGatePassed: boolean; targetGatePassed: boolean;
   metricsDelta: MetricDelta[];
 }
+
+/** Phase20 R2：GET /evaluation/reports/{id}/summary 返回体（SUMMARY_KEYS） */
+export interface EvalSummary {
+  evaluationId: string;
+  generatedAt: string | null;
+  commitSha: string | null;
+  provider: string | null;
+  model: string | null;
+  datasetVersion: string | null;
+  overallStatus: string | null;
+  metricsStatus: string | null;
+  gateStatus: string | null;
+  totalCases: number | null;
+  passedCases: number | null;
+  failedCases: number | null;
+  overallScore: number | null;
+  gates: Array<{ gateId: string; status: string | null; threshold: number | null; actual: number | null }> | null;
+}

@@ -4,6 +4,7 @@
 # Web 框架
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+python-multipart==0.0.20  # Phase 20: 知识文档 TXT/MD 文件上传（multipart）
 
 # 环境变量
 python-dotenv==1.0.1

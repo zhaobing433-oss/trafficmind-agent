@@ -54,7 +54,7 @@ export const WorkflowObservabilityView: React.FC<Props> = ({ runId }) => {
           <Card title="Workflow 概览">
             <Row label="名称" value={data.definition_name} />
             <Row label="状态" value={STATUS_LABELS[data.status]||data.status} color={STATUS_COLORS[data.status]} />
-            <Row label="Run ID" value={data.run_id.slice(0,24)+'...'} />
+            <Row label="技术运行编号" value={data.run_id.slice(0,24)+'...'} />
             <Row label="开始时间" value={data.started_at?.slice(0,19)||'—'} />
             {data.completed_at && <Row label="结束时间" value={data.completed_at.slice(0,19)} />}
             <Row label="总耗时" value={data.total_duration_ms>0?`${(data.total_duration_ms/1000).toFixed(1)}s`:'—'} />

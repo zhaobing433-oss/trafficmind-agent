@@ -205,6 +205,11 @@ def build_plan(ctx: PlanningContext) -> Plan:
             approvalRequired=cand.approvalRequired,
             retryPolicy=_retry_policy_for(ctx, cand.actionType),
             timeoutSeconds=_timeout_for(ctx, cand.actionType),
+            metadata={
+                "source": cand.source,
+                "reason": cand.reason,
+                "paramsTemplate": dict(cand.paramsTemplate or {}),
+            },
         ))
 
     # ── 9. close ───────────────────────────────────────────────

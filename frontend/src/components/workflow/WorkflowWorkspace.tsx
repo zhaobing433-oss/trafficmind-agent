@@ -16,21 +16,39 @@ import { listDefinitions, startRun, getRun, resumeRun, cancelRun, retryNode, pro
 import { WorkflowTracePanel } from './WorkflowTracePanel';
 import { WorkflowErrorBoundary } from './WorkflowErrorBoundary';
 import { WorkflowRunHistory } from './WorkflowRunHistory';
+import { DecisionChainPanel } from './DecisionChainPanel';
 import type { WorkflowDefinition } from '../../api/workflowApi';
+import { workflowTemplateVersionLabel } from '../../utils/display';
 
 const POLL_INTERVAL_MS = 3000;
 const POLLABLE = new Set(['pending', 'running', 'paused']);
+
+// 事件类型选项（与后端 EVENT_TYPE_MAP 一致）
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  congestion: '拥堵', accident: '事故', illegal_parking: '违停', wrong_way: '逆行',
+  pedestrian_intrusion: '行人闯入', signal_fault: '信号灯异常', vehicle_stopped: '车辆滞留', construction_block: '施工占道',
+};
+
+function friendlyTemplateDescription(text?: string | null): string {
+  return (text || '暂无说明')
+    .replace(/RAG\s*检索/g, '知识检索')
+    .replace(/Memory\s*上下文/g, '历史上下文')
+    .replace(/拥堵\s*Agent\s*分析/g, '拥堵分析')
+    .replace(/多\s*Agent\s*协同/g, '多角色协同');
+}
 
 interface Props {
   workflowRunId: string | null;
   sessionId: string | null;
   onRunIdChange: (runId: string | null) => void;
+  onOpenRun?: (runId: string) => void;
+  onOpenPlan?: (planId: string) => void;
 }
 
 type PageState = 'center' | 'running';
 type WorkflowTab = 'history' | 'templates';
 
-export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, onRunIdChange }) => {
+export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, onRunIdChange, onOpenRun, onOpenPlan }) => {
   // ── Read workflowTab from URL ──
   const [workflowTab, setWorkflowTabState] = useState<WorkflowTab>(() => {
     const p = new URLSearchParams(window.location.search);
@@ -56,7 +74,9 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
   const [definitions, setDefinitions] = useState<WorkflowDefinition[]>([]);
   const [loadingDefs, setLoadingDefs] = useState(true);
   const [selectedDefId, setSelectedDefId] = useState<string | null>(null);
-  const [formValues, setFormValues] = useState({ roadName: '', description: '', severity: 'medium' });
+  // 场景参数：metrics 由用户显式输入（模板 validate_event 要求 avgSpeed/queueLength/duration），
+  // 不再从 severity 下拉合成固定值（真实性优先，Phase 20 R1 MUST）
+  const [formValues, setFormValues] = useState({ roadName: '', eventType: 'congestion', avgSpeed: '', queueLength: '', duration: '' });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<string>('pending');
@@ -153,18 +173,27 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
 
   const handleCreateRun = useCallback(async () => {
     if (!selectedDefId) return;
+    // 场景参数校验：三个 metrics 是模板 validate_event 的必填项，缺失/非法时明确报错，不合成默认值
+    const avgSpeed = Number(formValues.avgSpeed);
+    const queueLength = Number(formValues.queueLength);
+    const duration = Number(formValues.duration);
+    if (formValues.avgSpeed === '' || formValues.queueLength === '' || formValues.duration === ''
+        || !Number.isFinite(avgSpeed) || !Number.isFinite(queueLength) || !Number.isFinite(duration)
+        || avgSpeed < 0 || queueLength < 0 || duration < 0) {
+      setError('请填写有效的场景参数：平均速度 / 排队长度 / 持续时长（均为非负数值）');
+      return;
+    }
     setCreating(true); setError(null);
     stopPolling();
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController(); abortRef.current = controller;
+    // 仅发送用户显式输入的字段；weather/timePeriod/isMainRoad 等由 validate_event 节点默认值兜底
     const event: Record<string, unknown> = {
-      eventType: 'congestion',
-      roadName: formValues.roadName || '未命名路段',
-      avgSpeed: formValues.severity === 'high' ? 5 : formValues.severity === 'medium' ? 20 : 40,
-      queueLength: formValues.severity === 'high' ? 300 : formValues.severity === 'medium' ? 150 : 50,
-      duration: formValues.severity === 'high' ? 1200 : formValues.severity === 'medium' ? 600 : 180,
-      weather: 'clear', timePeriod: 'off_peak',
-      isMainRoad: true, nearbySchool: false, nearbyHospital: false,
+      eventType: formValues.eventType || 'congestion',
+      roadName: formValues.roadName.trim() || '未命名路段',
+      avgSpeed,
+      queueLength,
+      duration,
     };
     try {
       await startRun(
@@ -323,6 +352,7 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
                   {definitions.map(def => {
                     const nodeCount = Array.isArray(def.nodes) ? def.nodes.length : 0;
                     const isSelected = selectedDefId === def.id;
+                    const templateVersion = Number((def.metadata || {}).version ?? (def.metadata || {}).templateVersion ?? 1);
                     return (
                       <div key={def.id} onClick={() => handleSelectTemplate(def.id)}
                         style={{
@@ -332,12 +362,16 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
                         }}>
                         <div>
                           <div style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>{def.name}</div>
-                          <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4, lineHeight: 1.5 }}>{def.description}</div>
-                          <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: '#9CA3AF' }}>
-                            <span>ID: {def.id.slice(0, 12)}...</span>
+                          <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4, lineHeight: 1.5 }}>{friendlyTemplateDescription(def.description)}</div>
+                          <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: '#9CA3AF', flexWrap: 'wrap' }}>
+                            <span>{workflowTemplateVersionLabel(Number.isFinite(templateVersion) ? templateVersion : 1)}</span>
                             <span>节点: {nodeCount}</span>
                             <span>分类: {def.category || '未分类'}</span>
                           </div>
+                          <details style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
+                            <summary style={{ cursor: 'pointer' }}>技术信息</summary>
+                            <div style={{ fontFamily: 'monospace', marginTop: 2, wordBreak: 'break-all' }}>模板 ID {def.id}</div>
+                          </details>
                         </div>
                         {isSelected && (
                           <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 8, background: '#F9FAFB', border: '1px solid #E5E7EB' }}
@@ -347,21 +381,26 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
                               <input placeholder="路段名称（如 G50沪渝高速匝道）" value={formValues.roadName}
                                 onChange={e => setFormValues(v => ({ ...v, roadName: e.target.value }))}
                                 style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none' }} />
-                              <input placeholder="拥堵描述（可选）" value={formValues.description}
-                                onChange={e => setFormValues(v => ({ ...v, description: e.target.value }))}
-                                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none' }} />
-                              <select value={formValues.severity}
-                                onChange={e => setFormValues(v => ({ ...v, severity: e.target.value }))}
+                              <select value={formValues.eventType}
+                                onChange={e => setFormValues(v => ({ ...v, eventType: e.target.value }))}
                                 style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', background: '#FFF' }}>
-                                <option value="low">低严重度</option>
-                                <option value="medium">中严重度</option>
-                                <option value="high">高严重度</option>
+                                {Object.entries(EVENT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                               </select>
+                              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>场景参数（输入值，非实时观测）</div>
+                              <input placeholder="平均速度 avgSpeed（km/h）" inputMode="decimal" value={formValues.avgSpeed}
+                                onChange={e => setFormValues(v => ({ ...v, avgSpeed: e.target.value }))}
+                                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none' }} />
+                              <input placeholder="排队长度 queueLength（米）" inputMode="decimal" value={formValues.queueLength}
+                                onChange={e => setFormValues(v => ({ ...v, queueLength: e.target.value }))}
+                                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none' }} />
+                              <input placeholder="持续时长 duration（秒）" inputMode="decimal" value={formValues.duration}
+                                onChange={e => setFormValues(v => ({ ...v, duration: e.target.value }))}
+                                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none' }} />
                               <button onClick={handleCreateRun} disabled={creating || !formValues.roadName.trim()}
                                 style={{
                                   marginTop: 4, padding: '8px 0', borderRadius: 8, border: 'none',
                                   cursor: creating ? 'not-allowed' : 'pointer',
-                                  background: formValues.roadName.trim() ? 'linear-gradient(135deg, #0F766E, #14B8A6)' : '#D1D5DB',
+                                  background: formValues.roadName.trim() ? '#0F766E' : '#D1D5DB',
                                   color: '#FFF', fontWeight: 600, fontSize: 13, opacity: creating ? 0.7 : 1,
                                 }}>
                                 {creating ? '启动中...' : '启动流程'}
@@ -394,7 +433,12 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
               ← 工作流中心
             </button>
             <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>工作流运行</span>
-            {workflowRunId && <code style={{ fontSize: 11, color: '#9CA3AF' }}>{workflowRunId}</code>}
+            {workflowRunId && (
+              <details style={{ fontSize: 11, color: '#9CA3AF' }}>
+                <summary style={{ cursor: 'pointer' }}>技术信息</summary>
+                <code style={{ fontSize: 10, color: '#9CA3AF' }}>{workflowRunId}</code>
+              </details>
+            )}
             {!isTerminal && pollTimerRef.current && (
               <span style={{ fontSize: 10, color: '#9CA3AF' }}>⟳ 自动检测状态变化</span>
             )}
@@ -444,6 +488,16 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
             runId={workflowRunId}
             visible={true}
             onRefresh={() => setTraceRefreshKey(k => k + 1)}
+          />
+        )}
+
+        {/* Phase20 R2：决策链（只消费 decisionProvenance 安全投影）+ Run→Plan */}
+        {workflowRunId && (
+          <DecisionChainPanel
+            key={`decision-${workflowRunId}`}
+            runId={workflowRunId}
+            onOpenChildRun={onOpenRun}
+            onOpenPlan={onOpenPlan}
           />
         )}
       </div>

@@ -135,6 +135,71 @@ class SQLiteCollaborationRepository:
 
     def update_task(self, run_id: str, task_dict: Dict): self.save_task(run_id, task_dict)
 
+    def list_tasks(self, run_id: str) -> List[Dict]:
+        init_collaboration_tables(); conn = get_conn()
+        rows = conn.execute("SELECT * FROM collaboration_tasks WHERE run_id=? ORDER BY started_at, task_id", (run_id,)).fetchall()
+        conn.close(); return [dict(r) for r in rows]
+
+    def get_session_bound_event_ids(self, session_id: str) -> List[str]:
+        """Return distinct persisted eventId bindings for a collaboration session."""
+        if not session_id:
+            return []
+        init_collaboration_tables(); conn = get_conn()
+        rows = conn.execute(
+            "SELECT normalized_event FROM collaboration_runs WHERE session_id=?",
+            (session_id,),
+        ).fetchall()
+        conn.close()
+        event_ids = []
+        for row in rows:
+            raw = row["normalized_event"] if isinstance(row, sqlite3.Row) else row[0]
+            try:
+                data = json.loads(raw or "{}") if isinstance(raw, str) else (raw or {})
+            except Exception:
+                data = {}
+            event_id = str(data.get("eventId") or data.get("event_id") or "").strip()
+            if event_id and event_id not in event_ids:
+                event_ids.append(event_id)
+        return event_ids
+
+    def list_runs_by_event_id(self, event_id: str, limit: int = 20, offset: int = 0) -> List[Dict]:
+        """Return collaboration runs with an exact persisted normalized_event.eventId binding."""
+        event_id = str(event_id or "").strip()
+        if not event_id:
+            return []
+        init_collaboration_tables(); conn = get_conn()
+        rows = conn.execute(
+            """
+            SELECT * FROM collaboration_runs
+            WHERE CASE WHEN json_valid(normalized_event)
+                THEN json_extract(normalized_event, '$.eventId')
+            END = ?
+            ORDER BY updated_at DESC, started_at DESC, run_id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (event_id, limit, offset),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def count_runs_by_event_id(self, event_id: str) -> int:
+        """Count collaboration runs with an exact persisted normalized_event.eventId binding."""
+        event_id = str(event_id or "").strip()
+        if not event_id:
+            return 0
+        init_collaboration_tables(); conn = get_conn()
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS c FROM collaboration_runs
+            WHERE CASE WHEN json_valid(normalized_event)
+                THEN json_extract(normalized_event, '$.eventId')
+            END = ?
+            """,
+            (event_id,),
+        ).fetchone()
+        conn.close()
+        return row["c"] if row else 0
+
     def save_conflict(self, conflict: Dict):
         init_collaboration_tables(); conn = get_conn()
         conn.execute("""INSERT OR REPLACE INTO collaboration_conflicts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",

@@ -1,0 +1,38 @@
+export const visualTokens = {
+  color: {
+    appBg: '#F7F8FA',
+    surface: '#FFFFFF',
+    surfaceMuted: '#FAFBFC',
+    surfaceSubtle: '#F2F5F7',
+    border: '#E5EAF0',
+    borderSubtle: '#EEF1F5',
+    text: '#1F2937',
+    textMuted: '#6B7280',
+    textSubtle: '#A0A7B2',
+    primary: '#0F766E',
+    primarySoft: '#EEF8F5',
+    primaryBorder: '#CBE7E1',
+    ai: '#0F766E',
+    aiBright: '#0F766E',
+    canvas: '#FAFBFC',
+    canvasPanel: '#FFFFFF',
+    canvasPanelSoft: '#F7F8FA',
+    canvasBorder: '#E5EAF0',
+    canvasText: '#1F2937',
+    canvasMuted: '#6B7280',
+    danger: '#DC2626',
+    warning: '#D97706',
+    success: '#059669',
+  },
+  radius: {
+    sm: 6,
+    md: 8,
+  },
+  shadow: {
+    subtle: '0 1px 2px rgba(15, 23, 42, 0.035)',
+    sidebar: '1px 0 0 rgba(15, 23, 42, 0.04)',
+  },
+  font: {
+    mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+  },
+} as const;
