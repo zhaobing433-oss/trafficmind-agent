@@ -237,6 +237,10 @@ def upsert_chunks(
             "chunk_index": c.chunk_index,
             "effective_from": c.effective_from.isoformat() if c.effective_from else "",
             "effective_to": c.effective_to.isoformat() if c.effective_to else "",
+            "region_id": c.region_id or "",
+            "road_id": c.road_id or "",
+            "intersection_id": c.intersection_id or "",
+            "grounding_scope": c.grounding_scope or "LEGACY_UNSCOPED",
         }
         for c in chunks
     ]

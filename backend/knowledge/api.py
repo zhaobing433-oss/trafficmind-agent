@@ -27,6 +27,10 @@ from backend.knowledge.service import (
     list_documents,
     reindex_document,
 )
+from backend.knowledge.regional_context import (
+    EventKnowledgeContextService,
+    KnowledgeContextError,
+)
 
 router = APIRouter(prefix="/knowledge", tags=["Knowledge V1"])
 
@@ -149,6 +153,23 @@ async def api_get_chunks(
     if result is None:
         raise HTTPException(status_code=404, detail=f"文档 '{document_id}' 不存在")
     return result
+
+
+@router.get("/events/{event_id}/context", summary="获取事件绑定知识上下文")
+async def api_event_knowledge_context(
+    event_id: str,
+    query: str = Query("", description="可选检索问题；为空时使用事件字段生成确定性查询"),
+    limit: int = Query(5, ge=1, le=20),
+):
+    """按真实事件 + canonical location binding 获取适用知识证据。"""
+    try:
+        return EventKnowledgeContextService().get_context_for_event(
+            event_id,
+            query=query,
+            limit=limit,
+        )
+    except KnowledgeContextError as e:
+        raise HTTPException(status_code=e.status_code, detail={"code": e.code, "message": e.message})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

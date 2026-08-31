@@ -54,8 +54,13 @@ def _safe_dt(val) -> Optional[datetime]:
 class EvidencePolicy:
     """证据策略过滤器。"""
 
-    def __init__(self):
-        self.now = datetime.now(timezone.utc)
+    def __init__(self, now: Optional[datetime] = None):
+        if now is None:
+            self.now = datetime.now(timezone.utc)
+        elif now.tzinfo is None:
+            self.now = now.replace(tzinfo=timezone.utc)
+        else:
+            self.now = now.astimezone(timezone.utc)
 
     def apply(
         self,
@@ -296,10 +301,15 @@ class EvidencePolicy:
 class Reranker:
     """Cross-Encoder 重排器。"""
 
-    def __init__(self, reranker_provider: Optional[RerankerProvider] = None):
+    def __init__(
+        self,
+        reranker_provider: Optional[RerankerProvider] = None,
+        *,
+        policy_as_of: Optional[datetime] = None,
+    ):
         from backend.rag.v2.providers import get_reranker_provider
         self.provider = reranker_provider or get_reranker_provider()
-        self.policy = EvidencePolicy()
+        self.policy = EvidencePolicy(policy_as_of)
 
     def rerank(
         self,
@@ -387,5 +397,15 @@ class Reranker:
                 rerank_score=c.get("rerank_score"),
                 dense_score=c.get("dense_score"),
                 source_uri=c.get("source_uri", c.get("metadata", {}).get("source_uri")),
+                event_type=c.get("event_type", c.get("metadata", {}).get("event_type")),
+                road_name=c.get("road_name", c.get("metadata", {}).get("road_name")),
+                region_id=c.get("region_id", c.get("metadata", {}).get("region_id")),
+                road_id=c.get("road_id", c.get("metadata", {}).get("road_id")),
+                intersection_id=c.get("intersection_id", c.get("metadata", {}).get("intersection_id")),
+                grounding_scope=(
+                    c.get("grounding_scope")
+                    or c.get("metadata", {}).get("grounding_scope")
+                    or "LEGACY_UNSCOPED"
+                ),
             ))
         return evidence

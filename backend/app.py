@@ -91,6 +91,12 @@ async def lifespan(app: FastAPI):
     # Phase 13: Simulation tables (idempotent)
     from backend.simulation.repository import init_simulation_tables
     init_simulation_tables()
+    # Phase 21: Regional Core tables (idempotent)
+    from backend.regional.repository import init_regional_tables
+    init_regional_tables()
+    # Phase 21: Traffic Case Memory tables (idempotent)
+    from backend.case_memory.repository import init_case_memory_tables
+    init_case_memory_tables()
     # Phase 13 Round 2: Seed simulation_bridge template
     seed_workflow_templates()
     # Phase 12: Wait Scheduler
@@ -1803,6 +1809,14 @@ app.include_router(observability_router)
 # Phase 14 Round 3: Evaluation Dashboard
 from backend.evaluation.eval_api import router as eval_router
 app.include_router(eval_router)
+
+# Phase 21: Pilot Region Grounding Layer
+from backend.regional.api import router as regional_router
+app.include_router(regional_router)
+
+# Phase 21: Traffic Case Memory
+from backend.case_memory.api import router as case_memory_router
+app.include_router(case_memory_router)
 
 
 def _safe_json(s: str):

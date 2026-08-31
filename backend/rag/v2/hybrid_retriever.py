@@ -8,7 +8,7 @@ Channels:
 """
 from __future__ import annotations
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence, Set
 
 from backend.rag.v2.config import (
     RAG_DENSE_TOP_K,
@@ -39,6 +39,7 @@ class HybridRetriever:
         dense_top_k: int = RAG_DENSE_TOP_K,
         sparse_top_k: int = RAG_SPARSE_TOP_K,
         structured_top_k: int = RAG_STRUCTURED_TOP_K,
+        allowed_document_ids: Optional[Sequence[str]] = None,
     ) -> List[Dict]:
         """执行混合检索。
 
@@ -57,13 +58,16 @@ class HybridRetriever:
         search_query = rewritten_query or query
 
         # Channel 1: Dense retrieval
-        dense_results = self._dense_retrieve(search_query, dense_top_k, analysis)
+        allowed_ids = _normalize_allowed_document_ids(allowed_document_ids)
+
+        # Channel 1: Dense retrieval
+        dense_results = self._dense_retrieve(search_query, dense_top_k, analysis, allowed_ids)
 
         # Channel 2: Sparse retrieval
-        sparse_results = self._sparse_retrieve(search_query, sparse_top_k, analysis)
+        sparse_results = self._sparse_retrieve(search_query, sparse_top_k, analysis, allowed_ids)
 
         # Channel 3: Structured retrieval
-        structured_results = self._structured_retrieve(search_query, structured_top_k, analysis)
+        structured_results = self._structured_retrieve(search_query, structured_top_k, analysis, allowed_ids)
 
         logger.info(
             f"Retrieval: dense={len(dense_results)}, sparse={len(sparse_results)}, "
@@ -80,7 +84,11 @@ class HybridRetriever:
         return fused[:top_k]
 
     def _dense_retrieve(
-        self, query: str, top_k: int, analysis: Optional[QueryAnalysis],
+        self,
+        query: str,
+        top_k: int,
+        analysis: Optional[QueryAnalysis],
+        allowed_document_ids: Optional[Set[str]],
     ) -> List[Dict]:
         """Dense 通道：显式传入 query_embedding + active collection。"""
         from backend.rag.v2.dense_index import search_dense, is_available, get_active_collection_name
@@ -100,18 +108,30 @@ class HybridRetriever:
             logger.error(f"Dense embedding failed: {e}")
             return []
 
-        where = None
+        where_parts: List[Dict] = []
         if analysis and analysis.filters:
-            where = {}
             if analysis.filters.get("event_type"):
-                where["event_type"] = analysis.filters["event_type"]
+                where_parts.append({"event_type": analysis.filters["event_type"]})
             if analysis.filters.get("doc_type"):
-                where["doc_type"] = analysis.filters["doc_type"]
+                where_parts.append({"doc_type": analysis.filters["doc_type"]})
+        if allowed_document_ids is not None:
+            if not allowed_document_ids:
+                return []
+            ordered_ids = sorted(allowed_document_ids)
+            if len(ordered_ids) == 1:
+                where_parts.append({"document_id": ordered_ids[0]})
+            else:
+                where_parts.append({"document_id": {"$in": ordered_ids}})
+        where = _combine_where(where_parts)
 
         return search_dense(query_embedding, top_k=top_k, where=where, collection_name=active_collection)
 
     def _sparse_retrieve(
-        self, query: str, top_k: int, analysis: Optional[QueryAnalysis],
+        self,
+        query: str,
+        top_k: int,
+        analysis: Optional[QueryAnalysis],
+        allowed_document_ids: Optional[Set[str]],
     ) -> List[Dict]:
         """Sparse 通道：FTS5/BM25。"""
         from backend.rag.v2.sparse_index import search_sparse
@@ -120,12 +140,23 @@ class HybridRetriever:
         if analysis and analysis.route and analysis.route.value == "exact_rule":
             doc_type = "rule"
 
-        return search_sparse(query, top_k=top_k, doc_type=doc_type)
+        return search_sparse(
+            query,
+            top_k=top_k,
+            doc_type=doc_type,
+            allowed_document_ids=allowed_document_ids,
+        )
 
     def _structured_retrieve(
-        self, query: str, top_k: int, analysis: Optional[QueryAnalysis],
+        self,
+        query: str,
+        top_k: int,
+        analysis: Optional[QueryAnalysis],
+        allowed_document_ids: Optional[Set[str]],
     ) -> List[Dict]:
         """Structured 通道：九维规则相似度检索历史案例。"""
+        if allowed_document_ids is not None:
+            return []
         try:
             from backend.tools.similarity_tools import find_similar_cases_by_query
         except ImportError:
@@ -134,6 +165,20 @@ class HybridRetriever:
 
         # This channel is primarily for historical cases
         return _structured_case_search(query, top_k)
+
+
+def _normalize_allowed_document_ids(value: Optional[Sequence[str]]) -> Optional[Set[str]]:
+    if value is None:
+        return None
+    return {str(item).strip() for item in value if str(item).strip()}
+
+
+def _combine_where(parts: List[Dict]) -> Optional[Dict]:
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    return {"$and": parts}
 
 
 def _structured_case_search(query: str, top_k: int) -> List[Dict]:
