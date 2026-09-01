@@ -1,0 +1,99 @@
+{
+  "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+  "datasetVersion": "1.0.0",
+  "generationVersion": "g3a-static-v1",
+  "generationSeed": "deterministic-formula-no-random-runtime",
+  "geographySourcePack": "QT_BY_XIASHA_PILOT_001@1.0.0",
+  "eventCount": 144,
+  "locationAllocationRules": {
+    "intersection": "9 G1 intersections x 12 events = 108 intersection-bound events, interleaved by round so each location has old and recent history.",
+    "road": "6 selected G1 roads x 6 events = 36 road-bound events, interleaved in the first six rounds.",
+    "resolverInput": "roadName uses only G1 canonical names or sourced aliases."
+  },
+  "eventTypeAllocationRules": "Six G2-covered canonical event types cycle by location index and local sequence, yielding 24 events per type and at least two event types per intersection.",
+  "riskAllocationRules": "Chinese risk levels cycle by global sequence across low/medium/high/major ranges; scores are finite integers between 24 and 96.",
+  "statusAllocationRules": "Existing EVENT_STATUSES cycle by global sequence and include terminal and UNCLOSED statuses.",
+  "durationRules": "All formal G3-A events use finite positive duration seconds from a deterministic fixed formula. NULL-duration persistence is not part of this pack and remains covered by Wave C historical context tests.",
+  "timeOfDayAllocationRules": "Four local-time buckets are represented by UTC timestamps that map to Asia/Shanghai night, morning, afternoon, and evening buckets.",
+  "optionalContextFieldPolicy": "Formal events intentionally omit isMainRoad, nearbySchool, and nearbyHospital. Those fields are not needed by HistoricalTrafficService and must not convert G1 road/POI geography into synthetic event facts.",
+  "timestampRange": {
+    "createdAtMin": "2024-08-05T18:30:00Z",
+    "createdAtMax": "2026-07-21T12:30:00Z",
+    "upperDesignBound": "2026-08-31T23:00:00Z"
+  },
+  "idGeneration": "SYN_QT_HIST_0001..SYN_QT_HIST_0144, stable sequence order.",
+  "aliasSelectionRule": "Road-level events cycle through G1 road canonical names and sourced aliases; intersection events use G1 intersection canonical names.",
+  "statisticalRealityBoundary": "Validation-oriented distribution only. Frequencies, weather, risk, duration, and time-of-day are not real Qiantang traffic statistics.",
+  "noAnswerLabels": [
+    "expectedRecommendation",
+    "expectedPlan",
+    "expectedAction",
+    "correctAnswer",
+    "groundTruthAction",
+    "bestStrategy",
+    "preferredWorkflow",
+    "shouldUseKnowledgeDoc",
+    "shouldRetrieveCase"
+  ],
+  "noGeneratedObjects": {
+    "holdoutEvents": 0,
+    "agentRuns": 0,
+    "plans": 0,
+    "workflowRuns": 0,
+    "caseMemories": 0
+  },
+  "distribution": {
+    "eventCount": 144,
+    "intersectionBoundEventCount": 108,
+    "roadBoundEventCount": 36,
+    "eventTypeCounts": {
+      "accident": 24,
+      "congestion": 24,
+      "illegal_parking": 24,
+      "pedestrian_intrusion": 24,
+      "signal_fault": 24,
+      "vehicle_stopped": 24
+    },
+    "riskLevelCounts": {
+      "中风险": 36,
+      "低风险": 36,
+      "重大风险": 36,
+      "高风险": 36
+    },
+    "statusCounts": {
+      "处置中": 24,
+      "已处置": 24,
+      "已归档": 24,
+      "待复盘": 24,
+      "待派单": 24,
+      "待研判": 24
+    },
+    "timePeriodCounts": {
+      "afternoon": 36,
+      "evening_peak": 36,
+      "morning_peak": 36,
+      "night": 36
+    },
+    "durationFiniteCount": 144,
+    "durationNullCount": 0,
+    "eventsByIntersection": {
+      "QT_BY_INT_GAOSHA_JINSHA": 12,
+      "QT_BY_INT_GAOSHA_XUELIN": 12,
+      "QT_BY_INT_WENHAINAN_NO2": 12,
+      "QT_BY_INT_WENHAINAN_XUELIN": 12,
+      "QT_BY_INT_WENHAINAN_XUEYUAN": 12,
+      "QT_BY_INT_WENZE_NO2": 12,
+      "QT_BY_INT_WENZE_XUELIN": 12,
+      "QT_BY_INT_WENZE_XUEYUAN": 12,
+      "QT_BY_INT_XUEZHENG_NO23": 12
+    },
+    "eventsByRoadLevel": {
+      "QT_BY_RD_JINSHA": 6,
+      "QT_BY_RD_NO2": 6,
+      "QT_BY_RD_WENHAINAN": 6,
+      "QT_BY_RD_WENZE": 6,
+      "QT_BY_RD_XUELIN": 6,
+      "QT_BY_RD_XUEYUAN": 6
+    }
+  }
+}

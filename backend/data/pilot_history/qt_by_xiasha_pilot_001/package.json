@@ -1,0 +1,92 @@
+{
+  "packageVersion": 1,
+  "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+  "datasetVersion": "1.0.0",
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "displayName": "钱塘区白杨-金沙湖-下沙高教园试点区 Synthetic Historical Grounding Pool",
+  "sourceSnapshotDate": "2026-09-01",
+  "generatedAt": "2026-09-01T00:00:00Z",
+  "sourceType": "phase21_pilot_synthetic_history_pack",
+  "sourceReference": "generation_spec.json",
+  "verificationStatus": "synthetic_validation_verified",
+  "geographySourcePack": "QT_BY_XIASHA_PILOT_001@1.0.0",
+  "historyRangeStart": "2024-08-05T18:30:00Z",
+  "historyRangeEnd": "2026-07-21T12:30:00Z",
+  "generationMethod": "deterministic_synthetic_validation",
+  "datasetReality": "synthetic_validation_history",
+  "realGeography": true,
+  "realTrafficEventLogs": false,
+  "realtimeTraffic": false,
+  "officialHistoricalDataset": false,
+  "governmentFeed": false,
+  "eventSource": "project_synthetic_validation",
+  "holdoutIncluded": false,
+  "caseSeedIncluded": false,
+  "agentRunsIncluded": false,
+  "plansIncluded": false,
+  "workflowRunsIncluded": false,
+  "trafficCaseMemoryIncluded": false,
+  "safeEvaluationRange": {
+    "fromInclusive": "2024-08-01T00:00:00Z",
+    "toExclusive": null,
+    "source": "QT_BY_XIASHA_PILOT_001_KNOWLEDGE_G2 safePilotEvaluationTimeRange"
+  },
+  "holdoutTimePolicy": {
+    "finalHoldoutTimePrecommitted": false,
+    "rule": "G3-C holdout T0 must be frozen after G3-B case seed completion and must be greater than max(history.createdAt, case.completedAt)."
+  },
+  "inventory": {
+    "eventCount": 144,
+    "intersectionBoundEventCount": 108,
+    "roadBoundEventCount": 36,
+    "eventTypeCounts": {
+      "accident": 24,
+      "congestion": 24,
+      "illegal_parking": 24,
+      "pedestrian_intrusion": 24,
+      "signal_fault": 24,
+      "vehicle_stopped": 24
+    },
+    "riskLevelCounts": {
+      "中风险": 36,
+      "低风险": 36,
+      "重大风险": 36,
+      "高风险": 36
+    },
+    "statusCounts": {
+      "处置中": 24,
+      "已处置": 24,
+      "已归档": 24,
+      "待复盘": 24,
+      "待派单": 24,
+      "待研判": 24
+    },
+    "timePeriodCounts": {
+      "afternoon": 36,
+      "evening_peak": 36,
+      "morning_peak": 36,
+      "night": 36
+    },
+    "durationFiniteCount": 144,
+    "durationNullCount": 0,
+    "eventsByIntersection": {
+      "QT_BY_INT_GAOSHA_JINSHA": 12,
+      "QT_BY_INT_GAOSHA_XUELIN": 12,
+      "QT_BY_INT_WENHAINAN_NO2": 12,
+      "QT_BY_INT_WENHAINAN_XUELIN": 12,
+      "QT_BY_INT_WENHAINAN_XUEYUAN": 12,
+      "QT_BY_INT_WENZE_NO2": 12,
+      "QT_BY_INT_WENZE_XUELIN": 12,
+      "QT_BY_INT_WENZE_XUEYUAN": 12,
+      "QT_BY_INT_XUEZHENG_NO23": 12
+    },
+    "eventsByRoadLevel": {
+      "QT_BY_RD_JINSHA": 6,
+      "QT_BY_RD_NO2": 6,
+      "QT_BY_RD_WENHAINAN": 6,
+      "QT_BY_RD_WENZE": 6,
+      "QT_BY_RD_XUELIN": 6,
+      "QT_BY_RD_XUEYUAN": 6
+    }
+  }
+}
