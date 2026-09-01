@@ -1,0 +1,182 @@
+[
+  {
+    "poiId": "QT_BY_POI_ZSTU",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "浙江理工大学",
+    "type": "school",
+    "roadId": "QT_BY_RD_NO2",
+    "importance": "high",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_ZSTU_CONTACT"],
+      "institutionSubtype": "university",
+      "address": "浙江省杭州市钱塘区2号大街928号",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_ZSTU_CONTACT",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "poiId": "QT_BY_POI_HDU",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "杭州电子科技大学",
+    "type": "school",
+    "roadId": "QT_BY_RD_NO2",
+    "importance": "high",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_HDU_EMPLOYMENT_HOME"],
+      "institutionSubtype": "university",
+      "address": "杭州市钱塘区白杨街道2号大街1158号",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_HDU_EMPLOYMENT_HOME",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "poiId": "QT_BY_POI_ZUFE",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "浙江财经大学",
+    "type": "school",
+    "roadId": "QT_BY_RD_XUEYUAN",
+    "importance": "high",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_ZUFE_PROFILE"],
+      "institutionSubtype": "university",
+      "address": "浙江省杭州市下沙高教园区学源街18号",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_ZUFE_PROFILE",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "poiId": "QT_BY_POI_ZFC",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "浙江金融职业学院",
+    "type": "school",
+    "roadId": "QT_BY_RD_XUEYUAN",
+    "importance": "medium",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_ZFC_INFO"],
+      "institutionSubtype": "college",
+      "address": "浙江杭州下沙高教园东区学源街118号",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_ZFC_INFO",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "poiId": "QT_BY_POI_ZJIET",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "浙江经贸职业技术学院",
+    "type": "school",
+    "roadId": "QT_BY_RD_XUELIN",
+    "importance": "medium",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_ZJIET_CONTACT"],
+      "institutionSubtype": "college",
+      "address": "杭州市钱塘区学林街280号",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_ZJIET_CONTACT",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "poiId": "QT_BY_POI_ZUWE",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "浙江水利水电学院",
+    "type": "school",
+    "roadId": "QT_BY_RD_NO2",
+    "importance": "medium",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_ZUWE_HOME"],
+      "institutionSubtype": "university",
+      "address": "杭州市钱塘区2号大街508号",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_ZUWE_HOME",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "poiId": "QT_BY_POI_ZJJY",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "浙江警官职业学院",
+    "type": "school",
+    "roadId": "QT_BY_RD_NO2",
+    "importance": "medium",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_ZJJY_HOME"],
+      "institutionSubtype": "college",
+      "address": "浙江省杭州市钱塘区二号大街",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_ZJJY_HOME",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "poiId": "QT_BY_POI_ZJTIE",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "浙江经济职业技术学院",
+    "type": "school",
+    "roadId": "QT_BY_RD_XUEZHENG",
+    "importance": "medium",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_ZJTIE_HOME"],
+      "institutionSubtype": "college",
+      "address": "中国浙江省杭州市钱塘区白杨街道学正街66号",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_ZJTIE_HOME",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "poiId": "QT_BY_POI_CUZ",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "浙江传媒学院",
+    "type": "school",
+    "roadId": "QT_BY_RD_XUEYUAN",
+    "importance": "medium",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_FIRST_PARTY",
+      "sourceIds": ["SRC_CUZ_PROFILE"],
+      "institutionSubtype": "university",
+      "address": "中国浙江杭州市钱塘区白杨街道学源街998号",
+      "locationBindingBasis": "First-party address confirms the road; no intersection binding is asserted."
+    },
+    "sourceType": "first_party",
+    "sourceReference": "SRC_CUZ_PROFILE",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  }
+]

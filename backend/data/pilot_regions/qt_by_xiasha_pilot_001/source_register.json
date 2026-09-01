@@ -1,0 +1,150 @@
+{
+  "sourceSnapshotDate": "2026-09-01",
+  "sources": [
+    {
+      "sourceId": "SRC_QT_ADMIN_2021",
+      "title": "杭州市人民政府关于调整杭州市部分行政区划的通知",
+      "organization": "杭州市人民政府公报 / 杭州网",
+      "sourceTier": "A",
+      "sourceUrl": "https://z.hangzhou.com.cn/2020/hzrmzfgb/content/content_7961405.html",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["region", "administrative_context"],
+      "licenseNote": "Government public notice; used for citation and administrative context.",
+      "verificationNotes": "Confirms Hangzhou Qiantang District setup context and street-level administrative references used to scope a bounded internal pilot."
+    },
+    {
+      "sourceId": "SRC_QT_PLAN_QT03_2024",
+      "title": "杭州市人民政府关于杭州市钱塘区白杨单元（QT03）等5个单元详细规划的批复",
+      "organization": "杭州市人民政府公报 / 杭州网",
+      "sourceTier": "A",
+      "sourceUrl": "https://z.hangzhou.com.cn/2020/hzrmzfgb/content/content_8767916.html",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["region", "planning_context"],
+      "licenseNote": "Government public planning notice; used for citation and planning context.",
+      "verificationNotes": "Supports Baiyang unit planning context. The pilot region ID is internal and is not an official administrative code."
+    },
+    {
+      "sourceId": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+      "title": "OpenStreetMap / Overpass sampled road and intersection geometry for Baiyang-Xiasha pilot",
+      "organization": "OpenStreetMap contributors",
+      "sourceTier": "C",
+      "sourceUrl": "https://overpass.openstreetmap.fr/api/interpreter",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["road", "intersection", "road_relation", "coordinate"],
+      "licenseNote": "OpenStreetMap data is made available under ODbL. This pack stores a small pilot inventory with attribution and does not claim official GIS topology.",
+      "coordinateSystem": "WGS84",
+      "usage": "auxiliary_open_geospatial",
+      "verificationNotes": "Overpass queries verified sampled named roads and shared road nodes for selected intersections. OSM way/node IDs are retained only in metadata/provenance, not as canonical business IDs.",
+      "sampleQueries": [
+        "[out:json][timeout:15];way[\"name\"=\"文泽路\"](30.300,120.330,30.330,120.360)->.a;way[\"name\"=\"2号大街\"](30.300,120.330,30.330,120.390)->.b;node(w.a)(w.b);out;",
+        "[out:json][timeout:15];way[\"name\"=\"文海南路\"](30.300,120.360,30.330,120.395)->.a;way[\"name\"=\"2号大街\"](30.300,120.330,30.330,120.395)->.b;node(w.a)(w.b);out;",
+        "[out:json][timeout:15];way[\"name\"=\"高沙路\"](30.300,120.320,30.330,120.340)->.a;way[\"name\"=\"金沙大道\"](30.300,120.300,30.330,120.350)->.b;node(w.a)(w.b);out;",
+        "[out:json][timeout:15];way[\"name\"=\"文泽路\"](30.300,120.330,30.330,120.360)->.a;way[\"name\"=\"学林街\"](30.305,120.320,30.335,120.390)->.b;node(w.a)(w.b);out;",
+        "[out:json][timeout:15];way[\"name\"=\"高沙路\"](30.300,120.320,30.330,120.340)->.a;way[\"name\"=\"学林街\"](30.305,120.320,30.335,120.390)->.b;node(w.a)(w.b);out;",
+        "[out:json][timeout:15];way[\"name\"=\"文泽路\"](30.300,120.330,30.330,120.360)->.a;way[\"name\"=\"学源街\"](30.305,120.330,30.330,120.390)->.b;node(w.a)(w.b);out;",
+        "[out:json][timeout:15];way[\"name\"=\"文海南路\"](30.300,120.360,30.330,120.395)->.a;way[\"name\"=\"学源街\"](30.305,120.330,30.330,120.395)->.b;node(w.a)(w.b);out;",
+        "[out:json][timeout:15];way[\"name\"=\"文海南路\"](30.300,120.360,30.330,120.395)->.a;way[\"name\"=\"学林街\"](30.305,120.320,30.335,120.390)->.b;node(w.a)(w.b);out;",
+        "[out:json][timeout:15];way[\"name\"=\"学正街\"](30.300,120.340,30.320,120.395)->.a;way[\"name\"=\"23号大街\"](30.300,120.340,30.320,120.395)->.b;node(w.a)(w.b);out;"
+      ]
+    },
+    {
+      "sourceId": "SRC_ZSTU_CONTACT",
+      "title": "浙江理工大学研究生院联系信息",
+      "organization": "浙江理工大学",
+      "sourceTier": "B",
+      "sourceUrl": "https://gradadmission.zstu.edu.cn/cyxx/glxfs.htm",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 浙江理工大学 address on 钱塘区/下沙高教园区 2号大街928号."
+    },
+    {
+      "sourceId": "SRC_HDU_EMPLOYMENT_HOME",
+      "title": "杭州电子科技大学招生就业处页面",
+      "organization": "杭州电子科技大学",
+      "sourceTier": "B",
+      "sourceUrl": "https://job.hdu.edu.cn/",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 杭州电子科技大学 address on 钱塘区白杨街道2号大街1158号."
+    },
+    {
+      "sourceId": "SRC_ZUFE_PROFILE",
+      "title": "浙江财经大学学校概况",
+      "organization": "浙江财经大学",
+      "sourceTier": "B",
+      "sourceUrl": "https://www.zufe.edu.cn/zcgk/xxgk.htm",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 浙江财经大学 address on 下沙高教园区学源街18号."
+    },
+    {
+      "sourceId": "SRC_ZFC_INFO",
+      "title": "浙江金融职业学院信息公开事项清单页面",
+      "organization": "浙江金融职业学院",
+      "sourceTier": "B",
+      "sourceUrl": "https://www.zfc.edu.cn/xxgksxqd/list.htm",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 浙江金融职业学院 address on 杭州下沙高教园东区学源街118号."
+    },
+    {
+      "sourceId": "SRC_ZJIET_CONTACT",
+      "title": "浙江经贸职业技术学院联系我们",
+      "organization": "浙江经贸职业技术学院",
+      "sourceTier": "B",
+      "sourceUrl": "https://www.zjiet.edu.cn/lxwm/list.htm",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 浙江经贸职业技术学院 address on 钱塘区学林街280号."
+    },
+    {
+      "sourceId": "SRC_ZUWE_HOME",
+      "title": "浙江水利水电学院首页",
+      "organization": "浙江水利水电学院",
+      "sourceTier": "B",
+      "sourceUrl": "https://www.zuwe.edu.cn/",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 浙江水利水电学院钱塘校区 address on 钱塘区2号大街508号."
+    },
+    {
+      "sourceId": "SRC_ZJJY_HOME",
+      "title": "浙江警官职业学院首页",
+      "organization": "浙江警官职业学院",
+      "sourceTier": "B",
+      "sourceUrl": "https://www.zjjy.com.cn/",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 浙江警官职业学院 address on 钱塘区二号大街."
+    },
+    {
+      "sourceId": "SRC_ZJTIE_HOME",
+      "title": "浙江经济职业技术学院首页",
+      "organization": "浙江经济职业技术学院",
+      "sourceTier": "B",
+      "sourceUrl": "https://www.zjtie.edu.cn/",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 浙江经济职业技术学院 address on 钱塘区白杨街道学正街66号."
+    },
+    {
+      "sourceId": "SRC_CUZ_PROFILE",
+      "title": "浙江传媒学院学校简介",
+      "organization": "浙江传媒学院",
+      "sourceTier": "B",
+      "sourceUrl": "https://www.cuz.edu.cn/xxgk/xxjj.htm",
+      "retrievedAt": "2026-09-01",
+      "dataTypes": ["poi", "road_alias", "address"],
+      "licenseNote": "First-party institution webpage; used for address verification.",
+      "verificationNotes": "Confirms 浙江传媒学院 address on 钱塘区白杨街道学源街998号."
+    }
+  ]
+}
