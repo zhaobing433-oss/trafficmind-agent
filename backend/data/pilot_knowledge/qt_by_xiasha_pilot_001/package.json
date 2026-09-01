@@ -1,0 +1,33 @@
+{
+  "packageVersion": 1,
+  "packId": "QT_BY_XIASHA_PILOT_001_KNOWLEDGE_G2",
+  "packVersion": "1.0.0",
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "displayName": "钱塘区白杨-金沙湖-下沙高教园试点区知识包",
+  "sourceSnapshotDate": "2026-09-01",
+  "generatedAt": "2026-09-01T00:00:00Z",
+  "sourceType": "phase21_pilot_knowledge_pack",
+  "sourceReference": "source_register.json",
+  "verificationStatus": "verified",
+  "metadata": {
+    "coverageType": "bounded_pilot_knowledge",
+    "contentForm": "project_derived_source_grounded_summaries",
+    "claims": {
+      "officialKnowledgeBase": false,
+      "realtimePolicyFeed": false,
+      "fullQiantangKnowledgeCoverage": false,
+      "productionIngested": false
+    },
+    "knowledgeArchitecture": "existing_rag_v2_documents",
+    "scopeSemantics": {
+      "GLOBAL": "TrafficMind non-region-specific retrieval scope for the current PRC pilot, not worldwide legal applicability.",
+      "REGIONAL": "Internal bounded pilot retrieval scope from the G1 region pack; not an official administrative code.",
+      "LEGACY_UNSCOPED": "Legacy documents without explicit scope must not be treated as GLOBAL."
+    },
+    "safePilotEvaluationTimeRange": {
+      "eventTimeFromInclusive": "2024-08-01T00:00:00Z",
+      "eventTimeToExclusive": null,
+      "basis": "G2 documents are current-source summaries. G3 pilot evaluation events using this pack should be on or after the 2024-08-01 local planning source date unless a test explicitly creates temporal eligibility fixtures."
+    }
+  }
+}
