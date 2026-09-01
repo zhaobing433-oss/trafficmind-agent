@@ -10,6 +10,7 @@ from backend.agent.collaboration.db_repository import SQLiteCollaborationReposit
 from backend.agent.tool_registry import get_tool_registry
 from backend.planning.capability_snapshot import is_planner_executable_action
 from backend.planning.param_schema import normalize_parameter_hints
+from backend.grounding.rendering import grounding_audit_summary
 from backend.tools.event_identity import (
     EventIdentityError,
     compact_event_context,
@@ -95,6 +96,8 @@ def build_planning_input_from_agent(
     tasks = repo.list_tasks(collaboration_run_id)
     selected_agents = _parse_json(run.get("selected_agents"), [])
     final_decision = _parse_json(run.get("final_decision"), run.get("final_decision") or "")
+    grounding_context = _parse_json(run.get("grounding_context"), {})
+    grounding_audit = grounding_audit_summary(grounding_context) if grounding_context else {}
 
     findings, recommendations, accepted, rejected, evidence_refs = _extract_agent_outputs(tasks)
     source_agent = {
@@ -103,6 +106,9 @@ def build_planning_input_from_agent(
         "selectedAgents": selected_agents,
         "finalStatus": run.get("status", ""),
     }
+    if grounding_audit:
+        source_agent["groundingStatus"] = grounding_audit.get("groundingStatus", "MINIMAL")
+        source_agent["groundingContextAvailable"] = True
     recommendation_audit = {
         "accepted": accepted,
         "rejected": rejected,
@@ -117,12 +123,16 @@ def build_planning_input_from_agent(
     }
     if final_decision:
         constraints["agentFinalDecision"] = final_decision
+    if grounding_audit:
+        constraints["agentGroundingAudit"] = grounding_audit
 
     plan_metadata = {
-        "eventSnapshot": authoritative_event,
+        "eventSnapshot": event,
         "sourceAgent": source_agent,
         "agentRecommendationAudit": recommendation_audit,
     }
+    if grounding_audit:
+        plan_metadata["agentGroundingAudit"] = grounding_audit
     rag_evidence = _evidence_refs_to_rag(evidence_refs)
 
     return AgentPlanningInput(

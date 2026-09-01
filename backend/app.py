@@ -1259,6 +1259,24 @@ async def _orchestrated_analyze_stream(
 
         run_id = f"run_{int(datetime.now().timestamp() * 1000)}"
         trace_id = f"trace_{run_id}"
+        grounding_context = {}
+        if authoritative_event:
+            try:
+                from backend.grounding.assembler import (
+                    GroundedEventContextAssembler,
+                    minimal_grounded_context_from_event,
+                )
+
+                grounding_context = GroundedEventContextAssembler().assemble(
+                    extract_event_id(authoritative_event),
+                    query=content_text or "",
+                    authoritative_event=authoritative_event,
+                ).to_dict()
+            except Exception:
+                grounding_context = minimal_grounded_context_from_event(
+                    authoritative_event,
+                    reason="GROUNDING_ASSEMBLY_ERROR",
+                ).to_dict()
 
         # Generate title from user query content — not from default roadName
         query_text = content_text or ""
@@ -1374,6 +1392,7 @@ async def _orchestrated_analyze_stream(
                 routing.get("skippedAgents", []),
                 routing.get("routingReasons", []), budget,
                 previous_run_context=previous_run_context,
+                grounding_context=grounding_context,
             ):
                 # Capture fusionSummary from fusion_done event
                 if 'event: fusion_done' in event_str:
@@ -1619,7 +1638,7 @@ async def get_collaboration_run(run_id: str):
 def _safe_parse_json_fields(d: dict) -> dict:
     """将 SQLite 中的 JSON 字符串字段解析为对象。"""
     json_fields = ["selected_agents", "skipped_agents", "failed_agents", "normalized_event",
-                   "budget_usage", "final_decision", "depends_on", "input_snapshot",
+                   "budget_usage", "final_decision", "grounding_context", "depends_on", "input_snapshot",
                    "output_snapshot", "payload", "proposals"]
     for key in json_fields:
         if key in d and isinstance(d[key], str):

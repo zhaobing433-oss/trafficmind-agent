@@ -1,6 +1,6 @@
 """协作编排器 — Phase 9.2"""
 
-import asyncio, time
+import asyncio, copy, time
 from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, List
 
@@ -65,6 +65,7 @@ class CollaborationOrchestrator:
         routing_reasons: List[str] = None,
         budget: ExecutionBudget = None,
         previous_run_context: Dict[str, Any] = None,
+        grounding_context: Dict[str, Any] = None,
     ) -> AsyncGenerator[str, None]:
         """执行一次协作。生成 SSE 事件。
 
@@ -78,6 +79,7 @@ class CollaborationOrchestrator:
         state.original_input = event_info
         state.normalized_event = event_info  # = currentEvent only
         state.previous_run_context = previous_run_context  # separate!
+        state.grounding_context = copy.deepcopy(grounding_context) if isinstance(grounding_context, dict) else {}
         state.selected_agents = selected_agents
         state.skipped_agents = skipped_agents or []
         self.repo.save_run(state.to_dict())
@@ -102,8 +104,16 @@ class CollaborationOrchestrator:
             "contextPolicy": context_policy,
             "fieldSources": field_sources,
             "previousRunContext": previous_run_context,
+            "groundingStatus": state.grounding_context.get("groundingStatus") if state.grounding_context else None,
             "selectedAgents": [a for a in selected_agents if a not in ("FusionAgent", "ConflictDetector")],
         })
+        if state.grounding_context:
+            yield sse_event("grounding_ready", {
+                "runId": run_id,
+                "groundingStatus": state.grounding_context.get("groundingStatus"),
+                "assembledAt": state.grounding_context.get("assembledAt"),
+                "refs": state.grounding_context.get("groundingRefs", []),
+            })
         state.transition("routing")
         yield sse_event("agent_route_done", {"selectedAgents": selected_agents, "routingReasons": routing_reasons or []})
 
@@ -145,6 +155,7 @@ class CollaborationOrchestrator:
             if not ready: break
             for task in ready:
                 graph.mark_running(task.task_id)
+                task.input_snapshot = project_context_for_agent(state.to_dict(), task.agent_name)
                 self.repo.update_task(run_id, task.to_dict())
                 yield _task_sse("task_started", task, run_id)
 
@@ -276,16 +287,20 @@ class CollaborationOrchestrator:
                                 "unresolvedCount": len(unresolved),
                             },
                         }
+                        if state.grounding_context:
+                            from backend.grounding.rendering import grounding_audit_summary
+
+                            final["groundingAudit"] = grounding_audit_summary(state.grounding_context)
                         yield sse_event("fusion_done", {"runId": run_id, "fusionSummary": fusion, "generationMode": "llm" if LLM_ENABLED else "template_fallback"})
                         state.final_decision = final
                         task.output_snapshot = {"fusionSummary": fusion, "generationMode": "llm" if LLM_ENABLED else "template_fallback", "agentResults": list(state.task_results.keys()), "arbitrationConsumed": len(state.arbitration_results) > 0}
+                        if state.grounding_context:
+                            task.output_snapshot["groundingAudit"] = final["groundingAudit"]
                         self.repo.update_task(run_id, task.to_dict())
                     yield _task_sse("task_succeeded", task, run_id)
                 else:
                     # Domain/execution agents — count happens in executor
                     yield sse_event("budget_updated", {"runId": run_id, **budget.to_dict()})
-                    # Save input snapshot
-                    task.input_snapshot = project_context_for_agent(state.to_dict(), task.agent_name)
                     try:
                         result = await asyncio.wait_for(execute_single_agent(task, state, budget), timeout=task.timeout_seconds)
                         if result.success and result.result:
