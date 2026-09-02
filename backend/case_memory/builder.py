@@ -273,26 +273,85 @@ def _is_simulation_source(event_id: str, payload: Any) -> bool:
 
 
 def _contains_simulation_marker(payload: Any) -> bool:
-    marker_keys = {
-        "simulationrunid",
-        "simulation_run_id",
+    provenance_ref_keys = {
         "simulationrefs",
         "simulation_refs",
+    }
+    source_type_keys = {
+        "sourcetype",
+        "source_type",
+    }
+    explicit_marker_keys = {
+        "simulationrunid",
+        "simulation_run_id",
+        "simulationid",
+        "simulation_id",
         "scenarioid",
         "scenario_id",
         "simulationscenarioid",
         "simulation_scenario_id",
+        "simulated",
+        "simulationderived",
+        "simulation_derived",
     }
     if isinstance(payload, dict):
         for key, value in payload.items():
             normalized = str(key).replace("-", "_").lower()
             compact = normalized.replace("_", "")
-            if normalized in marker_keys or compact in marker_keys:
-                return True
+            if normalized in provenance_ref_keys or compact in provenance_ref_keys:
+                if _has_simulation_ref_payload(value):
+                    return True
+                continue
+            if normalized in source_type_keys or compact in source_type_keys:
+                if _is_simulation_source_type(value):
+                    return True
+                continue
+            if normalized in explicit_marker_keys or compact in explicit_marker_keys:
+                if _has_explicit_simulation_marker(value):
+                    return True
+                continue
             if _contains_simulation_marker(value):
                 return True
     elif isinstance(payload, list):
         return any(_contains_simulation_marker(item) for item in payload)
+    return False
+
+
+def _has_simulation_ref_payload(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (dict, list, tuple, set)):
+        return bool(value)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _has_explicit_simulation_marker(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip().lower()
+        return bool(text) and text not in {"false", "0", "no", "none", "null"}
+    if isinstance(value, (dict, list, tuple, set)):
+        return bool(value)
+    return True
+
+
+def _is_simulation_source_type(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        text = value.strip().lower()
+        return text in {
+            "simulation",
+            "simulated",
+            "simulation_derived",
+            "traffic_simulation",
+            "demo_simulation",
+        }
     return False
 
 

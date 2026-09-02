@@ -42,6 +42,7 @@ from backend.workflow.models import (
     WorkflowRunStatus,
 )
 from backend.workflow.repository import SQLiteWorkflowRepository, init_workflow_tables
+from backend.workflow.state import TrafficWorkflowState
 
 
 @pytest.fixture()
@@ -268,6 +269,7 @@ def _save_plan_definition(
     event_id: str,
     collaboration_run_id: str = "",
     version: int = 1,
+    goal_type: GoalType = GoalType.CONGESTION_RESOLUTION,
 ) -> Plan:
     steps = [
         PlanStep(
@@ -285,12 +287,18 @@ def _save_plan_definition(
             riskLevel="high",
             evidenceRefs=[{"docId": "doc_policy"}],
         ),
+        PlanStep(
+            stepId="close",
+            stepType=NodeType.CLOSE,
+            objective="闭环归档",
+            dependsOn=["notify_ops"],
+        ),
     ]
     plan = Plan(
         planId=plan_id,
         planFingerprint=f"fp_{plan_id}_{version}",
         goal="人民路拥堵处置方案",
-        goalType=GoalType.CONGESTION_RESOLUTION,
+        goalType=goal_type,
         definitionStatus=PlanDefinitionStatus.ACTIVE,
         version=version,
         steps=steps,
@@ -335,6 +343,8 @@ def _save_workflow_chain(
     collaboration_run_id: str = "collab_case",
     bind_location: bool = True,
     save_collaboration: bool = True,
+    state_extra: dict | None = None,
+    goal_type: GoalType = GoalType.CONGESTION_RESOLUTION,
 ) -> None:
     _seed_event(event_id)
     if bind_location:
@@ -351,7 +361,15 @@ def _save_workflow_chain(
         plan_id=plan_id,
         event_id=event_id,
         collaboration_run_id=collaboration_run_id,
+        goal_type=goal_type,
     )
+    state = {
+        "currentEvent": {"eventId": event_id, "eventType": "congestion"},
+        "auditEvents": [{"type": "workflow_completed"}],
+        "errors": ["fixture error"] if status == WorkflowRunStatus.FAILED else [],
+    }
+    if state_extra is not None:
+        state.update(state_extra)
     isolated["workflowRepo"].save_run(WorkflowRun(
         run_id=run_id,
         definition_id=plan_id,
@@ -359,11 +377,7 @@ def _save_workflow_chain(
         session_id=session_id,
         status=status,
         current_node_id="close",
-        state={
-            "currentEvent": {"eventId": event_id, "eventType": "congestion"},
-            "auditEvents": [{"type": "workflow_completed"}],
-            "errors": ["fixture error"] if status == WorkflowRunStatus.FAILED else [],
-        },
+        state=state,
         started_at="2026-06-30T08:10:00Z",
         updated_at=completed_at,
         completed_at=completed_at,
@@ -438,6 +452,253 @@ def test_completed_case_builds_from_persisted_source_chain(service, isolated):
     assert case.plan_facts["latestVersion"] == 2
     assert case.plan_facts["replanCount"] == 1
     assert case.human_decisions[0]["manualAdjustment"] is True
+
+
+@pytest.mark.parametrize(
+    "case_suffix,state_extra",
+    [
+        ("missing", None),
+        ("null", {"simulationRefs": None}),
+        ("empty_object", {"simulationRefs": {}}),
+        ("empty_list", {"simulationRefs": []}),
+        ("legacy_empty_object", {"simulation_refs": {}}),
+        (
+            "simulated_false",
+            {
+                "currentEvent": {
+                    "eventId": "EVT_EMPTY_SIM_REFS_simulated_false",
+                    "eventType": "congestion",
+                    "simulated": False,
+                },
+            },
+        ),
+        (
+            "simulation_false",
+            {
+                "currentEvent": {
+                    "eventId": "EVT_EMPTY_SIM_REFS_simulation_false",
+                    "eventType": "congestion",
+                    "simulation": False,
+                },
+            },
+        ),
+        (
+            "description_mentions_simulation",
+            {
+                "currentEvent": {
+                    "eventId": "EVT_EMPTY_SIM_REFS_description_mentions_simulation",
+                    "eventType": "congestion",
+                    "description": "simulation training not used",
+                },
+            },
+        ),
+        (
+            "scenario_note",
+            {
+                "currentEvent": {
+                    "eventId": "EVT_EMPTY_SIM_REFS_scenario_note",
+                    "eventType": "congestion",
+                    "scenarioNote": "manual traffic scenario",
+                },
+            },
+        ),
+        (
+            "source_type_real_event",
+            {
+                "currentEvent": {
+                    "eventId": "EVT_EMPTY_SIM_REFS_source_type_real_event",
+                    "eventType": "congestion",
+                    "sourceType": "real_event",
+                },
+            },
+        ),
+        (
+            "source_type_unknown",
+            {
+                "currentEvent": {
+                    "eventId": "EVT_EMPTY_SIM_REFS_source_type_unknown",
+                    "eventType": "congestion",
+                    "sourceType": "unknown",
+                },
+            },
+        ),
+        (
+            "source_type_non_string",
+            {
+                "currentEvent": {
+                    "eventId": "EVT_EMPTY_SIM_REFS_source_type_non_string",
+                    "eventType": "congestion",
+                    "sourceType": {"note": "unknown"},
+                },
+            },
+        ),
+    ],
+    ids=[
+        "missing",
+        "null",
+        "empty-object",
+        "empty-list",
+        "legacy-empty-object",
+        "simulated-false",
+        "simulation-false",
+        "description-mentions-simulation",
+        "scenario-note",
+        "source-type-real-event",
+        "source-type-unknown",
+        "source-type-non-string",
+    ],
+)
+def test_empty_simulation_refs_does_not_mark_normal_workflow_as_simulation(
+    service,
+    isolated,
+    case_suffix,
+    state_extra,
+):
+    _save_workflow_chain(
+        isolated,
+        event_id=f"EVT_EMPTY_SIM_REFS_{case_suffix}",
+        run_id=f"wfrun_empty_sim_refs_{case_suffix}",
+        plan_id=f"plan_empty_sim_refs_{case_suffix}",
+        collaboration_run_id=f"collab_empty_sim_refs_{case_suffix}",
+        state_extra=state_extra,
+    )
+
+    result = service.build_from_workflow_run(f"wfrun_empty_sim_refs_{case_suffix}")
+
+    assert result.created is True
+    assert result.case.provenance["workflow"]["terminalStatus"] == "completed"
+
+
+@pytest.mark.parametrize(
+    "case_suffix,state_extra",
+    [
+        (
+            "nonempty_object",
+            {"simulationRefs": {"simulationRunId": "simrun_001", "trafficEventId": "EVT_SIM_REFS"}},
+        ),
+        (
+            "legacy_nonempty_object",
+            {"simulation_refs": {"simulation_run_id": "simrun_legacy", "traffic_event_id": "EVT_SIM_REFS"}},
+        ),
+        ("nonempty_list", {"simulationRefs": ["simrun_001"]}),
+        ("malformed_truthy", {"simulationRefs": "malformed-truthy-value"}),
+        (
+            "source_type_simulation",
+            {"currentEvent": {"eventId": "EVT_SIM_REFS", "eventType": "congestion", "sourceType": "simulation"}},
+        ),
+        (
+            "explicit_current_event_marker",
+            {"currentEvent": {"eventId": "EVT_SIM_REFS", "eventType": "congestion", "simulated": True}},
+        ),
+    ],
+    ids=[
+        "nonempty-object",
+        "legacy-nonempty-object",
+        "nonempty-list",
+        "malformed-truthy",
+        "source-type-simulation",
+        "explicit-current-event-marker",
+    ],
+)
+def test_nonempty_simulation_refs_still_blocks_case_build(
+    service,
+    isolated,
+    case_suffix,
+    state_extra,
+):
+    _save_workflow_chain(
+        isolated,
+        event_id="EVT_SIM_REFS",
+        run_id=f"wfrun_sim_refs_{case_suffix}",
+        plan_id=f"plan_sim_refs_{case_suffix}",
+        collaboration_run_id=f"collab_sim_refs_{case_suffix}",
+        state_extra=state_extra,
+    )
+
+    with pytest.raises(CaseMemoryError) as exc:
+        service.build_from_workflow_run(f"wfrun_sim_refs_{case_suffix}")
+
+    assert exc.value.code == "CASE_NOT_BUILDABLE_SIMULATION_SOURCE"
+    assert isolated["caseRepo"].get_case_by_source_workflow_run_id(
+        f"wfrun_sim_refs_{case_suffix}"
+    ) is None
+
+
+def test_planning_created_empty_simulation_refs_does_not_block_case_build(
+    service,
+    isolated,
+    monkeypatch,
+):
+    import backend.planning.api as planning_api
+
+    monkeypatch.setattr(planning_api, "_repo", isolated["workflowRepo"])
+    event_id = "EVT_PLANNING_EMPTY_SIM_REFS"
+    _seed_event(event_id)
+    _bind_event(isolated["regionalRepo"], event_id)
+    _save_collaboration_chain(
+        isolated["collaborationRepo"],
+        event_id=event_id,
+        collaboration_run_id="collab_planning_empty_sim_refs",
+        session_id="sess_case",
+    )
+    plan = _save_plan_definition(
+        isolated["workflowRepo"],
+        plan_id="plan_planning_empty_sim_refs",
+        event_id=event_id,
+        collaboration_run_id="collab_planning_empty_sim_refs",
+    )
+    body = planning_api.PlanRunRequest(
+        event={},
+        sessionId="sess_case",
+        triggeredBy="case_builder_regression",
+    )
+    initial_event = planning_api._resolve_plan_run_event(plan, body)
+    run_id = planning_api._create_planning_run_record(plan.planId, body, initial_event=initial_event)
+    assert run_id
+
+    created_run = isolated["workflowRepo"].get_run(run_id)
+    assert created_run is not None
+    assert created_run.state["simulationRefs"] == {}
+    assert TrafficWorkflowState.from_dict(created_run.state).simulation_refs == {}
+
+    created_run.status = WorkflowRunStatus.COMPLETED
+    created_run.current_node_id = "close"
+    created_run.completed_at = "2026-06-30T09:00:00Z"
+    created_run.updated_at = "2026-06-30T09:00:00Z"
+    created_run.state["status"] = WorkflowRunStatus.COMPLETED.value
+    created_run.state["currentNode"] = "close"
+    created_run.state["auditEvents"] = [{"type": "workflow_completed"}]
+    isolated["workflowRepo"].save_run(created_run)
+
+    result = service.build_from_workflow_run(run_id)
+
+    assert result.created is True
+    assert result.case.event_id == event_id
+    assert result.case.source_plan_id == plan.planId
+    assert result.case.source_collaboration_run_id == "collab_planning_empty_sim_refs"
+
+
+def test_synthetic_validation_source_type_is_not_simulation_source(service, isolated):
+    event_id = "EVT_SYNTHETIC_VALIDATION"
+    _save_workflow_chain(
+        isolated,
+        event_id=event_id,
+        run_id="wfrun_synthetic_validation",
+        plan_id="plan_synthetic_validation",
+        collaboration_run_id="collab_synthetic_validation",
+        state_extra={
+            "currentEvent": {
+                "eventId": event_id,
+                "eventType": "congestion",
+                "sourceType": "synthetic_validation",
+            },
+        },
+    )
+
+    result = service.build_from_workflow_run("wfrun_synthetic_validation")
+
+    assert result.created is True
+    assert result.case.event_id == event_id
 
 
 def test_failed_and_rejected_terminal_workflows_are_supported(service, isolated):
@@ -515,6 +776,73 @@ def test_case_build_requires_canonical_region_not_road_name(service, isolated):
 
     assert exc.value.code == "CASE_NOT_BUILDABLE_CANONICAL_REGION_MISSING"
     assert isolated["caseRepo"].get_case_by_source_workflow_run_id("wfrun_no_region") is None
+
+
+def test_event_level_simulation_marker_still_blocks_case_build(service, isolated):
+    event_id = "EVT_SIMULATED_EVENT"
+    assert db_tools.save_event_analysis({
+        "eventId": event_id,
+        "standardEvent": {
+            "eventId": event_id,
+            "eventType": "congestion",
+            "eventTypeCn": "拥堵",
+            "roadName": "人民路",
+            "direction": "东向西",
+            "avgSpeed": 9,
+            "queueLength": 180,
+            "duration": 3600,
+            "simulated": True,
+        },
+        "riskScore": 92,
+        "riskLevel": "重大风险",
+        "status": "待派单",
+        "report": "simulated event fixture",
+        "analyzedAt": "2026-06-30T08:00:00Z",
+    })
+    _bind_event(isolated["regionalRepo"], event_id)
+    _save_collaboration_chain(
+        isolated["collaborationRepo"],
+        event_id=event_id,
+        collaboration_run_id="collab_simulated_event",
+        session_id="sess_case",
+    )
+    _save_plan_definition(
+        isolated["workflowRepo"],
+        plan_id="plan_simulated_event",
+        event_id=event_id,
+        collaboration_run_id="collab_simulated_event",
+    )
+    isolated["workflowRepo"].save_run(WorkflowRun(
+        run_id="wfrun_simulated_event",
+        definition_id="plan_simulated_event",
+        session_id="sess_case",
+        status=WorkflowRunStatus.COMPLETED,
+        state={"currentEvent": {"eventId": event_id, "eventType": "congestion"}},
+        completed_at="2026-06-30T09:00:00Z",
+    ))
+
+    with pytest.raises(CaseMemoryError) as exc:
+        service.build_from_workflow_run("wfrun_simulated_event")
+
+    assert exc.value.code == "CASE_NOT_BUILDABLE_SIMULATION_SOURCE"
+    assert isolated["caseRepo"].get_case_by_source_workflow_run_id("wfrun_simulated_event") is None
+
+
+def test_simulation_plan_still_blocks_case_build(service, isolated):
+    _save_workflow_chain(
+        isolated,
+        event_id="EVT_SIMULATION_PLAN",
+        run_id="wfrun_simulation_plan",
+        plan_id="plan_simulation_plan",
+        collaboration_run_id="collab_simulation_plan",
+        goal_type=GoalType.SIMULATION_EVALUATION,
+    )
+
+    with pytest.raises(CaseMemoryError) as exc:
+        service.build_from_workflow_run("wfrun_simulation_plan")
+
+    assert exc.value.code == "CASE_NOT_BUILDABLE_SIMULATION_SOURCE"
+    assert isolated["caseRepo"].get_case_by_source_workflow_run_id("wfrun_simulation_plan") is None
 
 
 def test_simulation_workflow_is_not_buildable(service, isolated):
