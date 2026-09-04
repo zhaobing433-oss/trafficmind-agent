@@ -1,0 +1,65 @@
+{
+  "evaluationSpecId": "QT_BY_XIASHA_HOLDOUT_G3C_EVAL_001",
+  "frozenT0": "2026-09-04T13:10:55Z",
+  "agentProviderMode": "deterministic_validation",
+  "llmEnabled": false,
+  "liveModelEvaluationClaimed": false,
+  "productionTrafficEvaluation": false,
+  "selectionFrozenBeforeAgentRun": true,
+  "historyWindowDays": 365,
+  "ablationGroups": [
+    {
+      "group": "A",
+      "name": "CURRENT_EVENT_ONLY",
+      "includedBlocks": ["currentEvent"],
+      "excludedBlocks": ["regionalContext", "historicalContext", "knowledgeContext", "caseMemoryContext"]
+    },
+    {
+      "group": "B",
+      "name": "REGIONAL",
+      "includedBlocks": ["currentEvent", "regionalContext"],
+      "excludedBlocks": ["historicalContext", "knowledgeContext", "caseMemoryContext"]
+    },
+    {
+      "group": "C",
+      "name": "REGIONAL_HISTORY_KNOWLEDGE",
+      "includedBlocks": ["currentEvent", "regionalContext", "historicalContext", "knowledgeContext"],
+      "excludedBlocks": ["caseMemoryContext"]
+    },
+    {
+      "group": "D",
+      "name": "FULL_GROUNDING",
+      "includedBlocks": ["currentEvent", "regionalContext", "historicalContext", "knowledgeContext", "caseMemoryContext"],
+      "excludedBlocks": []
+    }
+  ],
+  "frozenMetrics": [
+    "grounding_block_coverage",
+    "evidence_ref_count",
+    "traceable_ref_count",
+    "eligible_context_item_count",
+    "leakage_count",
+    "grounded_recommendation_coverage",
+    "plan_grounding_traceability",
+    "source_diversity"
+  ],
+  "leakageGuards": [
+    "regional_canonical_binding_only",
+    "history_same_region_strict_past_current_event_excluded",
+    "knowledge_region_type_time_eligible",
+    "case_same_region_strict_past_validated_or_partial"
+  ],
+  "outputClaimsAllowed": [
+    "grounding quality",
+    "evidence traceability",
+    "constraint correctness",
+    "decision support richness"
+  ],
+  "outputClaimsNotMade": [
+    "real traffic effectiveness",
+    "live model quality",
+    "synthetic history as official Hangzhou history",
+    "production accuracy"
+  ],
+  "holdoutCaseMemoryCreated": 0
+}

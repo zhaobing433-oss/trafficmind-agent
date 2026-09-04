@@ -1,0 +1,28 @@
+{
+  "packageVersion": 1,
+  "packId": "QT_BY_XIASHA_HOLDOUT_G3C",
+  "packVersion": "1.0.0",
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "displayName": "Phase21 G3-C Qiantang Final Hold-out Ablation Evaluation",
+  "sourceSnapshotDate": "2026-09-04",
+  "generatedAt": "2026-09-04T13:10:55Z",
+  "sourceType": "phase21_pilot_holdout_evaluation_pack",
+  "sourceReference": "holdout_events.json,evaluation_spec.json",
+  "verificationStatus": "synthetic_validation_holdout",
+  "holdoutReality": "synthetic_validation",
+  "historyReality": "synthetic_validation",
+  "regionalGeographyReality": "real_public_verified",
+  "knowledgeReality": "real_public_source_grounded",
+  "caseReality": "synthetic_event_system_closure",
+  "agentProviderReality": "deterministic_validation",
+  "productionTrafficEvaluation": false,
+  "frozenT0": "2026-09-04T13:10:55Z",
+  "holdoutSelectionFrozenBeforeAgentRun": true,
+  "inventory": {
+    "holdoutEventCount": 8,
+    "ablationGroupCount": 4,
+    "expectedAgentEvaluationRuns": 32,
+    "prewrittenOutcomeLabels": 0,
+    "caseMemoryCreatedByEvaluation": 0
+  }
+}
