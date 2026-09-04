@@ -1,0 +1,28 @@
+{
+  "packageVersion": 1,
+  "packId": "QT_BY_XIASHA_CASE_SEED_G3B",
+  "packVersion": "1.0.0",
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "displayName": "Phase21 G3-B Qiantang System Closure Case Seed Recipe",
+  "sourceSnapshotDate": "2026-09-02",
+  "generatedAt": "2026-09-02T00:00:00Z",
+  "sourceType": "phase21_pilot_case_seed_recipe",
+  "sourceReference": "execution_spec.json",
+  "verificationStatus": "synthetic_validation_recipe",
+  "datasetReality": "synthetic_system_closure_recipe",
+  "sourceEventReality": "synthetic_validation",
+  "sourceHistoryDataset": "QT_BY_XIASHA_SYNTH_HISTORY_001@1.0.0",
+  "realGeography": true,
+  "realPublicKnowledge": true,
+  "caseGeneratedBySystem": true,
+  "productionTrafficCase": false,
+  "governmentCaseData": false,
+  "holdoutIncluded": false,
+  "historyReality": "synthetic_validation",
+  "inventory": {
+    "seedCount": 8,
+    "approvalPolicy": "odd_approve_even_reject",
+    "holdoutEvents": 0,
+    "prewrittenCaseContent": 0
+  }
+}
