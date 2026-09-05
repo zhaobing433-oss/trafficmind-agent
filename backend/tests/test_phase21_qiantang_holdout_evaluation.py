@@ -62,7 +62,6 @@ from backend.workflow.repository import SQLiteWorkflowRepository, init_workflow_
 REGION_ID = "QT_BY_XIASHA_PILOT_001"
 HOLDOUT_PACK_ID = "QT_BY_XIASHA_HOLDOUT_G3C"
 G3C_FROZEN_T0 = "2026-09-04T13:10:55Z"
-PRODUCTION_DB_SHA256 = "beada6c6ec049151ac2bce999f2a74b5ab0285d6a6304d90ce94fa7fb38376db"
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_DB = ROOT / "data" / "trafficmind.db"
 HISTORY_PACK_DIR = ROOT / "data" / "pilot_history" / "qt_by_xiasha_pilot_001"
@@ -114,6 +113,21 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _production_db_state() -> Dict[str, Any]:
+    sidecars = {}
+    for suffix in ("-wal", "-shm"):
+        path = Path(f"{PRODUCTION_DB}{suffix}")
+        if path.exists():
+            sidecars[path.name] = {
+                "sha256": _sha256(path),
+                "size": path.stat().st_size,
+            }
+    return {
+        "sha256": _sha256(PRODUCTION_DB),
+        "sidecars": sidecars,
+    }
 
 
 def _walk_keys(value: Any) -> Iterable[str]:
@@ -185,7 +199,7 @@ def isolated(tmp_path, monkeypatch):
     chroma_path = str(tmp_path / "phase21_g3c_holdout_chroma")
     assert event_db != str(PRODUCTION_DB)
     assert PRODUCTION_DB.exists()
-    assert _sha256(PRODUCTION_DB) == PRODUCTION_DB_SHA256
+    production_db_before = _production_db_state()
 
     monkeypatch.setattr(cfg, "DB_PATH", event_db)
     monkeypatch.setattr(db_tools, "DB_PATH", event_db)
@@ -260,9 +274,10 @@ def isolated(tmp_path, monkeypatch):
         "collabRepo": SQLiteCollaborationRepository(),
         "workflowRepo": workflow_repo,
         "caseRepo": SQLiteCaseMemoryRepository(),
+        "productionDbBefore": production_db_before,
     }
 
-    assert _sha256(PRODUCTION_DB) == PRODUCTION_DB_SHA256
+    assert _production_db_state() == production_db_before
 
 
 @pytest.fixture()
@@ -472,7 +487,7 @@ def test_qiantang_g3c_holdout_ablation_evaluation(app_client, isolated, monkeypa
     assert report["aggregate"]["B_REGIONAL"]["leakageCount"] == 0
     assert report["aggregate"]["C_REGION_HISTORY_KNOWLEDGE"]["leakageCount"] == 0
     assert report["aggregate"]["D_FULL"]["leakageCount"] == 0
-    assert _sha256(PRODUCTION_DB) == PRODUCTION_DB_SHA256
+    assert _production_db_state() == isolated["productionDbBefore"]
 
 
 def _materialize_g3b_cases(app_client, isolated, monkeypatch, history_events: List[Dict[str, Any]]):

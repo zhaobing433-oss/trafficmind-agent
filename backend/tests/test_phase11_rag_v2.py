@@ -54,6 +54,8 @@ from unittest.mock import patch, MagicMock
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+pytestmark = pytest.mark.usefixtures("isolated_phase11_rag_v2_env")
+
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -1152,6 +1154,44 @@ class TestIncrementalIndexer:
         # Should update (not insert) the modified doc
         assert job.documents_updated >= 0
 
+    def test_active_version_switch_stays_in_isolated_store(
+        self, fake_providers, sample_documents, isolated_phase11_rag_v2_env,
+    ):
+        """A real index commit may switch the temp pointer, never a runtime store."""
+        from pathlib import Path
+        from backend.rag.v2.document_repository import (
+            commit_index_version,
+            create_index_version,
+            get_latest_index_version,
+        )
+        from backend.rag.v2.indexer import IncrementalIndexer
+        from backend.rag.v2.providers import get_embedding_provider
+
+        canonical = create_index_version(
+            collection_name="trafficmind_knowledge_v2_qwen3_1024",
+            embedding_model="Qwen/Qwen3-Embedding-0.6B",
+            embedding_dimension=1024,
+        )
+        commit_index_version(
+            canonical.version_id,
+            doc_count=0,
+            chunk_count=0,
+            embedding_model="Qwen/Qwen3-Embedding-0.6B",
+            embedding_dimension=1024,
+        )
+        assert get_latest_index_version().collection_name == canonical.collection_name
+
+        job = IncrementalIndexer(get_embedding_provider()).index_documents(
+            sample_documents[:1],
+        )
+        active = get_latest_index_version()
+
+        assert job.status.value == "completed"
+        assert active is not None
+        assert active.collection_name == "trafficmind_knowledge_v2_fake_384"
+        assert Path(isolated_phase11_rag_v2_env["rag_db"]).is_file()
+        assert Path(isolated_phase11_rag_v2_env["vector_db"]).is_dir()
+
     def test_soft_deleted_docs_not_in_active_list(self, fake_providers, sample_documents):
         """Soft-deleted documents shouldn't appear in active list."""
         from backend.rag.v2.document_repository import (
@@ -1252,12 +1292,18 @@ class TestConfig:
         # Default is False; may be overridden by test environment
         assert isinstance(config.RAG_ALLOW_HASH_FALLBACK, bool)
 
-    def test_config_env_override(self):
+    def test_config_env_override(self, isolated_phase11_rag_v2_env):
         import os
-        with patch.dict(os.environ, {"RAG_DENSE_TOP_K": "50", "RAG_EVIDENCE_TOP_K": "8"}):
-            # Re-import to pick up env vars
-            from importlib import reload
-            from backend.rag.v2 import config
+        from importlib import reload
+        from backend.rag.v2 import config
+
+        try:
+            with patch.dict(os.environ, {"RAG_DENSE_TOP_K": "50", "RAG_EVIDENCE_TOP_K": "8"}):
+                # Re-import to pick up env vars
+                reload(config)
+                assert config.RAG_DENSE_TOP_K == 50
+                assert config.RAG_EVIDENCE_TOP_K == 8
+        finally:
             reload(config)
-            assert config.RAG_DENSE_TOP_K == 50
-            assert config.RAG_EVIDENCE_TOP_K == 8
+            config.RAG_V2_DB_PATH = str(isolated_phase11_rag_v2_env["rag_db"])
+            config.RAG_V2_FTS_PATH = str(isolated_phase11_rag_v2_env["fts_db"])
