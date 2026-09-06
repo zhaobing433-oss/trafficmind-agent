@@ -28,6 +28,8 @@ interface Props {
   focusRoadName: string | null;
   focusRisk: string | null;
   onClearFocus: () => void;
+  onSelectEvent: (eventId: string) => void;
+  onOpenRisk?: (risk: string) => void;
   onOpenRoad?: (roadName: string) => void;
   onOpenPlan?: (planId: string) => void;
   onOpenCollaboration?: (sessionId: string) => void;
@@ -38,7 +40,7 @@ type TrafficMode = 'realtime' | 'simulation';
 
 export const TrafficMapWorkspace: React.FC<Props> = ({
   workflowRunId: appWfRunId, onWorkflowRunIdChange, onOpenWorkflowRun,
-  focusEventId, focusRoadName, focusRisk, onClearFocus, onOpenRoad, onOpenPlan, onOpenCollaboration, onOpenKnowledge,
+  focusEventId, focusRoadName, focusRisk, onClearFocus, onSelectEvent, onOpenRisk, onOpenRoad, onOpenPlan, onOpenCollaboration, onOpenKnowledge,
 }) => {
   const [scenarios, setScenarios] = useState<SimulationScenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState('scenario_c_accident');
@@ -159,7 +161,7 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.25, color: color.text, fontWeight: 600 }}>交通态势</h1>
-            <div style={{ marginTop: 6, fontSize: 13, color: color.textMuted }}>真实事件态势 · Agent 研判 · 处置方案 · 工作流执行追踪</div>
+            <div style={{ marginTop: 6, fontSize: 13, color: color.textMuted }}>事件研判与执行追踪</div>
           </div>
         </div>
       </header>
@@ -249,6 +251,8 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
           focusRoadName={focusRoadName}
           focusRisk={focusRisk}
           onClearFocus={onClearFocus}
+          onSelectEvent={onSelectEvent}
+          onOpenRisk={onOpenRisk}
           onOpenRun={onOpenWorkflowRun}
           onOpenRoad={onOpenRoad}
           onOpenPlan={onOpenPlan}

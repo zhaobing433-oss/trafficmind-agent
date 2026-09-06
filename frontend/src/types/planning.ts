@@ -66,6 +66,8 @@ export interface PlanDetail {
   };
   semanticReplanEnabled: boolean;
   groundedDecisionContextEnabled: boolean;
+  steps?: Array<{ approvalRequired?: boolean }>;
+  metadata?: { sourceAgent?: { sessionId?: string; collaborationRunId?: string } };
 }
 
 export interface PlanDetailResponse {
