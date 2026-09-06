@@ -32,7 +32,7 @@ interface Props {
   onOpenRisk?: (risk: string) => void;
   onOpenRoad?: (roadName: string) => void;
   onOpenPlan?: (planId: string) => void;
-  onOpenCollaboration?: (sessionId: string) => void;
+  onOpenCollaboration?: (sessionId: string, runId?: string, eventId?: string) => void;
   onOpenKnowledge?: () => void;
 }
 

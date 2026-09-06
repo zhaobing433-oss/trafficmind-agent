@@ -1,23 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { reduceCollaborationEvent } from '../../utils/collaborationEventReducer';
-import { collabApi } from '../../api/collaborationApi';
+import { collabApi, type RunListItem } from '../../api/collaborationApi';
 import type { CollaborationRun, CollaborationTask, CollaborationAgentResult } from '../../types/collaboration';
 import CollaborationRunView from './CollaborationRunView';
 import { RelatedWorkflowRuns } from '../workflow/RelatedWorkflowRuns';
+import { STATUS_LABELS } from '../../types/collaboration';
+import { record, text, selectJudgmentRun } from '../../utils/judgment';
+import { groundingPresentation } from '../../utils/groundingPresentation';
+import { loadJudgmentSelection } from '../../utils/judgmentQuery';
 
 interface CollaborationWorkspaceProps {
   activeSessionId: string | null;
   onRefresh: () => void;
   onSessionCreated: (id: string) => void;
   onOpenRun: (runId: string) => void;
-}
-
-interface RunListItem {
-  run_id: string;
-  status: string;
-  started_at?: string;
-  startedAt?: string;
+  requestedRunId?: string | null;
+  expectedEventId?: string | null;
+  onSelectJudgment: (sessionId: string, runId?: string, eventId?: string) => void;
+  onOpenKnowledge?: (documentId: string) => void;
 }
 
 export function CollaborationWorkspace({
@@ -25,10 +26,15 @@ export function CollaborationWorkspace({
   onRefresh,
   onSessionCreated,
   onOpenRun,
+  requestedRunId, expectedEventId, onSelectJudgment, onOpenKnowledge,
 }: CollaborationWorkspaceProps) {
-  const [activeRunId, setActiveRunId] = useState<string>('');
+  const [defaultRunId, setActiveRunId] = useState<string>('');
   const [runsById, setRunsById] = useState<Record<string, CollaborationRun>>({});
-  const [runList, setRunList] = useState<RunListItem[]>([]);
+  const [rawRunList, setRunList] = useState<RunListItem[]>([]);
+  const [listSessionId, setListSessionId] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<{ key: string; message: string } | null>(null);
+  const [detailRevision, setDetailRevision] = useState(0);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -38,14 +44,16 @@ export function CollaborationWorkspace({
   const abortRef = useRef<AbortController | null>(null);
   const isSubmitting = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
+  const streamingRunRef = useRef('');
 
-  useEffect(() => {
-    if (activeSessionId && activeSessionId !== sessionIdRef.current) {
-      sessionIdRef.current = activeSessionId;
-    }
-  }, [activeSessionId]);
-
-  const activeRun = activeRunId ? runsById[activeRunId] || null : null;
+  const runList = listSessionId === activeSessionId ? rawRunList : [];
+  const activeRunId = requestedRunId || (listSessionId === activeSessionId ? defaultRunId : '');
+  const selectionKey = JSON.stringify([activeSessionId, activeRunId, expectedEventId]);
+  const selectionRef = useRef(selectionKey);
+  selectionRef.current = selectionKey;
+  const candidateRun = runsById[activeRunId];
+  const activeRun = candidateRun?.sessionId === activeSessionId && (!expectedEventId || text(candidateRun.normalizedEvent?.eventId) === expectedEventId)
+    && detailError?.key !== selectionKey ? candidateRun : null;
 
   const deserializeRunDetail = (detail: Record<string, unknown>, runId: string): CollaborationRun => {
     const run = (detail.run || detail) as Record<string, unknown>;
@@ -94,6 +102,8 @@ export function CollaborationWorkspace({
     const previousRaw = run.previous_run_context ?? run.previousRunContext ?? null;
 
     return {
+      normalizedEvent: record(run.normalized_event),
+      grounding: groundingPresentation(run.grounding_context, rawTasks, fd),
       runId,
       traceId: String(run.trace_id ?? run.traceId ?? ''),
       sessionId: String(run.session_id ?? run.sessionId ?? ''),
@@ -110,13 +120,13 @@ export function CollaborationWorkspace({
       failedAgents: parseJson<string[]>(run.failed_agents ?? run.failedAgents, []),
       limitations: parseJson<string[]>(run.limitations, []),
       budgetUsage: budget,
-      finalDecision: typeof fdRaw === 'string' ? fdRaw : fdRaw ? JSON.stringify(fdRaw) : '',
+      finalDecision: typeof fdRaw === 'string' && !fdRaw.trim().startsWith('{') ? fdRaw : String(fd.fusionSummary || fd.fusion_summary || fd.summary || ''),
       fusionSummary: String(fd.fusionSummary || fd.fusion_summary || ''),
       requiresHumanReview: Boolean(fd.requiresHumanReview ?? fd.requires_human_review),
       degraded: Boolean(run.degraded),
       fallbackReason: String(run.fallbackReason ?? run.fallback_reason ?? ''),
       startedAt: String(run.started_at ?? run.startedAt ?? ''),
-      completedAt: String(run.updated_at ?? run.updatedAt ?? ''),
+      completedAt: String(run.completed_at ?? run.completedAt ?? ''),
       isHydrated: true,
       userQuery: String(run.userQuery ?? run.user_query ?? ''),
       contextPolicy: String(run.contextPolicy ?? run.context_policy ?? 'fresh_event'),
@@ -125,34 +135,38 @@ export function CollaborationWorkspace({
     };
   };
 
-  const hydrateRun = (runId: string) => {
-    if (!runId) return;
-    const existing = runsById[runId];
-    if (existing?.isHydrated) return;
-
-    collabApi.getRun(runId).then(detail => {
-      const r = deserializeRunDetail(detail, runId);
-      setRunsById(prev => {
-        const cur = prev[runId];
-        const merged: CollaborationRun = {
-          ...(cur || createEmptyRun(r.sessionId)),
-          ...r,
-          fusionSummary: r.fusionSummary || cur?.fusionSummary || '',
-          isHydrated: true,
-        };
-        return { ...prev, [runId]: merged };
-      });
-    }).catch((e: unknown) => {
-      setHistoryError(e instanceof Error ? e.message : '协同运行详情加载失败');
-    });
-  };
-
   useEffect(() => {
-    if (activeRunId) hydrateRun(activeRunId);
-  }, [activeRunId]);
+    setDetailError(null);
+    if (!activeSessionId || !activeRunId || (loading && activeRunId === streamingRunRef.current)) { setDetailLoading(false); return; }
+    setDetailLoading(true);
+    return loadJudgmentSelection({ sessionId: activeSessionId, runId: activeRunId, eventId: expectedEventId }, collabApi.getRun,
+      detail => {
+        if (selectionRef.current !== selectionKey) return;
+        const run = deserializeRunDetail(detail, activeRunId);
+        setRunsById(prev => ({ ...prev, [activeRunId]: run }));
+        setDetailLoading(false);
+      }, message => {
+        if (selectionRef.current !== selectionKey) return;
+        setDetailError({ key: selectionKey, message }); setDetailLoading(false);
+      });
+  }, [activeSessionId, activeRunId, expectedEventId, detailRevision, loading]);
+
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   useEffect(() => {
     let cancelled = false;
+    // Adopting the session created by this stream must preserve its in-flight UI.
+    if (activeSessionId && loading && sessionIdRef.current === activeSessionId) {
+      setListSessionId(activeSessionId);
+      return;
+    }
+    if (sessionIdRef.current !== activeSessionId) {
+      abortRef.current?.abort();
+      setLoading(false); isSubmitting.current = false;
+    }
+    sessionIdRef.current = activeSessionId;
+    setRunsById({}); setRunList([]); setMessages([]); setActiveRunId('');
+    setListSessionId(activeSessionId); setStreamError(null);
     if (!activeSessionId) {
       sessionIdRef.current = null;
       setRunsById({});
@@ -167,7 +181,7 @@ export function CollaborationWorkspace({
     setHistoryLoading(true);
     setHistoryError(null);
     fetch(`/api/chat/sessions/${encodeURIComponent(activeSessionId)}`)
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error('会话消息加载失败'); return r.json(); })
       .then(d => { if (!cancelled) setMessages(Array.isArray(d.messages) ? d.messages : []); })
       .catch(() => {});
 
@@ -177,9 +191,8 @@ export function CollaborationWorkspace({
         const ordered = sortRunsChronologically(items);
         setRunList(ordered);
         if (ordered.length > 0) {
-          const latestId = String(ordered[ordered.length - 1].run_id);
+          const latestId = selectJudgmentRun(ordered);
           setActiveRunId(latestId);
-          hydrateRun(latestId);
         } else {
           setActiveRunId('');
         }
@@ -198,6 +211,7 @@ export function CollaborationWorkspace({
     if (!input.trim() || loading || isSubmitting.current) return;
     isSubmitting.current = true;
     setLoading(true);
+    streamingRunRef.current = '';
     setStreamError(null);
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -220,6 +234,7 @@ export function CollaborationWorkspace({
         { sessionId: submittedSessionId, content: question, mode: 'collaboration', clientRequestId, contextPolicy },
         {
           onEvent: (event) => {
+            if (controller.signal.aborted) return;
             if (event.eventType === 'session_created' && event.sessionId) {
               const sid = event.sessionId as string;
               sessionIdRef.current = sid;
@@ -244,31 +259,19 @@ export function CollaborationWorkspace({
             });
 
             if (event.eventType === 'run_created') {
+              streamingRunRef.current = evRunId;
               setRunList(prev => {
                 if (prev.some(r => r.run_id === evRunId)) return prev;
-                const merged = [...prev, { run_id: evRunId, status: 'running', started_at: new Date().toISOString() }];
+                const merged = [...prev, { run_id: evRunId, session_id: sessionIdRef.current || '', selected_agents: [], status: 'running', started_at: new Date().toISOString(), updated_at: new Date().toISOString() }];
                 return sortRunsChronologically(merged);
               });
               setActiveRunId(evRunId);
+              if (sessionIdRef.current) onSelectJudgment(sessionIdRef.current, evRunId);
             }
             if (event.eventType === 'done' || event.eventType === 'run_completed') {
               setRunList(prev => prev.map(r => r.run_id === evRunId ? { ...r, status: 'completed' } : r));
               onRefresh();
-              collabApi.getRun(evRunId).then(detail => {
-                const hydrated = deserializeRunDetail(detail, evRunId);
-                setRunsById(prev => {
-                  const existing = prev[evRunId];
-                  return {
-                    ...prev,
-                    [evRunId]: {
-                      ...(existing || createEmptyRun(hydrated.sessionId)),
-                      ...hydrated,
-                      fusionSummary: hydrated.fusionSummary || existing?.fusionSummary || '',
-                      isHydrated: true,
-                    },
-                  };
-                });
-              }).catch(() => {});
+              setDetailRevision(value => value + 1);
             }
             if (event.eventType === 'run_partial_success') {
               setRunList(prev => prev.map(r => r.run_id === evRunId ? { ...r, status: 'partial_success' } : r));
@@ -277,26 +280,28 @@ export function CollaborationWorkspace({
               setRunList(prev => prev.map(r => r.run_id === evRunId ? { ...r, status: 'failed' } : r));
             }
           },
-          onError: (err) => setStreamError(err || '协同分析失败'),
+          onError: (err) => { if (!controller.signal.aborted) setStreamError(err || '协同分析失败'); },
           signal: controller.signal,
         },
       );
     } finally {
-      setLoading(false);
-      isSubmitting.current = false;
+      if (abortRef.current === controller && !controller.signal.aborted) {
+        setLoading(false);
+        isSubmitting.current = false;
+      }
     }
   };
 
   const handleSelectRun = (runId: string) => {
-    setActiveRunId(runId);
-    if (!runsById[runId]?.isHydrated) hydrateRun(runId);
+    if (!activeSessionId) return;
+    const run = runList.find(item => item.run_id === runId);
+    onSelectJudgment(activeSessionId, runId, text(record(run?.normalized_event).eventId) || undefined);
   };
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <header>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>协同分析</h2>
-        <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>多 Agent DAG 编排 · 冲突检测 · 融合决策</p>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>协同研判</h2>
       </header>
 
       {(historyError || streamError) && (
@@ -305,11 +310,13 @@ export function CollaborationWorkspace({
           <button onClick={() => { setHistoryError(null); setStreamError(null); }} style={dismissButtonStyle}>关闭</button>
         </div>
       )}
+      {detailError?.key === selectionKey && <div style={errorBannerStyle} role="alert">{detailError.message}</div>}
 
       {runList.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <span className="judgment-muted" style={{ flexBasis: '100%' }}>本会话研判 · 已加载 {runList.length} 次</span>
           {runList.map((rr, i: number) => (
-            <button key={String(rr.run_id)} onClick={() => handleSelectRun(String(rr.run_id))}
+            <button key={String(rr.run_id)} aria-pressed={activeRunId === rr.run_id} onClick={() => handleSelectRun(String(rr.run_id))}
               style={{
                 padding: '4px 10px',
                 borderRadius: 8,
@@ -320,7 +327,7 @@ export function CollaborationWorkspace({
                 fontSize: 12,
                 fontWeight: activeRunId === rr.run_id ? 600 : 400,
               }}>
-              第 {i + 1} 轮 · {String(rr.status || '未记录')}
+              第 {i + 1} 轮 · {STATUS_LABELS[rr.status] || '状态未记录'}
             </button>
           ))}
         </div>
@@ -346,18 +353,18 @@ export function CollaborationWorkspace({
         </div>
       )}
 
-      {historyLoading && !activeRun && (
+      {(historyLoading || detailLoading) && !activeRun && !detailError && (
         <div style={emptyPanelStyle}>正在恢复协同运行详情...</div>
       )}
 
-      {!historyLoading && activeSessionId && runList.length === 0 && messages.length === 0 && (
+      {!historyLoading && !historyError && !requestedRunId && activeSessionId && runList.length === 0 && messages.length === 0 && (
         <div style={emptyPanelStyle}>该会话暂无协同运行</div>
       )}
 
-      {activeRun && <CollaborationRunView run={activeRun} />}
+      {activeRun && <CollaborationRunView run={activeRun} onOpenKnowledge={onOpenKnowledge} />}
 
-      {sessionIdRef.current && (
-        <RelatedWorkflowRuns sessionId={sessionIdRef.current} onOpenRun={onOpenRun} />
+      {activeSessionId && (
+        <RelatedWorkflowRuns sessionId={activeSessionId} onOpenRun={onOpenRun} />
       )}
     </div>
   );
@@ -405,8 +412,8 @@ function emptyBudget(): CollaborationRun['budgetUsage'] {
 
 function sortRunsChronologically<T extends RunListItem>(runs: T[]): T[] {
   return [...runs].sort((a, b) => {
-    const aTime = Date.parse(String(a.started_at ?? a.startedAt ?? ''));
-    const bTime = Date.parse(String(b.started_at ?? b.startedAt ?? ''));
+    const aTime = Date.parse(a.started_at || '');
+    const bTime = Date.parse(b.started_at || '');
     if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime;
     return String(a.run_id).localeCompare(String(b.run_id));
   });

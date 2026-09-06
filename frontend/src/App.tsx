@@ -14,6 +14,9 @@ import { ReportDashboard } from './components/report/ReportDashboard';
 import { AlertDashboard } from './components/alert/AlertDashboard';
 import { GuidePage } from './components/guide/GuidePage';
 import { visualTokens } from './styles/visualTokens';
+import { collabApi } from './api/collaborationApi';
+import { groupRecentJudgments } from './utils/judgment';
+import type { RecentJudgments } from './types/judgment';
 
 const WORKSPACE_INFO: Record<string, { title: string; sub: string; showFullModes: boolean; defaultMode: string }> = {
   home: { title: '', sub: '', showFullModes: true, defaultMode: 'react' },
@@ -68,6 +71,11 @@ export default function App() {
   const [trafficRisk, setTrafficRisk] = useState<string | null>(urlRisk || null);
   const [recentRefresh, setRecentRefresh] = useState(0);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
+  const [judgments, setJudgments] = useState<RecentJudgments>(() => groupRecentJudgments([]));
+  const [judgmentsLoading, setJudgmentsLoading] = useState(true);
+  const [judgmentsError, setJudgmentsError] = useState<string | null>(null);
+  const [judgmentRunId, setJudgmentRunId] = useState<string | null>(urlParams.get('judgmentRunId'));
+  const [judgmentEventId, setJudgmentEventId] = useState<string | null>(urlView === 'multi' ? urlEventId : null);
   // Stable key: only change when we WANT to reset the workspace (new conv / recent click)
   const [workspaceKey, setWorkspaceKey] = useState(0);
 
@@ -78,6 +86,9 @@ export default function App() {
   // Update URL when active session or workflow run changes
   const updateUrl = useCallback((sid: string | null, wfRunId?: string | null) => {
     const url = new URL(window.location.href);
+    setJudgmentRunId(null); setJudgmentEventId(null);
+    url.searchParams.delete('judgmentRunId');
+    if (url.searchParams.get('view') === 'multi') url.searchParams.delete('eventId');
     if (sid) {
       url.searchParams.set('sessionId', sid);
     } else {
@@ -155,9 +166,11 @@ export default function App() {
     window.history.pushState({}, '', url.toString());
   }, []);
 
-  const handleOpenCollaborationSession = useCallback((sessionId: string) => {
+  const handleOpenCollaborationSession = useCallback((sessionId: string, runId?: string, eventId?: string) => {
     setView('multi');
     setActiveSessionId(sessionId);
+    setJudgmentRunId(runId || null);
+    setJudgmentEventId(eventId || null);
     setPendingCreate(false);
     setDraftInput('');
     setWorkflowRunId(null);
@@ -165,11 +178,24 @@ export default function App() {
     const url = new URL(window.location.href);
     url.searchParams.set('view', 'multi');
     url.searchParams.set('sessionId', sessionId);
+    if (runId) url.searchParams.set('judgmentRunId', runId); else url.searchParams.delete('judgmentRunId');
+    if (eventId) url.searchParams.set('eventId', eventId); else url.searchParams.delete('eventId');
     url.searchParams.delete('workflowRunId');
     url.searchParams.delete('planId');
     url.searchParams.delete('rootRunId');
     url.searchParams.delete('fromVersion');
     url.searchParams.delete('toVersion');
+    window.history.pushState({}, '', url.toString());
+  }, []);
+
+  const handleOpenKnowledgeDocument = useCallback((documentId: string) => {
+    setView('qa'); setActiveSessionId(null); setPendingCreate(true);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'qa');
+    url.searchParams.set('knowledgeTab', 'documents');
+    url.searchParams.set('knowledgeDocumentId', documentId);
+    for (const key of ['sessionId', 'judgmentRunId', 'eventId', 'knowledgeChunkId', 'workflowRunId']) url.searchParams.delete(key);
+    setJudgmentRunId(null); setJudgmentEventId(null);
     window.history.pushState({}, '', url.toString());
   }, []);
 
@@ -253,7 +279,9 @@ export default function App() {
       setTrafficRoadName(params.get('roadName'));
       setTrafficRisk(params.get('risk'));
       const sid = params.get('sessionId');
-      if (sid) setActiveSessionId(sid);
+      setActiveSessionId(sid);
+      setJudgmentRunId(params.get('judgmentRunId'));
+      setJudgmentEventId(v === 'multi' ? params.get('eventId') : null);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -283,7 +311,23 @@ export default function App() {
     }).catch(() => setView('home'));
   }, [initialSessionId, urlView]);
 
-  useEffect(() => { chatApi.listSessions(30).then(setSessions).catch(() => {}); }, [recentRefresh]);
+  useEffect(() => {
+    let cancelled = false;
+    setJudgmentsLoading(true); setJudgmentsError(null);
+    chatApi.listSessions(30).then(async items => {
+      if (cancelled) return;
+      setSessions(items);
+      const loaded = await Promise.allSettled(items.map(session => collabApi.listSessionRuns(session.id)));
+      if (cancelled) return;
+      setJudgments(groupRecentJudgments(items.map((session, i) => {
+        const result = loaded[i];
+        return result.status === 'fulfilled' ? { session, runs: result.value }
+          : { session, runs: [], error: '研判记录加载失败' };
+      })));
+    }).catch(() => { if (!cancelled) setJudgmentsError('最近会话加载失败'); })
+      .finally(() => { if (!cancelled) setJudgmentsLoading(false); });
+    return () => { cancelled = true; };
+  }, [recentRefresh]);
   const refreshSessions = useCallback(() => setRecentRefresh(Date.now()), []);
   // CRITICAL: session created via first send — do NOT reset the component (key stays same)
   const handleSessionCreated = useCallback((id: string) => { sessionIdRef.current = id; setActiveSessionId(id); setPendingCreate(false); setRecentRefresh(Date.now()); updateUrl(id); }, []);
@@ -292,6 +336,9 @@ export default function App() {
   const handleNavigate = (v: string) => {
     setView(v);
     const url = new URL(window.location.href);
+    setJudgmentRunId(null); setJudgmentEventId(null);
+    url.searchParams.delete('judgmentRunId');
+    if (v === 'multi') url.searchParams.delete('eventId');
     url.searchParams.set('view', v);
     if (v !== 'evaluation') url.searchParams.delete('report');
     if (v === 'workflow') {
@@ -367,11 +414,14 @@ export default function App() {
       targetView = 'home';
     }
     setView(targetView);
+    setJudgmentRunId(null); setJudgmentEventId(null);
     setActiveSessionId(id); setPendingCreate(false); setDraftInput(''); setWorkspaceKey(k => k + 1);
     // Update URL atomically: view + sessionId + knowledgeTab (for RAG ask tab)
     const url = new URL(window.location.href);
     url.searchParams.set('view', targetView);
     url.searchParams.set('sessionId', id);
+    url.searchParams.delete('judgmentRunId');
+    url.searchParams.delete('eventId');
     if (targetView === 'qa') {
       url.searchParams.set('knowledgeTab', 'ask');
     }
@@ -420,13 +470,13 @@ export default function App() {
   );
 
   return (
-    <LayoutShell activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
+    <LayoutShell judgments={judgments} judgmentsLoading={judgmentsLoading} judgmentsError={judgmentsError} onOpenJudgment={handleOpenCollaborationSession} activeView={view} onNavigate={handleNavigate} onRecentClick={handleRecentClick} onNewConversation={handleNewConversation} onRenameSession={handleRenameSession} onDeleteSession={handleDeleteSession} activeConvId={activeSessionId || undefined} recentList={recentItems}>
       <div style={view === 'simulation' ? { width: '100%', padding: '16px 24px 32px' } as React.CSSProperties : { maxWidth: 960, margin: '0 auto', width: '100%', padding: '0 24px 32px' }}>
         {view === 'alert' ? <AlertDashboard onOpenEvent={handleOpenTrafficEvent} onOpenRoad={handleOpenTrafficRoad} onOpenRun={handleOpenWorkflowRun} /> :
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard onOpenRoad={handleOpenTrafficRoad} onOpenRisk={handleOpenTrafficRisk} /> :
          view === 'qa' ? <KnowledgeWorkspace onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
-         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} onOpenRun={handleOpenWorkflowRun} /> :
+         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} requestedRunId={judgmentRunId} expectedEventId={judgmentEventId} onSelectJudgment={handleOpenCollaborationSession} onOpenKnowledge={handleOpenKnowledgeDocument} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} onOpenRun={handleOpenWorkflowRun} /> :
          view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} onOpenRun={handleOpenWorkflowRun} onOpenPlan={handleOpenPlan} /> :
          view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} onOpenWorkflowRun={handleOpenWorkflowRun} focusEventId={trafficEventId} focusRoadName={trafficRoadName} focusRisk={trafficRisk} onClearFocus={handleClearTrafficFocus} onSelectEvent={handleOpenTrafficEvent} onOpenRisk={handleOpenTrafficRisk} onOpenRoad={handleOpenTrafficRoad} onOpenPlan={handleOpenPlan} onOpenCollaboration={handleOpenCollaborationSession} onOpenKnowledge={() => handleNavigate('qa')} /> :
          view === 'planning' ? <PlanCenter planId={planId} rootRunId={rootRunId} fromVersion={fromVersion} toVersion={toVersion} onPlanSelect={handlePlanSelect} onRootRunIdChange={handleRootRunIdChange} onDiffChange={handleDiffChange} onOpenWorkflowRun={handleOpenWorkflowRun} /> :

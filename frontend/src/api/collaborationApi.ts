@@ -62,6 +62,7 @@ export interface RunListItem {
   status: string;
   selected_agents: string[] | string;
   normalized_event?: Record<string, unknown> | string;
+  grounding_context?: Record<string, unknown> | string | null;
   final_decision?: Record<string, unknown> | string;
   started_at: string;
   updated_at: string;
@@ -78,19 +79,19 @@ export interface EventRunListResponse {
 
 async function apiGet<T>(path: string): Promise<T> {
   const r = await fetch(`${API}${path}`);
-  if (!r.ok) throw new Error('请求失败');
+  if (!r.ok) throw new Error(r.status === 404 ? '研判未找到 / 已删除' : `请求失败（HTTP ${r.status}）`);
   return r.json();
 }
 
 export const collabApi = {
   listSessionRuns: (sessionId: string) =>
-    apiGet<{ runs: RunListItem[] }>(`/collaboration/sessions/${sessionId}/runs`).then(d => d.runs),
+    apiGet<{ runs: RunListItem[] }>(`/collaboration/sessions/${encodeURIComponent(sessionId)}/runs`).then(d => d.runs),
 
   listEventRuns: (eventId: string, limit = 20, offset = 0) =>
     apiGet<EventRunListResponse>(`/collaboration/runs?event_id=${encodeURIComponent(eventId)}&limit=${limit}&offset=${offset}`),
 
   getRun: (runId: string) =>
-    apiGet<{ run: Record<string,unknown>; tasks: Record<string,unknown>[]; messages: Record<string,unknown>[]; conflicts: Record<string,unknown>[]; events: Record<string,unknown>[] }>(`/collaboration/runs/${runId}`),
+    apiGet<{ run: Record<string,unknown>; tasks: Record<string,unknown>[]; messages: Record<string,unknown>[]; conflicts: Record<string,unknown>[]; events: Record<string,unknown>[] }>(`/collaboration/runs/${encodeURIComponent(runId)}`),
 
   streamCollaboration: (
     body: Record<string, unknown>,

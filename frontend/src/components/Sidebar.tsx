@@ -19,6 +19,7 @@ import {
 } from '@ant-design/icons';
 import { Tag, Input, Modal } from 'antd';
 import { visualTokens } from '../styles/visualTokens';
+import RecentJudgments, { type RecentJudgmentProps } from './collaboration/RecentJudgments';
 
 const { color, radius, shadow } = visualTokens;
 
@@ -78,7 +79,7 @@ function groupByTime(items: RecentItem[]): { label: string; items: RecentItem[] 
   return groups;
 }
 
-interface Props {
+interface Props extends RecentJudgmentProps {
   collapsed: boolean; onToggle: () => void;
   onNavigate: (view: string) => void; onRecentClick: (id: string) => void;
   onNewConversation: () => void; onRenameSession: (id: string, newTitle: string) => void;
@@ -86,10 +87,10 @@ interface Props {
   activeView: string; activeConvId?: string; recentList: RecentItem[];
 }
 
-export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeView, activeConvId, recentList }: Props) {
+export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeView, activeConvId, recentList, ...judgments }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
-  const [recentOpen, setRecentOpen] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const groups = groupByTime(recentList);
 
@@ -216,14 +217,15 @@ export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick
       {!collapsed && (
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <button onClick={() => setRecentOpen(!recentOpen)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 16px 7px', cursor: 'pointer', fontSize: 11, color: color.textMuted, fontWeight: 700, background: color.surface, border: 'none', borderBottom: recentOpen ? `1px solid ${color.borderSubtle}` : 'none' }}>
-            <span>最近分析</span>
+            <span>最近研判</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: color.textSubtle, fontWeight: 500 }}>
-              {recentList.length}
               {recentOpen ? <DownOutlined style={{ fontSize: 8 }} /> : <RightOutlined style={{ fontSize: 8 }} />}
             </span>
           </button>
           {recentOpen && (
             <div style={{ flex: 1, overflowY: 'auto', padding: '6px 10px 10px' }}>
+              <RecentJudgments {...judgments} onRecentClick={onRecentClick} />
+              <details style={{ marginTop: 12, fontSize: 11, color: color.textMuted }}><summary>会话记录与管理</summary>
               {recentList.length === 0 ? <div style={{ color: color.textSubtle, fontSize: 11, padding: '8px 6px' }}>暂无历史会话</div> : groups.map(group => (
                 <div key={group.label} style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 10, color: color.textSubtle, padding: '2px 6px 4px' }}>{group.label}</div>
@@ -264,6 +266,7 @@ export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick
                   ))}
                 </div>
               ))}
+              </details>
             </div>
           )}
         </div>
@@ -280,9 +283,9 @@ export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick
         </div>
       )}
 
-      <div onClick={onToggle} style={{ padding: '8px', textAlign: 'center', cursor: 'pointer', borderTop: `1px solid ${color.borderSubtle}`, color: color.textSubtle, fontSize: 14, flexShrink: 0 }}>
+      <button type="button" aria-label={collapsed ? '展开侧栏' : '折叠侧栏'} title={collapsed ? '展开侧栏' : '折叠侧栏'} onClick={onToggle} style={{ padding: '8px', textAlign: 'center', cursor: 'pointer', border: 0, background: color.surface, borderTop: `1px solid ${color.borderSubtle}`, color: color.textSubtle, fontSize: 14, flexShrink: 0 }}>
         {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-      </div>
+      </button>
     </div>
     </>
   );

@@ -14,6 +14,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { getHistory, getEventById } from '../../api/index';
 import type { EventRecord, AnalyzeResult } from '../../types/index';
 import { collabApi } from '../../api/collaborationApi';
+import { latestJudgment, judgmentTime, record as judgmentRecord } from '../../utils/judgment';
 import type { RunListItem as CollaborationRunListItem } from '../../api/collaborationApi';
 import { createPlanFromAgent, getPlan, listPlans, runPlan } from '../../api/planningApi';
 import type { PlanListItem } from '../../types/planning';
@@ -160,7 +161,7 @@ interface Props {
   onOpenRun?: (runId: string) => void;
   onOpenRoad?: (roadName: string) => void;
   onOpenPlan?: (planId: string) => void;
-  onOpenCollaboration?: (sessionId: string) => void;
+  onOpenCollaboration?: (sessionId: string, runId?: string, eventId?: string) => void;
   onOpenKnowledge?: () => void;
   onSummaryChange?: (summary: { total: number | null; loaded: number; highRiskLoaded: number }) => void;
 }
@@ -329,6 +330,8 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
   const latestPlan = currentPlan(relations);
   const latestRun = currentWorkflow(relations);
   const judgmentSessionId = verifiedJudgmentSessionId(relations);
+  const recentJudgment = judgmentSessionId ? latestJudgment(relations.collaboration.items.filter(item =>
+    judgmentRecord(item.normalized_event).eventId === selectedId && item.session_id && item.run_id)) : undefined;
   const selectionRef = useRef(selectedId);
   selectionRef.current = selectedId;
   const primaryRef = useRef(primary);
@@ -458,7 +461,7 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
     else if (primary.kind === 'execute') void handleStartPlanWorkflow();
     else if (primary.kind === 'view_workflow' && primary.targetId) onOpenRun?.(primary.targetId);
     else if (primary.kind === 'view_plan' && primary.targetId) onOpenPlan?.(primary.targetId);
-    else if (primary.kind === 'view_judgment' && primary.targetId) onOpenCollaboration?.(primary.targetId);
+    else if (primary.kind === 'view_judgment' && primary.targetId && latestCollaboration) onOpenCollaboration?.(primary.targetId, latestCollaboration.run_id, selectedId || undefined);
   };
   const primaryUnavailable = primary.kind === 'none' ||
     (primary.kind === 'view_workflow' && !onOpenRun) ||
@@ -558,11 +561,6 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
                     {actionBusy ? '操作处理中...' : primary.label}
                   </button>
                 </div>
-                {judgmentSessionId && primary.kind !== 'view_judgment' && onOpenCollaboration && (
-                  <div className="event-secondary-actions">
-                    <button className="event-text-button" onClick={() => onOpenCollaboration(judgmentSessionId)}>查看研判</button>
-                  </div>
-                )}
                 {primary.kind === 'retry' && <div role="alert" className="event-relation-error">
                   关联信息加载失败，暂时无法确认当前处置阶段。
                   <div className="event-muted">{[['研判', relations.collaboration], ['方案', relations.plan], ['执行', relations.workflow]].map(([name, value]) => {
@@ -573,6 +571,18 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
                 {actionError && <p className="event-relation-error" role="alert">{actionError}</p>}
               </section>
               <section className="event-resource-summary" aria-label="方案与执行摘要">
+                <div className="event-resource-row" aria-label="最近研判摘要">
+                  <span className="event-resource-label">最近研判</span>
+                  <div>
+                    <strong>{queryText(relations.collaboration, recentJudgment ? collaborationStatusLabel(recentJudgment.status) : '暂无研判')}</strong>
+                    {recentJudgment && <>
+                      <p className="event-muted">{formatTime(judgmentTime(recentJudgment))} · 已加载 {relations.collaboration.items.length} 次研判</p>
+                      <p className="event-muted">{Object.keys(judgmentRecord(recentJudgment.grounding_context)).length ? '已记录本次上下文快照' : '上下文快照未记录'}</p>
+                    </>}
+                  </div>
+                  {recentJudgment && primary.kind !== 'view_judgment' && onOpenCollaboration && <button className="event-text-button"
+                    onClick={() => onOpenCollaboration(recentJudgment.session_id, recentJudgment.run_id, selectedId || undefined)}>查看研判</button>}
+                </div>
                 <div className="event-resource-row">
                   <span className="event-resource-label">处置方案</span>
                   <div>
