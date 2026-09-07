@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { Card, Button, Input, Space, Tag, Typography, List, message, Popconfirm } from 'antd';
 import type { ApprovalDecision } from '../../types/workflow';
+import { ApprovalActionSummary } from './ApprovalActionSummary';
+import './execution.css';
 
 interface Props {
   approvalId: string;
@@ -17,12 +19,13 @@ interface Props {
   onReject: (comment: string) => Promise<void>;
   onEditAndApprove: (editedActions: Array<Record<string, unknown>>, comment: string) => Promise<void>;
   disabled?: boolean;
+  context?: Record<string, unknown>;
 }
 
 export const WorkflowApprovalCard: React.FC<Props> = ({
   approvalId, runId, nodeId, proposedActions, decision,
   reviewer, comment, createdAt, decidedAt,
-  onApprove, onReject, onEditAndApprove, disabled,
+  onApprove, onReject, onEditAndApprove, disabled, context,
 }) => {
   const [approveComment, setApproveComment] = useState('');
   const [rejectComment, setRejectComment] = useState('');
@@ -76,27 +79,24 @@ export const WorkflowApprovalCard: React.FC<Props> = ({
     <Card
       size="small"
       title={
-        <Space>
+        <Space wrap>
           <span>人工审批</span>
-          <Tag color={decisionColor[decision]}>{decision}</Tag>
+          <Tag color={decisionColor[decision]}>{({ pending: '等待确认', approved: '已批准', rejected: '已驳回', edited: '已修改并批准' })[decision]}</Tag>
           {reviewer && <Typography.Text type="secondary">审批人: {reviewer}</Typography.Text>}
         </Space>
       }
-      style={{ marginBottom: 12, borderLeft: '3px solid #722ed1' }}
+      style={{ marginBottom: 12, borderLeft: '3px solid #0F766E' }}
     >
-      <div style={{ marginBottom: 8 }}>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          审批编号: {approvalId} | 节点: {nodeId}
-        </Typography.Text>
-      </div>
+      <details className="execution-muted"><summary>技术信息</summary>审批编号 {approvalId} · 执行编号 {runId} · 节点 {nodeId}</details>
+      <div className="execution-muted">申请时间：{createdAt || '未记录'}</div>
 
-      <Typography.Text strong>提议动作:</Typography.Text>
+      <Typography.Text strong>需要确认的操作</Typography.Text>
       <List
         size="small"
         dataSource={proposedActions}
         renderItem={(action, i) => (
           <List.Item key={i} style={{ padding: '4px 0' }}>
-            <Typography.Text code>{JSON.stringify(action)}</Typography.Text>
+            <ApprovalActionSummary action={action} context={context} />
           </List.Item>
         )}
       />
@@ -124,9 +124,9 @@ export const WorkflowApprovalCard: React.FC<Props> = ({
               value={approveComment}
               onChange={e => setApproveComment(e.target.value)}
             />
-            <Space>
-              <Button type="primary" loading={loading} onClick={handleApprove}>
-                批准 (Approve)
+            <Space wrap>
+              <Button loading={loading} disabled={loading} onClick={handleApprove}>
+                批准
               </Button>
               {editing ? (
                 <>
@@ -143,7 +143,7 @@ export const WorkflowApprovalCard: React.FC<Props> = ({
                   <Button onClick={() => setEditing(false)}>取消编辑</Button>
                 </>
               ) : (
-                <Button onClick={() => setEditing(true)}>编辑并批准 (Edit & Approve)</Button>
+                <Button disabled={loading} onClick={() => setEditing(true)}>编辑并批准</Button>
               )}
               <Popconfirm
                 title="确定驳回?"
@@ -160,7 +160,7 @@ export const WorkflowApprovalCard: React.FC<Props> = ({
                 cancelText="取消"
                 okButtonProps={{ danger: true }}
               >
-                <Button danger loading={loading}>驳回 (Reject)</Button>
+                <Button danger loading={loading} disabled={loading}>驳回</Button>
               </Popconfirm>
             </Space>
           </Space>

@@ -12,6 +12,7 @@ import MemoryPanelErrorBoundary from './MemoryPanelErrorBoundary';
 import { extractPreviousRunSummary } from '../../utils/previousRunContext';
 import { judgmentTitle, text } from '../../utils/judgment';
 import GroundingEvidencePanel from './GroundingEvidencePanel';
+import { JudgmentPlanLink } from './JudgmentPlanLink';
 
 function safeArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
@@ -23,7 +24,7 @@ function safeObj(v: unknown): Record<string, unknown> {
   return {};
 }
 
-export default function CollaborationRunView({ run, onOpenKnowledge }: { run: CollaborationRun; onOpenKnowledge?: (documentId: string) => void }) {
+export default function CollaborationRunView({ run, onOpenKnowledge, onOpenPlan }: { run: CollaborationRun; onOpenKnowledge?: (documentId: string) => void; onOpenPlan?: (planId: string) => void }) {
   if (!run?.runId) return <div style={{ padding: 20, color: '#9CA3AF', fontSize: 13, textAlign: 'center' }}>等待协同分析启动...</div>;
 
   const selectedAgents = safeArray<string>(run.selectedAgents);
@@ -58,6 +59,7 @@ export default function CollaborationRunView({ run, onOpenKnowledge }: { run: Co
       </div>
 
       {(run.fusionSummary || run.finalDecision) && <FusionDecisionView run={run} />}
+      {run.isHydrated && onOpenPlan && <JudgmentPlanLink eventId={text(run.normalizedEvent?.eventId) || undefined} sessionId={run.sessionId} runId={run.runId} onOpenPlan={onOpenPlan} />}
       <GroundingEvidencePanel grounding={run.grounding} loading={!run.isHydrated} onOpenKnowledge={onOpenKnowledge} />
 
       {agentEntries.length > 0 && <section className="judgment-roles"><h3>参与研判角色</h3>

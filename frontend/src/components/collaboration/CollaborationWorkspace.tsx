@@ -19,6 +19,7 @@ interface CollaborationWorkspaceProps {
   expectedEventId?: string | null;
   onSelectJudgment: (sessionId: string, runId?: string, eventId?: string) => void;
   onOpenKnowledge?: (documentId: string) => void;
+  onOpenPlan?: (planId: string) => void;
 }
 
 export function CollaborationWorkspace({
@@ -26,7 +27,7 @@ export function CollaborationWorkspace({
   onRefresh,
   onSessionCreated,
   onOpenRun,
-  requestedRunId, expectedEventId, onSelectJudgment, onOpenKnowledge,
+  requestedRunId, expectedEventId, onSelectJudgment, onOpenKnowledge, onOpenPlan,
 }: CollaborationWorkspaceProps) {
   const [defaultRunId, setActiveRunId] = useState<string>('');
   const [runsById, setRunsById] = useState<Record<string, CollaborationRun>>({});
@@ -361,7 +362,7 @@ export function CollaborationWorkspace({
         <div style={emptyPanelStyle}>该会话暂无协同运行</div>
       )}
 
-      {activeRun && <CollaborationRunView run={activeRun} onOpenKnowledge={onOpenKnowledge} />}
+      {activeRun && <CollaborationRunView run={activeRun} onOpenKnowledge={onOpenKnowledge} onOpenPlan={onOpenPlan} />}
 
       {activeSessionId && (
         <RelatedWorkflowRuns sessionId={activeSessionId} onOpenRun={onOpenRun} />

@@ -66,8 +66,25 @@ export interface PlanDetail {
   };
   semanticReplanEnabled: boolean;
   groundedDecisionContextEnabled: boolean;
-  steps?: Array<{ approvalRequired?: boolean }>;
-  metadata?: { sourceAgent?: { sessionId?: string; collaborationRunId?: string } };
+  steps?: PlanStep[];
+  metadata?: {
+    sourceAgent?: { sessionId?: string; collaborationRunId?: string; finalStatus?: string };
+    eventSnapshot?: Record<string, unknown>;
+    agentRecommendationAudit?: { accepted?: Record<string, unknown>[]; rejected?: Record<string, unknown>[] };
+  };
+}
+
+export interface PlanStep {
+  stepId?: string;
+  stepType?: string;
+  objective?: string;
+  actionType?: string | null;
+  toolName?: string | null;
+  expectedOutcome?: string;
+  preconditions?: string[];
+  riskLevel?: string;
+  approvalRequired?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PlanDetailResponse {

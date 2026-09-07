@@ -7,6 +7,10 @@ import type {
   PlanListItem, PlanRunSummary, PlanDetail as PlanDetailData, TrajectoryResponse, VersionDiff, ObservationItem,
 } from '../../types/planning';
 import { planVersionLabel } from '../../utils/display';
+import { executionStatus, validatePlan, loadClosedLoopSelection } from '../../utils/closedLoop';
+import { LinkedEventName, PlanSourceContext } from './PlanSourceContext';
+import { PlanSteps } from './PlanSteps';
+import '../workflow/execution.css';
 
 /** 真实 Workflow Definition 版本（来自 GET /workflow/definitions/{id} 的 versions[]） */
 interface DefinitionVersion {
@@ -29,11 +33,7 @@ const OBSERVATION_LABELS: Record<string, string> = {
 };
 
 function statusLabel(s: string): string {
-  const m: Record<string, string> = {
-    completed: '完成', failed: '失败', running: '运行中', pending: '待执行',
-    awaiting_approval: '待审批', paused: '暂停', cancelled: '已取消', rejected: '已驳回',
-  };
-  return m[s] || s;
+  return executionStatus(s);
 }
 
 function goalTypeLabel(s?: string | null): string {
@@ -42,8 +42,9 @@ function goalTypeLabel(s?: string | null): string {
     congestion_resolution: '拥堵疏导',
     traffic_optimization: '交通优化',
     emergency_response: '应急处置',
+    generic: '综合处置',
   };
-  return s ? (m[s] || s) : '—';
+  return s ? (m[s] || '其它处置') : '未记录';
 }
 
 function timeLabel(value?: string | null): string {
@@ -66,13 +67,14 @@ export interface PlanCenterProps {
   onRootRunIdChange: (rootRunId: string | null) => void;
   onDiffChange: (fromVersion: number | null, toVersion: number | null) => void;
   onOpenWorkflowRun: (runId: string) => void;
+  onOpenJudgment?: (sessionId: string, runId: string, eventId?: string) => void;
 }
 
 export function PlanCenter(props: PlanCenterProps) {
   if (!props.planId) {
     return <PlanList onSelect={props.onPlanSelect} />;
   }
-  return <PlanDetail {...props} />;
+  return <PlanDetail key={props.planId} {...props} />;
 }
 
 // ── Plan List ───────────────────────────────────────────────────────────────
@@ -121,8 +123,9 @@ function PlanList({ onSelect }: { onSelect: (id: string) => void }) {
               <span style={{ minWidth: 0 }}>
                 <strong style={{ display: 'block', fontSize: 13, color: '#111827', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.goal || '未命名方案'}</strong>
                 <span style={{ display: 'block', color: '#6B7280', marginTop: 2 }}>{goalTypeLabel(p.goalType)}</span>
+                <PlanListFacts planId={p.planId} eventId={p.eventId} />
               </span>
-              <span style={{ color: '#6B7280' }}>详情中查看</span>
+              <span style={{ color: '#6B7280' }}><LinkedEventName eventId={p.eventId} /></span>
               <span style={{ color: p.latestExecutionStatus ? STATUS_COLORS[p.latestExecutionStatus] || '#6B7280' : '#9CA3AF', fontWeight: 600 }}>
                 {p.latestExecutionStatus ? statusLabel(p.latestExecutionStatus) : '未执行'}
               </span>
@@ -149,6 +152,16 @@ function pagerBtn(disabled: boolean): React.CSSProperties {
   return { padding: '4px 12px', borderRadius: 8, border: '1px solid #E5E7EB', background: disabled ? '#F3F4F6' : '#FFF', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12, color: disabled ? '#9CA3AF' : '#111827' };
 }
 
+function PlanListFacts({ planId, eventId }: { planId: string; eventId: string | null }) {
+  const [value, setValue] = useState<string>('正在核对方案内容...');
+  useEffect(() => loadClosedLoopSelection(async () => {
+    const { plan } = validatePlan(await getPlan(planId), planId, eventId || undefined);
+    const approval = plan.steps?.some(step => step.approvalRequired) ? '需要审批' : plan.steps?.length && plan.steps.every(step => step.approvalRequired === false) ? '无需审批' : '审批要求未记录';
+    return `${plan.steps?.length ?? '未记录'} 个步骤 · ${approval} · ${plan.metadata?.sourceAgent?.collaborationRunId ? '来源研判已记录' : '来源研判未记录'}`;
+  }, setValue, () => setValue('方案内容暂不可用')), [planId, eventId]);
+  return <small className="execution-muted" style={{ display: 'block', marginTop: 4 }}>{value}</small>;
+}
+
 function Empty({ text }: { text: string }) {
   return <div style={{ background: '#FFF', borderRadius: 12, padding: 24, border: '1px solid #E5E7EB', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{text}</div>;
 }
@@ -172,7 +185,8 @@ function PlanDetail(props: PlanCenterProps) {
   useEffect(() => {
     let cancelled = false;
     setPlanError(null);
-    getPlan(planId!)
+    setPlan(null); setRuns([]);
+    getPlan(planId!).then(r => validatePlan(r, planId!))
       .then(r => { if (!cancelled) { setPlan(r.plan); setRuns(r.runs); } })
       .catch((e: unknown) => { if (!cancelled) setPlanError(e instanceof Error ? e.message : '加载失败'); });
     return () => { cancelled = true; };
@@ -210,7 +224,7 @@ function PlanDetail(props: PlanCenterProps) {
     return Array.from(map.entries());
   }, [runs]);
 
-  const activeRoot = rootRunId || (lineages.length > 0 ? lineages[lineages.length - 1][0] : null);
+  const activeRoot = rootRunId ? (lineages.some(([id]) => id === rootRunId) ? rootRunId : null) : (lineages.length > 0 ? lineages[lineages.length - 1][0] : null);
   const activeRuns = useMemo(
     () => runs.filter(r => (r.rootRunId || r.runId) === activeRoot),
     [runs, activeRoot]
@@ -220,37 +234,47 @@ function PlanDetail(props: PlanCenterProps) {
   const adjustmentCount = Math.max(0, (plan?.version ?? 1) - 1);
 
   useEffect(() => {
-    if (activeRoot) {
-      getTrajectory(activeRoot).then(setTrajectory).catch(() => setTrajectory(null));
-    } else {
-      setTrajectory(null);
-    }
+    setTrajectory(null);
+    if (activeRoot) return loadClosedLoopSelection(async () => {
+      const value = await getTrajectory(activeRoot);
+      if (value.planId !== planId || value.canonicalRootRunId !== activeRoot) throw new Error('执行链关联不匹配');
+      return value;
+    }, setTrajectory, () => setTrajectory(null));
   }, [activeRoot]);
 
   useEffect(() => {
-    if (activeRoot) {
-      listObservations(activeRoot).then(r => setObservations(r.observations)).catch(() => setObservations([]));
-    }
+    setObservations([]);
+    if (activeRoot) return loadClosedLoopSelection(async () => {
+      const value = await listObservations(activeRoot);
+      if (value.runId !== activeRoot) throw new Error('观察记录关联不匹配');
+      return value.observations;
+    }, setObservations, () => setObservations([]));
   }, [activeRoot]);
 
+  if (!plan) return <div data-plan-detail={planId}>
+    <button className="execution-link" onClick={() => props.onPlanSelect('')}>返回处置方案中心</button>
+    {planError ? <div role="alert">无法确认当前闭环状态：{planError}
+      <button className="execution-link" onClick={() => setPlanReloadKey(k => k + 1)}>重试</button>
+    </div> : <Empty text="正在加载处置方案..." />}
+  </div>;
+
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <button onClick={() => props.onPlanSelect('')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#0F766E', padding: 0 }}>← 处置方案中心</button>
+    <div data-plan-detail={planId}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+        <button onClick={() => props.onPlanSelect('')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#0F766E', padding: 0, whiteSpace: 'nowrap' }}>← 处置方案中心</button>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: 0 }}>{plan?.goal || '处置方案详情'}</h2>
       </div>
       <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 12px' }}>
         {planVersionLabel(plan?.version, adjustmentCount)} · {goalTypeLabel(plan?.goalType)} · 最近状态 {latestRunStatus}
       </p>
 
-      {planError && (
-        <div style={{ background: '#FEF2F2', borderRadius: 8, padding: '10px 14px', border: '1px solid #FECACA', color: '#DC2626', fontSize: 12, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>方案详情加载失败：{planError}</span>
-          <button onClick={() => setPlanReloadKey(k => k + 1)} style={{ cursor: 'pointer', border: '1px solid #FECACA', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#DC2626', background: '#FFF' }}>重试</button>
-        </div>
-      )}
-
-      {plan && <PlanOverviewPanel plan={plan} latestRun={latestRun} runCount={runs.length} adjustmentCount={adjustmentCount} />}
+      {plan && <>
+        <div className="execution-source">关联事件：<LinkedEventName eventId={plan.eventId} /></div>
+        <PlanSourceContext plan={plan} onOpenJudgment={props.onOpenJudgment} />
+        <PlanOverviewPanel plan={plan} latestRun={latestRun} runCount={runs.length} adjustmentCount={adjustmentCount} />
+        <PlanSteps plan={plan} run={latestRun} />
+      </>}
+      <details><summary className="execution-muted">方案说明与调整历史</summary>
       {plan && <PlanContentPanel plan={plan} />}
       <VersionHistoryPanel
         versions={defVersions}
@@ -259,6 +283,7 @@ function PlanDetail(props: PlanCenterProps) {
         error={defVersionsError}
         onRetry={() => setDefVersionsReloadKey(k => k + 1)}
       />
+      </details>
 
       {lineages.length > 0 && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -273,8 +298,11 @@ function PlanDetail(props: PlanCenterProps) {
       )}
 
       <ExecutionLineage runs={activeRuns} onOpenRun={props.onOpenWorkflowRun} />
+      {runs.length >= 50 && <p className="execution-muted">当前接口最多返回最近 50 条执行记录，以下不代表全部历史。</p>}
+      {(observations.length > 0 || trajectory) && <details><summary className="execution-muted">观察与执行轨迹</summary>
       {observations.length > 0 && <ObservationTimeline observations={observations} />}
       {trajectory && <TrajectoryPanel trajectory={trajectory} />}
+      </details>}
       {defVersions.length > 1 && <DiffPanel planId={planId!} versions={defVersions.map(v => v.version)} fromVersion={fromVersion} toVersion={toVersion} onDiffChange={props.onDiffChange} />}
       {plan && <TechnicalAuditPanel plan={plan} definitionId={planId!} runs={activeRuns} />}
     </div>
@@ -292,16 +320,19 @@ function PlanOverviewPanel({ plan, latestRun, runCount, adjustmentCount }: {
   const items: [string, string, string?][] = [
     ['方案名称', plan.goal || '未命名方案'],
     ['状态', latestRun ? statusLabel(latestRun.status) : '未执行', latestRun ? STATUS_COLORS[latestRun.status] : undefined],
-    ['关联事件', plan.eventId ? '已关联事件' : '未关联'],
+    ['方案状态', ({ active: '可用方案', validated: '已校验', draft: '草案' } as Record<string, string>)[plan.definitionStatus] || '未记录'],
+    ['操作数量', plan.steps ? String(plan.steps.length) : '未记录'],
+    ['审批要求', plan.steps?.some(s => s.approvalRequired === true) ? '需要人工审批' : plan.steps?.length && plan.steps.every(s => s.approvalRequired === false) ? '无需人工审批' : '未记录'],
     ['当前方案', planVersionLabel(plan.version, adjustmentCount)],
-    ['执行情况', runCount > 0 ? `已执行 ${runCount} 次` : '尚未执行'],
+    ['执行情况', runCount > 0 ? `已加载 ${runCount} 条执行记录` : '尚未启动执行'],
+    ['创建时间', timeLabel(plan.createdAt)],
     ['最近更新', timeLabel(plan.updatedAt)],
   ];
   return (
     <Panel title="方案概览">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px 14px' }}>
         {items.map(([l, v, tone]) => (
-          <div key={l} style={{ background: '#F9FAFB', borderRadius: 8, padding: '9px 11px', border: '1px solid #F3F4F6', minWidth: 0 }}>
+          <div key={l} style={{ padding: '4px 0', minWidth: 0 }}>
             <div style={{ fontSize: 11, color: '#9CA3AF' }}>{l}</div>
             <div style={{ fontSize: 13, fontWeight: 650, color: tone || '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v}>{v}</div>
           </div>
@@ -342,7 +373,7 @@ function TechnicalAuditPanel({ plan, definitionId, runs }: { plan: PlanDetailDat
     ['Workflow definition ID', definitionId],
     ['事件编号', plan.eventId || '未绑定'],
     ['Fingerprint', plan.planFingerprint || '未记录'],
-    ['目标类型', goalTypeLabel(plan.goalType) || '未记录'],
+    ['目标类型', plan.goalType || '未记录'],
     ['置信度', plan.confidence === null || plan.confidence === undefined ? '未记录' : String(plan.confidence)],
     ['规划模式', plan.planningMode || '未记录'],
     ['语义重规划', plan.semanticReplanEnabled ? '已启用' : '未启用'],
@@ -458,7 +489,7 @@ function ExecutionLineage({ runs, onOpenRun }: { runs: PlanRunSummary[]; onOpenR
           const replanned = r.status === 'failed' && r.terminationReason === 'replanned';
           return (
             <div key={r.runId}>
-              <div style={{ background: '#F9FAFB', borderRadius: 10, padding: '8px 12px', border: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ padding: '8px 0', borderBottom: '1px solid #E5E7EB', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 600 }}>{planVersionLabel(r.version)}</span>
                 <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 8, background: replanned ? '#FEF3C7' : '#F3F4F6', color: replanned ? '#B45309' : STATUS_COLORS[r.status] || '#374151' }}>
                   {replanned ? '已重规划（原运行失败）' : statusLabel(r.status)}
@@ -466,9 +497,9 @@ function ExecutionLineage({ runs, onOpenRun }: { runs: PlanRunSummary[]; onOpenR
                 {replanned && <span style={{ fontSize: 11, color: '#9CA3AF' }}>原始状态：失败</span>}
                 {r.terminationReason && !replanned && <span style={{ fontSize: 11, color: '#6B7280' }}>{r.terminationReason}</span>}
                 <span style={{ flex: 1 }} />
-                <button onClick={() => onOpenRun(r.runId)} title={`Run ID ${r.runId}`} style={{ fontSize: 11, color: '#0F766E', border: 'none', background: 'none', cursor: 'pointer' }}>查看工作流 →</button>
+                <button onClick={() => onOpenRun(r.runId)} title={`Run ID ${r.runId}`} style={{ fontSize: 12, color: '#0F766E', border: 'none', background: 'none', cursor: 'pointer' }}>查看执行</button>
               </div>
-              {i < ordered.length - 1 && <div style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 11, padding: '2px 0' }}>↓ 重规划 / 续接</div>}
+              {i < ordered.length - 1 && r.replannedToRunId === ordered[i + 1].runId && <div style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 11, padding: '2px 0' }}>↓ 调整后续接</div>}
             </div>
           );
         })}
@@ -644,9 +675,9 @@ function DiffRow({ label, items, color }: { label: string; items: string[]; colo
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#FFF', borderRadius: 8, padding: 14, border: '1px solid #E5E7EB', marginBottom: 12 }}>
+    <section className="execution-section">
       <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 8 }}>{title}</div>
       {children}
-    </div>
+    </section>
   );
 }

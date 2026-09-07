@@ -595,11 +595,11 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
                   {latestPlan && onOpenPlan && <button className="event-text-button" onClick={() => onOpenPlan(latestPlan.planId)}>查看方案</button>}
                 </div>
                 <div className="event-resource-row">
-                  <span className="event-resource-label">工作流</span>
+                  <span className="event-resource-label">处置执行</span>
                   <div>
                     <strong>{queryText(relations.workflow, latestRun ? RUN_STATUS_LABELS[latestRun.status] || '状态未记录' : '尚未启动执行')}</strong>
                     {latestRun && <p className="event-muted">
-                      {latestRun.definitionName || '事件处置工作流'} · 已执行 {latestRun.progress?.executedNodes ?? '未记录'} 个节点 · {approvalLabel(latestRun.approvalSummary?.status)}<br />
+                      {latestRun.definitionName || '事件处置流程'} · 已执行 {latestRun.progress?.executedNodes ?? '未记录'} 个步骤 · {approvalLabel(latestRun.approvalSummary?.status)}<br />
                       更新 {formatTime(latestRun.updatedAt)}
                     </p>}
                     {latestRun && latestPlan && latestRun.definitionId !== latestPlan.planId && <p className="event-muted">该执行并非上方方案的执行记录</p>}

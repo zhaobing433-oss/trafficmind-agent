@@ -4,10 +4,26 @@
  * 显示单个 Run 摘要卡片。
  * 点击进入 Run 详情（复用现有 WorkflowTracePanel）。
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type { RunSummary, WorkflowRunStatus } from '../../types/workflow';
 import { RUN_STATUS_LABELS, APPROVAL_STATUS_LABELS } from '../../types/workflow';
 import { formatDateTime } from '../../utils/format';
+import { getRun } from '../../api/workflowApi';
+import { getPlan } from '../../api/planningApi';
+import { loadClosedLoopSelection, validateWorkflow, workflowSourcePlan, stepName, terminalExecution } from '../../utils/closedLoop';
+import { text } from '../../utils/judgment';
+
+function RunSourceFacts({ runId }: { runId: string }) {
+  const [result, setResult] = useState<{ id: string; value: string } | null>(null);
+  useEffect(() => loadClosedLoopSelection(async () => {
+    const detail = validateWorkflow(await getRun(runId), runId);
+    const plan = await workflowSourcePlan(detail, getPlan);
+    const node = detail.nodeRuns.find(item => item.nodeId === detail.run.currentNodeId);
+    const step = terminalExecution(detail.run.status) ? '流程已结束' : node ? stepName({ stepType: text(node.nodeType) }) : '未记录';
+    return `来源方案：${plan ? plan.goal || '未命名方案' : '未关联'} · 当前步骤：${step}`;
+  }, value => setResult({ id: runId, value }), () => setResult({ id: runId, value: '来源方案与步骤暂不可用' })), [runId]);
+  return <div style={{ fontSize: 12, color: '#6a7977', marginBottom: 8 }}>{result?.id === runId ? result.value : '正在核对来源方案与步骤...'}</div>;
+}
 
 interface Props {
   run: RunSummary;
@@ -35,16 +51,16 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
   const parts: string[] = [];
   if (es?.roadName) parts.push(es.roadName);
   if (es?.eventTypeCn) parts.push(es.eventTypeCn);
-  const primaryTitle = parts.length > 0 ? parts.join(' · ') : (run.definitionName || '工作流运行');
+  const primaryTitle = parts.length > 0 ? parts.join(' · ') : (run.definitionName || '处置执行');
 
   // ── 节点进度 ──
   let progressText = '';
   const p = run.progress;
   if (p.totalNodes !== null && p.totalNodes > 0) {
     const done = run.isTerminal ? p.succeededNodes : p.executedNodes;
-    progressText = `节点 ${done}/${p.totalNodes}`;
+    progressText = `步骤 ${done}/${p.totalNodes}`;
   } else if (p.executedNodes > 0) {
-    progressText = `已执行 ${p.executedNodes} 个节点`;
+    progressText = `已执行 ${p.executedNodes} 个步骤`;
   }
 
   // ── 审批 ──
@@ -76,12 +92,12 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
     : '';
 
   return (
-    <div
+    <button type="button"
       onClick={() => onClick(run.runId)}
       style={{
-        padding: '16px 20px',
-        borderRadius: 10,
-        border: '1.5px solid #E5E7EB',
+        padding: '10px 12px', width: '100%', textAlign: 'left', font: 'inherit',
+        borderRadius: 6,
+        border: '1px solid #E5E7EB',
         background: '#FFFFFF',
         cursor: 'pointer',
         transition: 'all 0.15s',
@@ -112,10 +128,11 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
 
       {/* Row 3: Definition Name */}
       <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 8 }}>
-        {run.definitionName || run.definitionId}
+        {run.definitionName || '来源名称未记录'}
       </div>
 
       {/* Row 4: Meta row */}
+      <RunSourceFacts runId={run.runId} />
       <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#6B7280', flexWrap: 'wrap', marginBottom: 6 }}>
         {progressText && <span>{progressText}</span>}
         {failedNodeInfo && <span style={{ color: '#DC2626' }}>{failedNodeInfo}</span>}
@@ -126,7 +143,7 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
       </div>
 
       {/* Row 5: technical metadata + Time + CTA */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <span style={{ fontSize: 10, color: '#9CA3AF' }}>
           技术信息可在详情查看
         </span>
@@ -135,6 +152,6 @@ export const WorkflowRunCard: React.FC<Props> = ({ run, onClick }) => {
           <span style={{ fontSize: 11, color: '#0F766E', fontWeight: 500 }}>查看详情 ›</span>
         </span>
       </div>
-    </div>
+    </button>
   );
 };

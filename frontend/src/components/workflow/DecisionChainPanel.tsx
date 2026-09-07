@@ -17,6 +17,8 @@ import React, { useEffect, useState } from 'react';
 import { getRun } from '../../api/workflowApi';
 import type { DecisionProvenanceEntry } from '../../types/workflow';
 import { DECISION_TYPE_LABELS } from '../../types/workflow';
+import { getPlan } from '../../api/planningApi';
+import { workflowSourcePlan } from '../../utils/closedLoop';
 
 interface Props {
   runId: string;
@@ -55,16 +57,14 @@ export const DecisionChainPanel: React.FC<Props> = ({ runId, onOpenChildRun, onO
     getRun(runId)
       .then(detail => {
         if (cancelled) return;
+        if (detail.run.runId !== runId) throw new Error('决策记录与当前执行不匹配');
         const prov = Array.isArray(detail.decisionProvenance) ? detail.decisionProvenance as DecisionProvenanceEntry[] : [];
         setEntries(prov);
         const defId = String((detail.run as Record<string, unknown>).definitionId ?? '');
         setDefinitionId(defId);
         if (defId) {
-          // 预先探测 plan 关联：GET /planning/plans/{definitionId}
-          // 200 → 是 Plan；404（定义不存在）/ 400（定义存在但无 plan 元数据）→ 不是 Plan；
-          // 其余 → 查询失败。绝不 fallback 按 definitionName 猜 Plan。
-          fetch(`/api/planning/plans/${encodeURIComponent(defId)}`)
-            .then(r => { if (!cancelled) setPlanState(r.ok ? 'is_plan' : (r.status === 404 || r.status === 400) ? 'not_plan' : 'error'); })
+          workflowSourcePlan(detail, getPlan)
+            .then(plan => { if (!cancelled) setPlanState(plan ? 'is_plan' : 'not_plan'); })
             .catch(() => { if (!cancelled) setPlanState('error'); });
         } else {
           setPlanState('not_plan');
@@ -86,7 +86,7 @@ export const DecisionChainPanel: React.FC<Props> = ({ runId, onOpenChildRun, onO
         {/* 主层信息 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{typeLabel}</span>
-          <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 6, background: '#FFF', color: '#6B7280', border: '1px solid #E5E7EB' }}>plan v{e.planVersion ?? '?'}</span>
+          <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 6, background: '#FFF', color: '#6B7280', border: '1px solid #E5E7EB' }}>方案版本 {e.planVersion ?? '未记录'}</span>
           <span style={{ fontSize: 11, color: statusColor(e.decisionStatus), fontWeight: 600 }}>{fmt(e.decisionStatus)}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '2px 12px', fontSize: 11 }}>
@@ -153,11 +153,11 @@ export const DecisionChainPanel: React.FC<Props> = ({ runId, onOpenChildRun, onO
           {definitionId && planState === 'is_plan' && onOpenPlan && (
             <button onClick={() => onOpenPlan(definitionId)}
               style={{ padding: '2px 10px', borderRadius: 6, border: '1px solid #99F6E4', background: '#F0FDFA', color: '#0F766E', cursor: 'pointer', fontSize: 11 }}>
-              查看计划 →
+              查看处置方案
             </button>
           )}
           {definitionId && planState === 'not_plan' && (
-            <span style={{ fontSize: 10, color: '#9CA3AF' }}>该定义不是 Plan</span>
+            <span style={{ fontSize: 10, color: '#9CA3AF' }}>未关联处置方案</span>
           )}
           {definitionId && planState === 'error' && (
             <span style={{ fontSize: 10, color: '#9CA3AF' }}>计划关联查询失败</span>
