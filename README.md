@@ -4,6 +4,17 @@
 
 TrafficMind Agent 是一个智能交通事件分析系统，支持从事件研判、知识库问答、相似案例检索、日报周报生成到多 Agent 协同编排的全链路智慧交通工作台。后端基于 **FastAPI**，前端使用 **React + TypeScript**，集成 **DeepSeek LLM**、**Chroma 向量检索（RAG）**、**SSE 真流式**、**多 Agent DAG 编排**和 **SQLite 持久化**。LLM 不可用时具备完整的可控降级能力。
 
+## Pilot 地图展示
+
+Traffic 默认显示公开地图底图与事件工作台；地图/拓扑切换不改变选中事件。演练验证为次级入口，不代表真实道路 GIS 或实时交通数据。会话打开、重命名、删除保留在协同研判页面的折叠「会话管理」中。
+
+- 复用 MapLibre GL JS，以独立 lazy chunk 加载。底图或引擎失败不阻断事件、研判、方案与审批入口。
+- 默认 OSM Standard raster 仅用于本地 Demo/Pilot，无 production tile SLA。保留 © OpenStreetMap contributors，遵守 [OSM Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/)；不提供离线下载或批量预取，使用浏览器默认缓存与 Referer。
+- 正式部署可在前端构建环境设置 `VITE_MAP_STYLE_URL`，使用获授权的 MapLibre style/provider；不要把私有 token 写入仓库。
+- `frontend/src/data/pilot/pilotGeography.ts` 仅投影现有 G1 的 9 个 OSM 来源路口点（WGS84、2026-09-01 核验、ODbL），保留节点编号与源记录。部分位置为多个道路节点的均值，只作公开地图近似展示；视野由这些点计算，不是行政边界。
+- 首版只使用 `GET /regional/events/{eventId}/location-binding` 的 active/resolved 精确路口绑定，且当前 canonical 路口与核验坐标必须一致。未解析、道路名称、仅道路绑定、无来源坐标不生成事件 Marker；仍保留事件队列与详情。道路/POI 无坐标时不补点，不画伪道路 geometry。
+- 地图不参与 Location Resolver、Grounding、历史关联或 Case 身份判断；公开底图不等于实时交通 feed，流程完成不等于真实交通问题已解决。
+
 ## 当前基线
 
 | 项 | 值 |

@@ -1,7 +1,7 @@
 /**
  * LayoutShell — 左侧 Sidebar + 右侧内容区
  */
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
 import { visualTokens } from '../styles/visualTokens';
 import type { RecentJudgmentProps } from './collaboration/RecentJudgments';
@@ -22,6 +22,12 @@ interface Props extends RecentJudgmentProps {
 
 export default function LayoutShell({ children, activeView, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeConvId, recentList, ...judgments }: Props) {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(max-width: 760px)').matches);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 760px)');
+    const collapseOnNarrow = () => { if (query.matches) setCollapsed(true); };
+    query.addEventListener('change', collapseOnNarrow);
+    return () => query.removeEventListener('change', collapseOnNarrow);
+  }, []);
   const sidebarWidth = collapsed ? 72 : 248;
 
   return (

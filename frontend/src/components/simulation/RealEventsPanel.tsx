@@ -25,6 +25,7 @@ import { eventTitle, eventTypeLabel, isIncompleteEvent } from '../../utils/displ
 import { currentCollaboration, currentPlan, currentWorkflow, derivePrimaryAction, eventSourceLabel, loadEventRelations, pendingRelations, relationsForSelection, verifiedJudgmentSessionId } from './eventWorkbenchState';
 import type { EventRelations, Relation } from './eventWorkbenchState';
 import './eventWorkbench.css';
+import { PilotMapPanel } from '../map/PilotMapPanel';
 
 const LIMIT = 50;
 
@@ -164,6 +165,7 @@ interface Props {
   onOpenCollaboration?: (sessionId: string, runId?: string, eventId?: string) => void;
   onOpenKnowledge?: () => void;
   onSummaryChange?: (summary: { total: number | null; loaded: number; highRiskLoaded: number }) => void;
+  topology?: React.ReactNode;
 }
 
 /** 聚焦事件归一化展示字段（EventRecord / AnalyzeResult 两种来源共用） */
@@ -231,7 +233,7 @@ function pickNumber(...values: unknown[]): number | null {
   return null;
 }
 
-export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, focusRisk, onClearFocus, onSelectEvent, onOpenRisk, onOpenRun, onOpenRoad, onOpenPlan, onOpenCollaboration, onOpenKnowledge, onSummaryChange }) => {
+export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, focusRisk, onClearFocus, onSelectEvent, onOpenRisk, onOpenRun, onOpenRoad, onOpenPlan, onOpenCollaboration, onOpenKnowledge, onSummaryChange, topology }) => {
   const [records, setRecords] = useState<EventRecord[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -509,6 +511,10 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
       </div>
       <p className="event-range">筛选范围：最近 {LIMIT} 条记录 · 已加载 {records.length} / 共 {total ?? '未确认'} 条 · 当前匹配 {filtered.length} 条</p>
       <div className="real-events-workbench">
+        <div className="event-spatial-column">
+        <PilotMapPanel events={selectedEvent?.eventId === focusEventId && !filtered.some(event => event.eventId === focusEventId)
+          ? [...filtered, { ...selectedEvent, eventTypeCn: selectedEvent.typeCn }] : filtered}
+          selectedId={focusEventId} onSelect={onSelectEvent} topology={topology} refreshKey={reloadKey} />
         <section className="event-queue" aria-label="事件队列">
           <h2>事件队列 <span>风险优先</span></h2>
           {loading ? <EmptyBlock text="正在加载事件队列..." />
@@ -528,7 +534,7 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
               ))}
             </div>}
         </section>
-
+        </div>
         <section className="event-detail" aria-label="当前事件详情" aria-busy={Boolean(focusEventId && focusState.kind === 'checking')}>
           {!focusEventId ? <EmptyBlock text="选择左侧事件，查看当前处置情况" />
             : focusState.kind === 'checking' ? <EmptyBlock text="正在读取事件详情..." />

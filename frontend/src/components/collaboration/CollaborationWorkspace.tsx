@@ -20,6 +20,7 @@ interface CollaborationWorkspaceProps {
   onSelectJudgment: (sessionId: string, runId?: string, eventId?: string) => void;
   onOpenKnowledge?: (documentId: string) => void;
   onOpenPlan?: (planId: string) => void;
+  sessionManagement?: React.ReactNode;
 }
 
 export function CollaborationWorkspace({
@@ -27,7 +28,7 @@ export function CollaborationWorkspace({
   onRefresh,
   onSessionCreated,
   onOpenRun,
-  requestedRunId, expectedEventId, onSelectJudgment, onOpenKnowledge, onOpenPlan,
+  requestedRunId, expectedEventId, onSelectJudgment, onOpenKnowledge, onOpenPlan, sessionManagement,
 }: CollaborationWorkspaceProps) {
   const [defaultRunId, setActiveRunId] = useState<string>('');
   const [runsById, setRunsById] = useState<Record<string, CollaborationRun>>({});
@@ -304,6 +305,7 @@ export function CollaborationWorkspace({
       <header>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>协同研判</h2>
       </header>
+      {sessionManagement}
 
       {(historyError || streamError) && (
         <div style={errorBannerStyle}>

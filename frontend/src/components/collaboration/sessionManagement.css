@@ -1,0 +1,6 @@
+.session-management { border-top: 1px solid #e0e8e4; padding-top: 8px; color: #687b75; font-size: 12px; }
+.session-management > summary { cursor: pointer; width: fit-content; }
+.session-management-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; border-bottom: 1px solid #e8eeeb; }
+.session-open { border: 0; background: transparent; color: #246c60; padding: 2px 0; text-align: left; flex: 1; min-width: 100px; overflow-wrap: anywhere; cursor: pointer; }
+.session-management-row time { font-size: 11px; }
+.session-management-row .ant-input { flex: 1; min-width: 100px; }

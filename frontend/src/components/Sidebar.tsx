@@ -7,9 +7,7 @@ import {
   BookOutlined,
   CarOutlined,
   CompassOutlined,
-  DeleteOutlined,
   DownOutlined,
-  EditOutlined,
   FileTextOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -17,7 +15,6 @@ import {
   RightOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import { Tag, Input, Modal } from 'antd';
 import { visualTokens } from '../styles/visualTokens';
 import RecentJudgments, { type RecentJudgmentProps } from './collaboration/RecentJudgments';
 
@@ -52,32 +49,7 @@ const UTILITY_ITEMS = [
   { key: 'guide', label: '文档指南', icon: <FileTextOutlined /> },
 ];
 
-const MODE_LABELS: Record<string, string> = {
-  react: '诊断',
-  routed: '研判',
-  rag: '知识库',
-  hybrid: '相似',
-  report: '报告',
-  collaboration: '协同',
-};
-
 interface RecentItem { id: string; title: string; mode: string; updatedAt: number }
-
-function groupByTime(items: RecentItem[]): { label: string; items: RecentItem[] }[] {
-  const today = new Date().setHours(0, 0, 0, 0);
-  const weekAgo = today - 7 * 86400000;
-  const todayItems: RecentItem[] = []; const weekItems: RecentItem[] = []; const olderItems: RecentItem[] = [];
-  items.forEach(item => {
-    if (item.updatedAt >= today) todayItems.push(item);
-    else if (item.updatedAt >= weekAgo) weekItems.push(item);
-    else olderItems.push(item);
-  });
-  const groups: { label: string; items: RecentItem[] }[] = [];
-  if (todayItems.length) groups.push({ label: '今天', items: todayItems });
-  if (weekItems.length) groups.push({ label: '近 7 天', items: weekItems });
-  if (olderItems.length) groups.push({ label: '更早', items: olderItems });
-  return groups;
-}
 
 interface Props extends RecentJudgmentProps {
   collapsed: boolean; onToggle: () => void;
@@ -88,27 +60,7 @@ interface Props extends RecentJudgmentProps {
 }
 
 export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeView, activeConvId, recentList, ...judgments }: Props) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
   const [recentOpen, setRecentOpen] = useState(true);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const groups = groupByTime(recentList);
-
-  const startRename = (e: React.MouseEvent, item: RecentItem) => { e.stopPropagation(); setEditingId(item.id); setEditTitle(item.title); };
-  const confirmRename = (id: string) => { if (editTitle.trim()) onRenameSession(id, editTitle.trim()); setEditingId(null); };
-
-  const handleDelete = (e: React.MouseEvent, item: RecentItem) => {
-    e.stopPropagation();
-    Modal.confirm({
-      title: '删除分析记录',
-      content: '删除后该分析记录及所有历史轮次都会永久删除，是否继续？',
-      okText: '删除',
-      okType: 'danger',
-      cancelText: '取消',
-      centered: true,
-      onOk: () => onDeleteSession(item.id),
-    });
-  };
 
   const renderNavItem = (item: { key: string; label: string; icon: ReactNode }, compact = false) => {
     const active = activeView === item.key;
@@ -225,48 +177,6 @@ export default function Sidebar({ collapsed, onToggle, onNavigate, onRecentClick
           {recentOpen && (
             <div style={{ flex: 1, overflowY: 'auto', padding: '6px 10px 10px' }}>
               <RecentJudgments {...judgments} onRecentClick={onRecentClick} />
-              <details style={{ marginTop: 12, fontSize: 11, color: color.textMuted }}><summary>会话记录与管理</summary>
-              {recentList.length === 0 ? <div style={{ color: color.textSubtle, fontSize: 11, padding: '8px 6px' }}>暂无历史会话</div> : groups.map(group => (
-                <div key={group.label} style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 10, color: color.textSubtle, padding: '2px 6px 4px' }}>{group.label}</div>
-                  {group.items.map(s => (
-                    <div key={s.id}
-                      onClick={() => onRecentClick(s.id)}
-                      onMouseEnter={() => setHoveredId(s.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                      className="tm-recent-item"
-                      style={{ padding: '6px 7px', borderRadius: 7, cursor: 'pointer', background: activeConvId === s.id ? color.primarySoft : 'transparent', border: activeConvId === s.id ? `1px solid ${color.primaryBorder}` : '1px solid transparent', marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 140ms ease, border-color 140ms ease' }}>
-                      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {editingId === s.id ? (
-                          <Input size="small" value={editTitle} onChange={e => setEditTitle(e.target.value)} onPressEnter={() => confirmRename(s.id)} onBlur={() => confirmRename(s.id)} onClick={e => e.stopPropagation()} style={{ fontSize: 11 }} autoFocus />
-                        ) : (
-                          <>
-                            <div style={{ fontSize: 11, color: activeConvId === s.id ? color.primary : '#475569', fontWeight: activeConvId === s.id ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.title || '未命名交通分析'}</div>
-                            {MODE_LABELS[s.mode] && (
-                              <Tag style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0, border: 'none', background: color.surfaceSubtle, color: color.textMuted, borderRadius: 4, flexShrink: 0 }}>
-                                {MODE_LABELS[s.mode]}
-                              </Tag>
-                            )}
-                          </>
-                        )}
-                      </div>
-                      {!editingId && (
-                        <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                          {hoveredId === s.id && (
-                            <span onClick={(e) => handleDelete(e, s)} style={{ color: '#EF4444', cursor: 'pointer', fontSize: 11, padding: 2 }} title="删除">
-                              <DeleteOutlined />
-                            </span>
-                          )}
-                          <span onClick={(e) => startRename(e as React.MouseEvent, s)} style={{ color: '#D1D5DB', cursor: 'pointer', fontSize: 11, padding: 2 }} title="重命名">
-                            <EditOutlined />
-                          </span>
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-              </details>
             </div>
           )}
         </div>

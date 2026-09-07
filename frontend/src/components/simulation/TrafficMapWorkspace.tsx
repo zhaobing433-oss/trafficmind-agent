@@ -55,10 +55,7 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
   const [wfRunId, setWfRunId] = useState<string | null>(appWfRunId);
   const [wfStatus, setWfStatus] = useState<string | null>(null);
   const [beforeSnapshot, setBeforeSnapshot] = useState<TrafficSnapshot | null>(null);
-  const [trafficMode, setTrafficMode] = useState<TrafficMode>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('simulationRunId') ? 'simulation' : 'realtime';
-  });
+  const [trafficMode, setTrafficMode] = useState<TrafficMode>('realtime');
   const runIdRef = useRef('');
 
   // Sync app workflowRunId
@@ -69,7 +66,6 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
     const params = new URLSearchParams(window.location.search);
     const urlRunId = params.get('simulationRunId');
     if (urlRunId && !runIdRef.current) {
-      setTrafficMode('simulation');
       listScenarios().then(res => { setScenarios(res.scenarios); if (res.scenarios.length > 0) setSelectedScenarioId(res.scenarios[0].scenarioId); }).catch(() => {});
       restoreSimulation(urlRunId);
     }
@@ -163,6 +159,10 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
             <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.25, color: color.text, fontWeight: 600 }}>交通态势</h1>
             <div style={{ marginTop: 6, fontSize: 13, color: color.textMuted }}>事件研判与执行追踪</div>
           </div>
+          <button className="event-text-button" onClick={() => {
+            setTrafficMode(mode => mode === 'realtime' ? 'simulation' : 'realtime');
+            if (!scenarios.length) listScenarios().then(value => setScenarios(value.scenarios)).catch(() => setError('演练场景暂不可用'));
+          }}>{trafficMode === 'realtime' ? '演练验证' : '返回事件工作台'}</button>
         </div>
       </header>
 
@@ -247,6 +247,7 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
       </section>
       ) : (
         <RealEventsPanel
+          topology={<TrafficMapView networkGeoJSON={networkGeoJSON} snapshot={snapshot} events={events} onRoadClick={handleRoadClick} onCameraClick={handleCameraClick} selectedRoadId={selectedRoad?.roadId ?? null} mapHeight={460} />}
           focusEventId={focusEventId}
           focusRoadName={focusRoadName}
           focusRisk={focusRisk}

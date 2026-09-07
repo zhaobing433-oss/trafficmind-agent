@@ -10,6 +10,7 @@ import { EvaluationDashboard } from './components/evaluation/EvaluationDashboard
 import { KnowledgeWorkspace } from './components/knowledge/KnowledgeWorkspace';
 import { PlanCenter } from './components/planning/PlanCenter';
 import { CollaborationWorkspace } from './components/collaboration/CollaborationWorkspace';
+import { SessionManagement } from './components/collaboration/SessionManagement';
 import { ReportDashboard } from './components/report/ReportDashboard';
 import { AlertDashboard } from './components/alert/AlertDashboard';
 import { GuidePage } from './components/guide/GuidePage';
@@ -476,7 +477,7 @@ export default function App() {
          view === 'guide' ? <GuidePage /> :
          view === 'report' ? <ReportDashboard onOpenRoad={handleOpenTrafficRoad} onOpenRisk={handleOpenTrafficRisk} /> :
          view === 'qa' ? <KnowledgeWorkspace onRefresh={refreshSessions} activeSessionId={activeSessionId || undefined} /> :
-         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} requestedRunId={judgmentRunId} expectedEventId={judgmentEventId} onSelectJudgment={handleOpenCollaborationSession} onOpenKnowledge={handleOpenKnowledgeDocument} onOpenPlan={handleOpenPlan} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} onOpenRun={handleOpenWorkflowRun} /> :
+         view === 'multi' ? <CollaborationWorkspace activeSessionId={activeSessionId || null} requestedRunId={judgmentRunId} expectedEventId={judgmentEventId} onSelectJudgment={handleOpenCollaborationSession} onOpenKnowledge={handleOpenKnowledgeDocument} onOpenPlan={handleOpenPlan} onRefresh={refreshSessions} onSessionCreated={handleSessionCreated} onOpenRun={handleOpenWorkflowRun} sessionManagement={<SessionManagement sessions={recentItems} onOpen={handleRecentClick} onRename={handleRenameSession} onDelete={handleDeleteSession} />} /> :
          view === 'workflow' ? <WorkflowWorkspace workflowRunId={workflowRunId} sessionId={activeSessionId} onRunIdChange={handleWorkflowRunIdChange} onOpenRun={handleOpenWorkflowRun} onOpenPlan={handleOpenPlan} onOpenJudgment={handleOpenCollaborationSession} /> :
          view === 'simulation' ? <TrafficMapWorkspace workflowRunId={workflowRunId} onWorkflowRunIdChange={handleWorkflowRunIdChange} onOpenWorkflowRun={handleOpenWorkflowRun} focusEventId={trafficEventId} focusRoadName={trafficRoadName} focusRisk={trafficRisk} onClearFocus={handleClearTrafficFocus} onSelectEvent={handleOpenTrafficEvent} onOpenRisk={handleOpenTrafficRisk} onOpenRoad={handleOpenTrafficRoad} onOpenPlan={handleOpenPlan} onOpenCollaboration={handleOpenCollaborationSession} onOpenKnowledge={() => handleNavigate('qa')} /> :
          view === 'planning' ? <PlanCenter planId={planId} rootRunId={rootRunId} fromVersion={fromVersion} toVersion={toVersion} onPlanSelect={handlePlanSelect} onRootRunIdChange={handleRootRunIdChange} onDiffChange={handleDiffChange} onOpenWorkflowRun={handleOpenWorkflowRun} onOpenJudgment={handleOpenCollaborationSession} /> :
