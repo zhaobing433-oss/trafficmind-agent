@@ -3,7 +3,7 @@ import { Map, Marker, NavigationControl, AttributionControl, setWorkerUrl, type 
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { pilotGeography } from '../../data/pilot/pilotGeography';
-import { mapStyle } from './mapConfig';
+import { fallbackMapStyle, mapStyle } from './mapConfig';
 import { pilotBounds, shouldFocusEvent, type MapEvent, type EventMapLocation } from './mapLocation';
 import { eventTitle, eventTypeLabel } from '../../utils/display';
 
@@ -18,22 +18,43 @@ export default function RealMapView({ events, selectedId, onSelect, onTopology }
   const selectRef = useRef(onSelect); selectRef.current = onSelect;
   const focused = useRef<string | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [provider, setProvider] = useState<'vector' | 'raster-fallback'>('vector');
   useEffect(() => {
-    let alive = true, failed = false, map: Map | undefined;
-    const timeout = setTimeout(() => { if (alive) setState(s => s === 'loading' ? 'error' : s); }, 18000);
+    let alive = true, failed = false, usingFallback = false, map: Map | undefined;
+    let timeout: ReturnType<typeof setTimeout>;
+    const scheduleTimeout = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        if (!alive || !map) return;
+        if (!usingFallback) {
+          usingFallback = true; failed = false; setProvider('raster-fallback'); setState('loading');
+          map.setStyle(fallbackMapStyle()); scheduleTimeout();
+        } else setState('error');
+      }, 18000);
+    };
     try {
       map = new Map({ container: container.current!, style: mapStyle(), bounds: pilotBounds(), fitBoundsOptions: { padding: 35, maxZoom: 14 },
         minZoom: 9, maxZoom: 18, attributionControl: false, cooperativeGestures: true } as MapOptions);
       mapRef.current = map;
       map.addControl(new NavigationControl({ showCompass: false }), 'top-left');
       map.addControl(new AttributionControl({ compact: false }), 'bottom-right');
-      map.on('error', () => { failed = true; if (alive) setState('error'); });
-      map.on('load', () => {
+      map.on('error', () => {
         if (!alive || !map) return;
+        if (!usingFallback) {
+          usingFallback = true; failed = false; setProvider('raster-fallback'); setState('loading');
+          map.setStyle(fallbackMapStyle()); scheduleTimeout();
+          return;
+        }
+        failed = true; setState('error');
+      });
+      map.on('style.load', () => {
+        if (!alive || !map) return;
+        if (map.getSource('pilot-intersections')) return;
         map.addSource('pilot-intersections', { type: 'geojson', data: pilotGeography as GeoJSON.FeatureCollection });
         map.addLayer({ id: 'pilot-intersections', type: 'circle', source: 'pilot-intersections', paint: { 'circle-radius': 3, 'circle-color': '#47786f', 'circle-opacity': 0.55, 'circle-stroke-width': 1, 'circle-stroke-color': '#ffffff' } });
       });
       map.on('idle', () => { if (alive && !failed && map?.isStyleLoaded() && map.areTilesLoaded()) { clearTimeout(timeout); setState('ready'); } });
+      scheduleTimeout();
     } catch { setState('error'); }
     const resize = new ResizeObserver(() => map?.resize());
     if (container.current) resize.observe(container.current);
@@ -65,9 +86,10 @@ export default function RealMapView({ events, selectedId, onSelect, onTopology }
     return () => markers.forEach(marker => marker.remove());
   }, [events, selectedId]);
 
-  return <div className="pilot-map-frame" data-map-state={state}>
+  return <div className="pilot-map-frame" data-map-state={state} data-map-provider={provider}>
     <div className="pilot-map-canvas" ref={container} aria-label="钱塘 Pilot 公开地图" />
     {state === 'loading' && <div className="pilot-map-message" role="status">地图加载中</div>}
+    {state === 'ready' && provider === 'raster-fallback' && <div className="pilot-map-provider">矢量底图不可用，已切换基础底图</div>}
     {state === 'error' && <div className="pilot-map-message" role="alert">地图暂时无法加载 <button onClick={onTopology}>切换到拓扑视图</button></div>}
   </div>;
 }

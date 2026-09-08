@@ -24,6 +24,7 @@ import { RelatedWorkflowRuns } from '../workflow/RelatedWorkflowRuns';
 import { eventTitle, eventTypeLabel, isIncompleteEvent } from '../../utils/display';
 import { currentCollaboration, currentPlan, currentWorkflow, derivePrimaryAction, eventSourceLabel, loadEventRelations, pendingRelations, relationsForSelection, verifiedJudgmentSessionId } from './eventWorkbenchState';
 import type { EventRelations, Relation } from './eventWorkbenchState';
+import { isCurrentEventRecord } from './eventReality';
 import './eventWorkbench.css';
 import { PilotMapPanel } from '../map/PilotMapPanel';
 
@@ -298,32 +299,33 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
 
   const reload = useCallback(() => setReloadKey(k => k + 1), []);
 
-  // 筛选选项：从已加载记录中提取去重（不请求后端）
-  const typeOptions = useMemo(() => [...new Set(records.map(r => r.eventTypeCn || r.eventType).filter(Boolean))].sort(), [records]);
-  const statusOptions = useMemo(() => [...new Set(records.map(r => r.status).filter(Boolean))].sort(), [records]);
-  const roadOptions = useMemo(() => [...new Set(records.map(r => r.roadName).filter(Boolean))].sort(), [records]);
-  const riskOptions = useMemo(() => [...new Set(records.map(r => r.riskLevel).filter(Boolean))].sort(), [records]);
-  const highRiskLoaded = useMemo(() => records.filter(r => ['高风险', '重大风险'].includes(r.riskLevel)).length, [records]);
+  // Historical pools remain available to Grounding, but never masquerade as current traffic.
+  const currentRecords = useMemo(() => records.filter(isCurrentEventRecord), [records]);
+  const typeOptions = useMemo(() => [...new Set(currentRecords.map(r => r.eventTypeCn || r.eventType).filter(Boolean))].sort(), [currentRecords]);
+  const statusOptions = useMemo(() => [...new Set(currentRecords.map(r => r.status).filter(Boolean))].sort(), [currentRecords]);
+  const roadOptions = useMemo(() => [...new Set(currentRecords.map(r => r.roadName).filter(Boolean))].sort(), [currentRecords]);
+  const riskOptions = useMemo(() => [...new Set(currentRecords.map(r => r.riskLevel).filter(Boolean))].sort(), [currentRecords]);
+  const highRiskLoaded = useMemo(() => currentRecords.filter(r => ['高风险', '重大风险'].includes(r.riskLevel)).length, [currentRecords]);
 
   useEffect(() => {
     onSummaryChange?.({ total, loaded: records.length, highRiskLoaded });
   }, [highRiskLoaded, onSummaryChange, records.length, total]);
 
-  const filtered = records.filter(r =>
+  const filtered = currentRecords.filter(r =>
     (!filterType || (r.eventTypeCn || r.eventType) === filterType) &&
     (!filterStatus || r.status === filterStatus) &&
     (!filterRoad || r.roadName === filterRoad) &&
     (!filterRisk || r.riskLevel === filterRisk),
   );
   const prioritized = useMemo(() => [...filtered].sort(comparePriority), [filtered]);
-  const roadSummaries = useMemo(() => aggregateRoads(records), [records]);
+  const roadSummaries = useMemo(() => aggregateRoads(currentRecords), [currentRecords]);
 
   const hasFocus = Boolean(focusEventId || focusRoadName || focusRisk);
   const selectedEvent = focusEventId && focusState.kind === 'found' ? focusState.ev : null;
   const queueRecords = prioritized;
   const selectedTitle = selectedEvent ? eventTitle({ roadName: selectedEvent.roadName, eventTypeCn: selectedEvent.typeCn }) : '选择事件查看详情';
   const selectedIncomplete = selectedEvent ? isIncompleteEvent({ roadName: selectedEvent.roadName, eventTypeCn: selectedEvent.typeCn }) : false;
-  const selectedRoadEventCount = selectedEvent?.roadName ? records.filter(r => r.roadName === selectedEvent.roadName).length : 0;
+  const selectedRoadEventCount = selectedEvent?.roadName ? currentRecords.filter(r => r.roadName === selectedEvent.roadName).length : 0;
   const attentionReasons = selectedEvent ? buildAttentionReasons(selectedEvent, selectedRoadEventCount) : [];
   const selectedId = selectedEvent?.eventId || null;
   const relations = relationsForSelection(relationSnapshot, selectedId, relationReloadKey);
@@ -509,7 +511,7 @@ export const RealEventsPanel: React.FC<Props> = ({ focusEventId, focusRoadName, 
         {(hasFocus || filterType || filterStatus) && <button className="event-text-button" onClick={clearFilters}>清除筛选与聚焦</button>}
         <button className="event-icon-button" onClick={() => { reload(); refreshRelations(); }} title="刷新事件与关联信息" aria-label="刷新事件与关联信息"><ReloadOutlined /></button>
       </div>
-      <p className="event-range">筛选范围：最近 {LIMIT} 条记录 · 已加载 {records.length} / 共 {total ?? '未确认'} 条 · 当前匹配 {filtered.length} 条</p>
+      <p className="event-range">当前事件 {currentRecords.length} 条 · 当前匹配 {filtered.length} 条 · 历史样本仅用于研判依据</p>
       <div className="real-events-workbench">
         <div className="event-spatial-column">
         <PilotMapPanel events={selectedEvent?.eventId === focusEventId && !filtered.some(event => event.eventId === focusEventId)

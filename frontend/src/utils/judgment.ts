@@ -54,6 +54,8 @@ export function provenanceLabel(value: unknown): string {
   const source = record(value);
   const type = text(record(source.provenance).sourceType) || text(source.sourceType) || text(source.verificationStatus);
   return ({ real_public_verified: '公开区域资料', real_public_source_grounded: '公开法规/规则',
+    real_public_reported_incident: '公开历史事件',
+    public_incident_replay_system_closure: '公开历史事件 · 系统回放案例',
     synthetic_validation: '合成历史样本 · 用于验证', synthetic_validation_holdout: '合成历史样本 · 用于验证',
     synthetic_event_system_closure: '系统闭环验证案例', synthetic_case_seed: '系统闭环验证案例' } as Record<string, string>)[type] || '来源未核验';
 }

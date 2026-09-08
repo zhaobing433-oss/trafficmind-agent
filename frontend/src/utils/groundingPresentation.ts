@@ -40,7 +40,7 @@ export function groundingPresentation(raw: unknown, rawTasks: unknown, finalDeci
   if (blocks[1].status === 'READY') {
     const refs = records(history.recentEventRefs);
     blocks[1].metadata.push('匹配 ' + numberText(history.eventCount) + ' 起 · 快照保留 ' + refs.length + ' 条明细');
-    blocks[1].rows = refs.map(x => ({ title: judgmentTitle(x), summary: text(x.roadName) || '历史位置未记录',
+    blocks[1].rows = refs.map(x => ({ eventId: text(x.eventId) || undefined, title: judgmentTitle(x), summary: text(x.roadName) || '历史位置未记录',
       metadata: [text(x.riskLevel) || '风险未记录', text(x.status) || '状态未记录', dateText(x.createdAt)],
       sourceLabel: provenanceLabel(x.provenance ? x : history) }));
   }
@@ -52,9 +52,11 @@ export function groundingPresentation(raw: unknown, rawTasks: unknown, finalDeci
     sourceLabel: provenanceLabel(x.provenance || x.sourceType ? x : knowledge),
   }));
   if (blocks[3].status === 'READY') blocks[3].rows = records(cases.cases).map(x => ({
-    title: judgmentTitle(x), summary: text(x.generatedSummary), outcome: caseOutcome(x.finalStatus),
+    caseId: text(x.caseId) || undefined, title: judgmentTitle(x), summary: text(x.generatedSummary), outcome: caseOutcome(x.finalStatus),
     metadata: ['位置：' + (text(x.roadName) || text(x.intersectionName) || '快照未记录名称'),
       '审批结果：' + (({ rejected: '已驳回', approved: '已批准' } as Record<string, string>)[text(x.approvalStatus)] || '未单独记录'),
+      text(record(record(x.workflowOutcome).businessOutcome).status) === 'unknown_without_external_evidence'
+        ? '实际交通处置效果：未记录' : '实际交通处置效果：来源未说明',
       dateText(x.completedAt), ...records(x.lessonRefs).map(y => text(y.summary)).filter(Boolean)],
     sourceLabel: provenanceLabel(x.provenance || x.sourceType ? x : cases),
   }));

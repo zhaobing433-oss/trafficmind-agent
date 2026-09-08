@@ -1,0 +1,18 @@
+{
+  "packId": "QT_BY_XIASHA_PUBLIC_HISTORY_001",
+  "packVersion": "1.0.0",
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "datasetReality": "real_public_reported_incident_history",
+  "description": "公开来源可核验的钱塘 Pilot 交通事件级事实；不包含真实处置方案、工作流结果或个人信息。",
+  "inventory": {
+    "acceptedEvents": 4,
+    "exactIntersectionEvents": 2,
+    "roadBoundEvents": 2,
+    "excludedCandidates": 7
+  },
+  "privacy": {
+    "rawSourcePagesStored": false,
+    "personallyIdentifyingInformationStored": false,
+    "eventLevelFactsOnly": true
+  }
+}

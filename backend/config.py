@@ -27,7 +27,7 @@ LLM_ENABLED = bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "your_api_key")
 
 # -------------------- 路径配置 --------------------
 
-DB_PATH = str(_BACKEND_DIR / "data" / "trafficmind.db")
+DB_PATH = os.getenv("TRAFFICMIND_DB_PATH", str(_BACKEND_DIR / "data" / "trafficmind.db"))
 RULES_PATH = str(_BACKEND_DIR / "data" / "rules" / "traffic_rules.md")
 
 # -------------------- 风险评分配置 --------------------

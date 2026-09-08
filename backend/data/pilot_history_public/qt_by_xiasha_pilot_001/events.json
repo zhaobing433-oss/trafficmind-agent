@@ -1,0 +1,86 @@
+{
+  "datasetReality": "real_public_reported_incident_history",
+  "events": [
+    {
+      "eventId": "PUB_QT_HIST_0001",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "occurredAt": "2022-10-09T07:20:00+08:00",
+      "occurredAtPrecision": "minute",
+      "locationText": "杭州市钱塘区学林街高沙路口",
+      "roadName": "高沙路 × 学林街",
+      "participantCategory": ["电动自行车", "行人"],
+      "impactSummary": "有人员受伤",
+      "responsibilitySummary": "来源记载电动自行车驾驶人负事故全部责任",
+      "sourceId": "SRC_QT_COURT_2024_2595",
+      "canonicalBinding": {
+        "bindingType": "exact_intersection",
+        "regionId": "QT_BY_XIASHA_PILOT_001",
+        "roadId": null,
+        "intersectionId": "QT_BY_INT_GAOSHA_XUELIN",
+        "bindingSource": "source_location_text_exact_match"
+      }
+    },
+    {
+      "eventId": "PUB_QT_HIST_0002",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "occurredAt": "2015-11-16T06:25:00+08:00",
+      "occurredAtPrecision": "minute",
+      "locationText": "杭州下沙学源街与文海南路路口",
+      "roadName": "文海南路 × 学源街",
+      "participantCategory": ["机动车", "电动自行车"],
+      "impactSummary": "有人员受伤并有车辆受损",
+      "responsibilitySummary": "来源记载机动车驾驶人负事故全部责任",
+      "sourceId": "SRC_QT_COURT_2016_00626",
+      "canonicalBinding": {
+        "bindingType": "exact_intersection",
+        "regionId": "QT_BY_XIASHA_PILOT_001",
+        "roadId": null,
+        "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN",
+        "bindingSource": "source_location_text_exact_match"
+      }
+    },
+    {
+      "eventId": "PUB_QT_HIST_0003",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "occurredAt": "2013-05-22",
+      "occurredAtPrecision": "date",
+      "locationText": "杭州下沙学源街铭和苑桂雨坊小区处",
+      "roadName": "学源街",
+      "participantCategory": ["机动车", "行人"],
+      "impactSummary": "有人员受伤，来源记载一人死亡，并有车辆受损",
+      "responsibilitySummary": "来源记载机动车驾驶人负事故全部责任，行人无事故责任",
+      "sourceId": "SRC_QT_COURT_2013_496",
+      "canonicalBinding": {
+        "bindingType": "road_bound",
+        "regionId": "QT_BY_XIASHA_PILOT_001",
+        "roadId": "QT_BY_RD_XUEYUAN",
+        "intersectionId": null,
+        "bindingSource": "source_location_text_named_canonical_road"
+      }
+    },
+    {
+      "eventId": "PUB_QT_HIST_0004",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "occurredAt": "2013-03-02",
+      "occurredAtPrecision": "date",
+      "locationText": "杭州经济技术开发区学源街文津路口",
+      "roadName": "学源街",
+      "participantCategory": ["机动车"],
+      "impactSummary": "三辆车辆受损",
+      "responsibilitySummary": "来源记载一方驾驶人负事故全部责任",
+      "sourceId": "SRC_QT_COURT_2013_245",
+      "canonicalBinding": {
+        "bindingType": "road_bound",
+        "regionId": "QT_BY_XIASHA_PILOT_001",
+        "roadId": "QT_BY_RD_XUEYUAN",
+        "intersectionId": null,
+        "bindingSource": "source_location_text_named_canonical_road",
+        "note": "文津路不属于当前 G1；仅按来源明确出现的 G1 学源街作道路级绑定。"
+      }
+    }
+  ]
+}

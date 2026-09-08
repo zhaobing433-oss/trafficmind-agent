@@ -9,7 +9,7 @@ TrafficMind Agent 是一个智能交通事件分析系统，支持从事件研�
 Traffic 默认显示公开地图底图与事件工作台；地图/拓扑切换不改变选中事件。演练验证为次级入口，不代表真实道路 GIS 或实时交通数据。会话打开、重命名、删除保留在协同研判页面的折叠「会话管理」中。
 
 - 复用 MapLibre GL JS，以独立 lazy chunk 加载。底图或引擎失败不阻断事件、研判、方案与审批入口。
-- 默认 OSM Standard raster 仅用于本地 Demo/Pilot，无 production tile SLA。保留 © OpenStreetMap contributors，遵守 [OSM Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/)；不提供离线下载或批量预取，使用浏览器默认缓存与 Referer。
+- 默认使用 [OpenFreeMap Positron](https://openfreemap.org/quick_start/) 的现代浅色 MapLibre 矢量样式；无需仓库密钥，失败时自动回退 OSM Standard raster，再失败仍可切换拓扑。两者仅用于本地 Demo/Pilot，无 production tile SLA；production 应配置正式 style/tile provider 或自托管。
 - 正式部署可在前端构建环境设置 `VITE_MAP_STYLE_URL`，使用获授权的 MapLibre style/provider；不要把私有 token 写入仓库。
 - `frontend/src/data/pilot/pilotGeography.ts` 仅投影现有 G1 的 9 个 OSM 来源路口点（WGS84、2026-09-01 核验、ODbL），保留节点编号与源记录。部分位置为多个道路节点的均值，只作公开地图近似展示；视野由这些点计算，不是行政边界。
 - 首版只使用 `GET /regional/events/{eventId}/location-binding` 的 active/resolved 精确路口绑定，且当前 canonical 路口与核验坐标必须一致。未解析、道路名称、仅道路绑定、无来源坐标不生成事件 Marker；仍保留事件队列与详情。道路/POI 无坐标时不补点，不画伪道路 geometry。
@@ -708,6 +708,22 @@ backend/.venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
 启动后访问：
 - **Swagger API 文档**: http://127.0.0.1:8000/docs
 - **健康检查**: http://127.0.0.1:8000/health
+
+### 钱塘 Pilot Demo
+
+开发默认启动继续读取 `backend/data/trafficmind.db`，不会隐式切换数据。钱塘 Pilot 演示使用独立 DB、RAG 和 vector store；从仓库根目录用一条命令启动：
+
+```bash
+./scripts/start-qiantang-demo.sh
+```
+
+等待终端显示启动摘要后访问 <http://127.0.0.1:5174>；按 `Ctrl+C` 会停止该命令创建的前后端进程。脚本固定使用 `5174 → 8011`，显式配置前端 API target，并在端口冲突时停止，不会连接到已有服务。输入包没有变化时会复用已验证的 deterministic snapshot；输入变化时只重建 `backend/data/pilot_demo/qt_by_xiasha_pilot_001/runtime/`。
+
+该 runtime 包含 G1 公开核验地理、G2 公开规则知识、独立的公开历史事件包、既有合成闭环案例，以及引用 G3-C 的 8 条钱塘 Pilot 当前验证事件。页面显示“钱塘 Pilot · 验证数据环境”；当前事件不是实时生产 feed。公开事件触发的 Agent、Plan、Workflow、Approval 与 Case 是 deterministic 系统回放，不是当年的真实交通部门处置，实际业务效果记为未记录。生成的 DB/vector 文件不提交。
+
+普通 `8000` backend 与 `5173` frontend 是默认开发 runtime，仍读取 `backend/data/trafficmind.db`，不要将其当作钱塘 Pilot Demo。需要强制重建隔离 snapshot 时可设置 `QIANTANG_DEMO_RESET=1 ./scripts/start-qiantang-demo.sh`。
+
+`VITE_MAP_STYLE_URL` 可覆盖默认 MapLibre style。OpenFreeMap/OSM public provider 仅用于本地可视化，不承诺生产 SLA；生产部署应使用具备容量、许可与可用性保障的 provider 或自托管方案。
 
 ### 前端
 

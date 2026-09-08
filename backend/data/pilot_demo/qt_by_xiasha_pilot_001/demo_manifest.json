@@ -1,0 +1,47 @@
+{
+  "demoId": "QT_BY_XIASHA_PILOT_DEMO_001",
+  "version": "1.0.0",
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "runtimeReality": "isolated_pilot_validation_runtime",
+  "stores": {
+    "productionDefaultsChanged": false,
+    "generatedFilesTracked": false
+  },
+  "syntheticClosureSeedEventIds": [
+    "SYN_QT_HIST_0001",
+    "SYN_QT_HIST_0002",
+    "SYN_QT_HIST_0003",
+    "SYN_QT_HIST_0019",
+    "SYN_QT_HIST_0027",
+    "SYN_QT_HIST_0032",
+    "SYN_QT_HIST_0044",
+    "SYN_QT_HIST_0068"
+  ],
+  "publicReplay": [
+    {"eventId": "PUB_QT_HIST_0001", "decision": "approve"},
+    {"eventId": "PUB_QT_HIST_0003", "decision": "reject"}
+  ],
+  "currentEventIds": [
+    "SYN_QT_HOLDOUT_0001",
+    "SYN_QT_HOLDOUT_0002",
+    "SYN_QT_HOLDOUT_0003",
+    "SYN_QT_HOLDOUT_0004",
+    "SYN_QT_HOLDOUT_0005",
+    "SYN_QT_HOLDOUT_0006",
+    "SYN_QT_HOLDOUT_0007",
+    "SYN_QT_HOLDOUT_0008"
+  ],
+  "approvalPolicy": {
+    "frozenBeforeExecution": true,
+    "syntheticSeedOrder": "odd_approve_even_reject",
+    "publicReplayDecisions": "manifest_ordered",
+    "visibleToAgent": false
+  },
+  "realityContract": {
+    "currentEvents": "synthetic_validation_holdout",
+    "publicHistory": "real_public_reported_incident",
+    "publicReplayCases": "public_incident_replay_system_closure",
+    "publicReplaySystemDecision": "deterministic_validation_replay",
+    "businessOutcome": "unknown_without_external_evidence"
+  }
+}

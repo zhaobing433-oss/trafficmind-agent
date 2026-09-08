@@ -35,6 +35,6 @@ export function PilotMapPanel({ events, selectedId, onSelect, topology, refreshK
     {view === 'map' ? <MapBoundary onTopology={() => setView('topology')}><Suspense fallback={<div className="pilot-map-frame pilot-map-failure" role="status">地图加载中</div>}><RealMapView events={located} selectedId={selectedId} onSelect={onSelect} onTopology={() => setView('topology')} /></Suspense></MapBoundary> : <div className="pilot-topology-view"><p className="event-muted">演练关系拓扑，非真实道路 GIS；不用于定位系统事件。</p>{topology}</div>}
     {view === 'map' && <><div className="pilot-map-caption">公开地图底图 · 系统事件记录，非实时路况 · 已核验位置 {located.length} / {events.length}</div>
     {selectedId && <p className="pilot-location-note" role="status">{!current ? '正在核对事件地图位置...' : current.kind === 'located' ? `位置：${current.location.label} · 绑定路口位置（公开地图近似）` : current.kind === 'error' ? '事件地图位置查询失败，未显示位置标记' : '该事件暂无可核验地图位置'}</p>}
-    <a className="pilot-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></>}
+    <span className="pilot-attribution"><a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></span></>}
   </section>;
 }

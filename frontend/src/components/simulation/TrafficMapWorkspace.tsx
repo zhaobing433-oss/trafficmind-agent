@@ -37,6 +37,8 @@ interface Props {
 }
 
 type TrafficMode = 'realtime' | 'simulation';
+const runtimeEnv = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
+const isQiantangDemo = runtimeEnv.VITE_RUNTIME_PROFILE === 'qiantang-demo';
 
 export const TrafficMapWorkspace: React.FC<Props> = ({
   workflowRunId: appWfRunId, onWorkflowRunIdChange, onOpenWorkflowRun,
@@ -159,10 +161,18 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
             <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.25, color: color.text, fontWeight: 600 }}>交通态势</h1>
             <div style={{ marginTop: 6, fontSize: 13, color: color.textMuted }}>事件研判与执行追踪</div>
           </div>
-          <button className="event-text-button" onClick={() => {
-            setTrafficMode(mode => mode === 'realtime' ? 'simulation' : 'realtime');
-            if (!scenarios.length) listScenarios().then(value => setScenarios(value.scenarios)).catch(() => setError('演练场景暂不可用'));
-          }}>{trafficMode === 'realtime' ? '演练验证' : '返回事件工作台'}</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {isQiantangDemo && (
+              <div title="当前页面使用隔离的钱塘 Pilot 验证数据，不是生产实时交通" style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '5px 9px', border: `1px solid ${color.border}`, borderRadius: radius.sm, background: color.surfaceSubtle }}>
+                <strong style={{ color: color.primary, fontSize: 13, fontWeight: 600 }}>钱塘 Pilot</strong>
+                <span style={{ color: color.textMuted, fontSize: 11 }}>验证数据环境</span>
+              </div>
+            )}
+            <button className="event-text-button" onClick={() => {
+              setTrafficMode(mode => mode === 'realtime' ? 'simulation' : 'realtime');
+              if (!scenarios.length) listScenarios().then(value => setScenarios(value.scenarios)).catch(() => setError('演练场景暂不可用'));
+            }}>{trafficMode === 'realtime' ? '演练模式' : '返回事件工作台'}</button>
+          </div>
         </div>
       </header>
 

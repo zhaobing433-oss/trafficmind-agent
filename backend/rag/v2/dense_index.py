@@ -10,7 +10,11 @@ import os
 import re
 from typing import Dict, List, Optional
 
-from backend.rag.v2.config import RAG_V2_COLLECTION_NAME, RAG_V2_V1_COLLECTION_NAME
+from backend.rag.v2.config import (
+    RAG_V2_COLLECTION_NAME,
+    RAG_V2_V1_COLLECTION_NAME,
+    RAG_V2_VECTOR_DB_PATH,
+)
 from backend.rag.v2.models import RagChunk
 
 logger = logging.getLogger("rag.v2.dense_index")
@@ -31,9 +35,7 @@ _VECTOR_DB_PATH: Optional[str] = None
 def _get_vector_db_path() -> str:
     global _VECTOR_DB_PATH
     if _VECTOR_DB_PATH is None:
-        from pathlib import Path
-        _backend = Path(__file__).resolve().parent.parent.parent
-        _VECTOR_DB_PATH = str(_backend / "data" / "vector_db")
+        _VECTOR_DB_PATH = RAG_V2_VECTOR_DB_PATH
     return _VECTOR_DB_PATH
 
 

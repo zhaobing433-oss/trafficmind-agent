@@ -156,7 +156,9 @@ export function eventSourceLabel(payload: unknown): string {
   const full = objectValue(top.fullResult);
   const provenances = [top.provenance, raw.provenance, full.provenance, objectValue(full.standardEvent).provenance].map(objectValue);
   const sources = provenances.map(p => String(p.sourceType || ''));
-  if (sources.some(s => ['synthetic_validation', 'synthetic_validation_holdout', 'synthetic_event_system_closure', 'synthetic_case_seed'].includes(s))) return '合成验证事件';
+  if (sources.includes('real_public_reported_incident')) return '公开历史事件';
+  if (sources.includes('synthetic_validation')) return '合成历史样本 · 用于验证';
+  if (sources.some(s => ['synthetic_validation_holdout', 'synthetic_event_system_closure', 'synthetic_case_seed'].includes(s))) return '合成验证事件';
   // No production provenance contract is currently defined; persistence alone is not verification.
   return '来源未核验';
 }

@@ -149,13 +149,28 @@ def get_history(limit: int = 50) -> List[Dict[str, Any]]:
     cursor = conn.cursor()
     cursor.execute(
         "SELECT eventId, eventType, eventTypeCn, roadName, riskScore, "
-        "riskLevel, status, createdAt, updatedAt "
+        "riskLevel, status, createdAt, updatedAt, rawEvent "
         "FROM event_records ORDER BY updatedAt DESC LIMIT ?",
         (limit,),
     )
     rows = cursor.fetchall()
     conn.close()
-    return [dict(row) for row in rows]
+    records = []
+    for row in rows:
+        record = dict(row)
+        raw_event = record.pop("rawEvent", None)
+        try:
+            event = json.loads(raw_event) if isinstance(raw_event, str) else raw_event
+        except json.JSONDecodeError:
+            event = None
+        provenance = event.get("provenance") if isinstance(event, dict) else None
+        if isinstance(provenance, dict):
+            for key in ("sourceType", "datasetId", "datasetReality"):
+                value = provenance.get(key)
+                if value is not None:
+                    record[key] = value
+        records.append(record)
+    return records
 
 
 def get_event_by_id(event_id: str) -> Optional[Dict[str, Any]]:

@@ -209,5 +209,5 @@ test('known resources do not enable creation when another required query errors'
 test('provenance labeling never guesses from IDs or persistence', () => {
   assert.equal(eventSourceLabel({ eventId: 'synthetic_validation_123' }), '来源未核验');
   assert.equal(eventSourceLabel({ sourceType: 'event_records' }), '来源未核验');
-  assert.equal(eventSourceLabel({ rawEvent: { provenance: { sourceType: 'synthetic_validation' } } }), '合成验证事件');
+  assert.equal(eventSourceLabel({ rawEvent: { provenance: { sourceType: 'synthetic_validation' } } }), '合成历史样本 · 用于验证');
 });

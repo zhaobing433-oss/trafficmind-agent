@@ -26,6 +26,8 @@ export interface GroundingRow {
   summary: string;
   metadata: string[];
   sourceLabel: string;
+  eventId?: string;
+  caseId?: string;
   documentId?: string;
   outcome?: string;
 }

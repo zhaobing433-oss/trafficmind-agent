@@ -69,6 +69,9 @@ export interface EventRecord {
   status: string;
   createdAt: string;
   updatedAt: string;
+  sourceType?: string;
+  datasetId?: string;
+  datasetReality?: string;
 }
 
 /** /stats 返回体 */
