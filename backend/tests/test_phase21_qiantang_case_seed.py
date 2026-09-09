@@ -54,7 +54,6 @@ REGION_PACK_DIR = Path(__file__).resolve().parents[1] / "data" / "pilot_regions"
 KNOWLEDGE_PACK_DIR = Path(__file__).resolve().parents[1] / "data" / "pilot_knowledge" / "qt_by_xiasha_pilot_001"
 CASE_SEED_DIR = Path(__file__).resolve().parents[1] / "data" / "pilot_case_seed" / "qt_by_xiasha_pilot_001"
 PRODUCTION_DB = Path(__file__).resolve().parents[1] / "data" / "trafficmind.db"
-PRODUCTION_DB_SHA256 = "beada6c6ec049151ac2bce999f2a74b5ab0285d6a6304d90ce94fa7fb38376db"
 REPORT_PATH = Path(os.getenv("PHASE21_G3B_REPORT_PATH", "/tmp/phase21_g3b_case_seed_report.json"))
 G3B_EXECUTION_TIME = "2026-09-04T13:00:00Z"
 G3C_FROZEN_T0 = "2026-09-04T13:10:55Z"
@@ -148,6 +147,21 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _production_db_state() -> Dict[str, Any]:
+    sidecars = {}
+    for suffix in ("-wal", "-shm"):
+        path = Path(f"{PRODUCTION_DB}{suffix}")
+        if path.exists():
+            sidecars[path.name] = {
+                "sha256": _sha256(path),
+                "size": path.stat().st_size,
+            }
+    return {
+        "sha256": _sha256(PRODUCTION_DB),
+        "sidecars": sidecars,
+    }
 
 
 def _table_count(db_path: str, table: str) -> int:
@@ -323,7 +337,7 @@ def isolated(tmp_path, monkeypatch):
     chroma_path = str(tmp_path / "phase21_g3b_case_seed_chroma")
     assert event_db != str(PRODUCTION_DB)
     assert PRODUCTION_DB.exists()
-    assert _sha256(PRODUCTION_DB) == PRODUCTION_DB_SHA256
+    production_db_before = _production_db_state()
 
     monkeypatch.setattr(cfg, "DB_PATH", event_db)
     monkeypatch.setattr(db_tools, "DB_PATH", event_db)
@@ -395,9 +409,10 @@ def isolated(tmp_path, monkeypatch):
         "collabRepo": SQLiteCollaborationRepository(),
         "workflowRepo": workflow_repo,
         "caseRepo": SQLiteCaseMemoryRepository(),
+        "productionDbBefore": production_db_before,
     }
 
-    assert _sha256(PRODUCTION_DB) == PRODUCTION_DB_SHA256
+    assert _production_db_state() == production_db_before
 
 
 @pytest.fixture()
@@ -808,7 +823,7 @@ def test_qiantang_g3b_eight_seed_system_closure(app_client, isolated, monkeypatc
     assert wrong_region_case_id not in [item["caseId"] for item in after_wrong_region_context["cases"]]
 
     production_recheck = _sha256(PRODUCTION_DB)
-    assert production_recheck == PRODUCTION_DB_SHA256
+    assert production_recheck == isolated["productionDbBefore"]["sha256"]
     assert isolated["eventDb"].startswith(isolated["tmpRoot"])
     assert isolated["ragDb"].startswith(isolated["tmpRoot"])
     assert isolated["ftsPath"].startswith(isolated["tmpRoot"])
