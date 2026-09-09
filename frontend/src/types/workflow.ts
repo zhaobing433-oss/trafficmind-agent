@@ -277,3 +277,44 @@ export const APPROVAL_STATUS_LABELS: Record<ApprovalSummaryStatus, string> = {
   approved: '已批准',
   rejected: '已驳回',
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Phase20 R2 — Decision Provenance types（后端安全投影，只渲染白名单字段）
+// 契约来源：backend/planning/decision_provenance.py build_decision_provenance
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type DecisionType = 'critic' | 'semantic_replan' | 'assessment';
+
+/** 确定性排序（decisionType 秩 + boundaryKey），非时间顺序 */
+export interface DecisionProvenanceEntry {
+  decisionType: DecisionType | string;
+  runId: string;
+  rootRunId: string;
+  planVersion: number;
+  boundaryKey: string;
+  decisionStatus: string;
+  groundedMode: string | null;
+  groundedPlanEnabled: boolean | null;
+  providerCall: boolean | null;
+  providerClaimed: boolean | null;
+  evidenceRefs: string[] | null;
+  runStatus: string;
+  // critic
+  recommendation?: string | null;
+  confidence?: number | null;
+  // semantic_replan
+  criticBoundaryKey?: string | null;
+  criticRecommendation?: string | null;
+  resultStatus?: string | null;
+  childRunId?: string | null;
+  childVersion?: number | null;
+  // assessment
+  verdict?: string | null;
+  goalResolved?: boolean | null;
+}
+
+export const DECISION_TYPE_LABELS: Record<string, string> = {
+  critic: 'Critic 反思',
+  semantic_replan: '语义重规划',
+  assessment: '执行评估',
+};

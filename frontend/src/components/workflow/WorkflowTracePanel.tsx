@@ -4,7 +4,7 @@ import { Card, Tabs, Spin, Empty, Typography, Tag, Descriptions, Alert } from 'a
 import {
   getRunTrace, getRun, type WorkflowTrace, type WorkflowRunDetail,
 } from '../../api/workflowApi';
-import { RUN_STATUS_COLORS } from '../../types/workflow';
+import { RUN_STATUS_COLORS, RUN_STATUS_LABELS } from '../../types/workflow';
 import type { WorkflowRunStatus, NodeType, NodeStatus, ApprovalDecision } from '../../types/workflow';
 import { WorkflowRunTimeline } from './WorkflowRunTimeline';
 import { WorkflowNodeCard } from './WorkflowNodeCard';
@@ -13,6 +13,7 @@ import { WorkflowApprovalCard } from './WorkflowApprovalCard';
 import { WorkflowActionRecordCard } from './WorkflowActionRecordCard';
 import { WorkflowErrorBoundary } from './WorkflowErrorBoundary';
 import { processApproval, resumeRun } from '../../api/workflowApi';
+import { workflowTemplateVersionLabel } from '../../utils/display';
 
 interface Props {
   runId: string;
@@ -38,7 +39,9 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
       setTrace(t);
       setDetail(d);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load trace');
+      // Phase20 R2：404 → 运行不存在（未找到 / 已删除）。不得 fallback 到 parent 或其它运行。
+      const msg = e instanceof Error ? e.message : '';
+      setError(/404/.test(msg) ? '未找到 / 已删除' : (msg || 'Failed to load trace'));
     } finally {
       setLoading(false);
     }
@@ -113,13 +116,20 @@ export const WorkflowTracePanel: React.FC<Props> = ({ runId, visible = true, onR
   return (
     <WorkflowErrorBoundary runId={runId}>
       <Card size="small" style={{ marginBottom: 12 }}>
-        <Descriptions size="small" column={4}>
-          <Descriptions.Item label="Run ID">{runId}</Descriptions.Item>
+        <Descriptions size="small" column={3}>
           <Descriptions.Item label="状态">
-            <Tag color={RUN_STATUS_COLORS[status] || 'default'}>{status}</Tag>
+            <Tag color={RUN_STATUS_COLORS[status] || 'default'}>{RUN_STATUS_LABELS[status] || status}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="版本">{trace?.version || '-'}</Descriptions.Item>
-          <Descriptions.Item label="Definition">{trace?.definitionId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="模板版本">{trace?.version ? workflowTemplateVersionLabel(trace.version) : '-'}</Descriptions.Item>
+          <Descriptions.Item label="技术信息">
+            <details>
+              <summary style={{ cursor: 'pointer', color: '#6B7280' }}>查看</summary>
+              <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#9CA3AF', wordBreak: 'break-all' }}>
+                Run ID: {runId}<br />
+                Definition: {trace?.definitionId || '-'}
+              </div>
+            </details>
+          </Descriptions.Item>
         </Descriptions>
       </Card>
 

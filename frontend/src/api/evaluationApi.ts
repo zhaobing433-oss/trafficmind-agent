@@ -1,5 +1,5 @@
 /** Phase 14 Round 3 Evaluation API */
-import type { EvalReportSummary, EvalReportFull, EvalCaseDetail, ReportCompare } from '../types/evaluation';
+import type { EvalReportSummary, EvalReportFull, EvalCaseDetail, ReportCompare, EvalSummary } from '../types/evaluation';
 
 const API = '/api/evaluation';
 
@@ -19,6 +19,13 @@ export async function getReport(reportId: string): Promise<EvalReportFull> {
 export async function getCase(reportId: string, caseId: string): Promise<EvalCaseDetail> {
   const resp = await fetch(`${API}/reports/${encodeURIComponent(reportId)}/cases/${encodeURIComponent(caseId)}`);
   if (!resp.ok) throw new Error(`Get case failed: ${resp.status}`);
+  return resp.json();
+}
+
+/** Phase20 R2：产品级总览 — 复用 GET /evaluation/reports/{id}/summary（后端为 authority） */
+export async function getReportSummary(reportId: string): Promise<EvalSummary> {
+  const resp = await fetch(`${API}/reports/${encodeURIComponent(reportId)}/summary`);
+  if (!resp.ok) throw new Error(`Get report summary failed: ${resp.status}`);
   return resp.json();
 }
 

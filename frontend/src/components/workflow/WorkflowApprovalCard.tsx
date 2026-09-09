@@ -86,7 +86,7 @@ export const WorkflowApprovalCard: React.FC<Props> = ({
     >
       <div style={{ marginBottom: 8 }}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          ID: {approvalId} | 节点: {nodeId}
+          审批编号: {approvalId} | 节点: {nodeId}
         </Typography.Text>
       </div>
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from backend.knowledge.service import (
@@ -23,6 +23,7 @@ from backend.knowledge.service import (
     get_document_chunks,
     get_document_detail,
     get_index_status,
+    ingest_uploaded_document,
     list_documents,
     reindex_document,
 )
@@ -86,6 +87,30 @@ async def api_create_document(body: CreateDocumentRequest):
             doc_type=body.docType,
             content=body.content,
             metadata=body.metadata,
+        )
+    except KnowledgeError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
+@router.post("/documents/upload", summary="上传 TXT/MD 文件录入知识文档")
+async def api_upload_document(
+    file: UploadFile = File(..., description=".txt 或 .md 文件（≤100KB，UTF-8 编码）"),
+    doc_type: str = Form("other", description="文档类型（DocType 枚举值，默认 other）"),
+):
+    """多部分表单上传 TXT/MD 文件并走既有摄取管道。
+
+    文件仅在内存中读取，不落盘；PDF 等非文本类型一律拒绝。
+    同名文件重传走 checksum 去重 / 版本升级路径（与文本录入共用同一管道）。
+    """
+    try:
+        raw = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"读取上传文件失败: {e}")
+    try:
+        return ingest_uploaded_document(
+            filename=file.filename or "",
+            doc_type=doc_type,
+            raw_bytes=raw,
         )
     except KnowledgeError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))

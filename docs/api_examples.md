@@ -642,3 +642,88 @@ curl -X DELETE "http://localhost:8000/chat/sessions/sess_20260724..."
 ```
 
 > **注意**：删除会话时会级联清理全部关联数据（chat_messages、memory_summaries、evidence_logs、collaboration_runs、collaboration_tasks、collaboration_messages、collaboration_conflicts、collaboration_events）。
+
+---
+
+## Phase20 产品化跨页接口
+
+以下接口用于前端跨页导航与真实关系展示。页面只能使用持久化 ID 查询；不存在关系时展示空态，不构造演示绑定。
+
+### 15. GET /workflow/runs — 查询 Workflow Runs
+
+按会话或事件查询相关运行，返回真实总数和当前页数据。
+
+```bash
+curl "http://localhost:8000/workflow/runs?session_id=sess_20260724...&limit=50&offset=0"
+curl "http://localhost:8000/workflow/runs?event_id=E202606290001&limit=50&offset=0"
+```
+
+**响应字段摘要：**
+
+```json
+{
+  "total": 72,
+  "limit": 50,
+  "offset": 0,
+  "runs": [
+    {
+      "runId": "run_...",
+      "definitionId": "plan_...",
+      "definitionName": "高风险交通事件处置",
+      "status": "completed",
+      "sessionId": "sess_...",
+      "eventSummary": {
+        "roadName": "人民路",
+        "eventType": "congestion",
+        "eventTypeCn": "拥堵"
+      }
+    }
+  ]
+}
+```
+
+前端必须显示 `total`；当 `runs.length < total` 时，必须说明当前仅展示部分结果。
+
+### 16. GET /workflow/runs/{run_id} — 查询 Run 详情与决策链
+
+```bash
+curl "http://localhost:8000/workflow/runs/run_..."
+```
+
+响应包含 `run`、`state`、`nodeRuns`、`events`、`actionRecords` 和 `decisionProvenance`。`decisionProvenance` 是后端安全投影字段，前端不得从 raw trace payload、raw prompt、raw response、memory body 或 action params 中拼装决策链。
+
+当子运行不存在或已被删除时，前端显示“未找到 / 已删除”，不得回退到 parent run。
+
+### 17. GET /workflow/runs/{run_id}/trace — 查询 Run Trace
+
+```bash
+curl "http://localhost:8000/workflow/runs/run_.../trace"
+```
+
+用于工作流详情页展示时间线、节点状态、审批和动作记录。Trace 展示只反映该 `run_id` 的真实数据。
+
+### 18. GET /evaluation/reports/{report_id}/summary — 查询评测摘要
+
+```bash
+curl "http://localhost:8000/evaluation/reports/eval_.../summary"
+```
+
+**响应字段摘要：**
+
+```json
+{
+  "evaluationId": "eval_...",
+  "overallStatus": "PASS",
+  "metricsStatus": "PASS",
+  "gateStatus": "PASS",
+  "totalCases": 32,
+  "passedCases": 32,
+  "failedCases": 0,
+  "overallScore": 1.0,
+  "gates": [
+    { "gateId": "safetyPolicyPassRate", "status": "PASS", "threshold": 1.0, "actual": 1.0 }
+  ]
+}
+```
+
+历史或不完整报告可能返回空字段；前端应展示“未记录”或短横线，不在客户端推算 summary 结论。

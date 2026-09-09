@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -51,6 +52,10 @@ ALLOWED_DOC_TYPES = {DocType.RULE, DocType.DISPATCH_EXPERIENCE, DocType.EVENT_RE
                      DocType.DAILY_REPORT, DocType.WEEKLY_REPORT, DocType.CASE,
                      DocType.REGULATION, DocType.AGENT_OUTPUT, DocType.OTHER}
 MAX_NAME_LENGTH = 200
+
+# ── File upload limits（Phase 20）──
+MAX_UPLOAD_BYTES = 100_000  # 与 MAX_CONTENT_LENGTH 对齐（100KB）
+ALLOWED_UPLOAD_EXTENSIONS = {".txt", ".md"}
 
 
 class KnowledgeError(Exception):
@@ -216,6 +221,65 @@ def create_document(
         raise KnowledgeError(f"文档索引失败: {e}", 500)
 
     return _doc_to_summary(get_document(doc_id) or doc)
+
+
+def ingest_uploaded_document(
+    filename: str,
+    doc_type: str,
+    raw_bytes: bytes,
+) -> Dict[str, Any]:
+    """上传文件 → 文档入库（Phase 20: TXT/MD 多部分上传）。
+
+    只允许 .txt / .md 文本文件；仅在内存中读取、不落盘；
+    复用 create_document 的完整摄取管道（校验 → checksum → 分块 → 向量化 → Chroma）。
+    同名文件重传走既有 checksum 去重 / 版本升级路径（source_id 确定性）。
+
+    Args:
+        filename: 客户端提供的原始文件名（不可信，需清洗）
+        doc_type: 文档类型（DocType 枚举值）
+        raw_bytes: 文件原始字节
+
+    Returns:
+        文档摘要 DTO（同 create_document 返回值）
+    """
+    # ── 文件名清洗（仅用 basename，防路径穿越）──
+    sanitized = os.path.basename((filename or "").replace("\\", "/")).strip()
+    if not sanitized:
+        raise KnowledgeError("文件名不能为空")
+    if len(sanitized) > MAX_NAME_LENGTH:
+        raise KnowledgeError(f"文件名不能超过 {MAX_NAME_LENGTH} 字符")
+
+    # ── 扩展名白名单（PDF 等一律拒绝）──
+    ext = os.path.splitext(sanitized)[1].lower()
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise KnowledgeError(
+            f"不支持的文件类型 '{ext or '(无扩展名)'}'，仅支持 .txt / .md 文本文件"
+        )
+
+    # ── 大小上限 ──
+    if len(raw_bytes) > MAX_UPLOAD_BYTES:
+        raise KnowledgeError(f"文件超过大小上限 {MAX_UPLOAD_BYTES // 1000}KB", 413)
+
+    # ── UTF-8 解码（容忍 BOM）──
+    try:
+        content = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise KnowledgeError("文件不是有效的 UTF-8 文本，无法解析")
+
+    if not content.strip():
+        raise KnowledgeError("文件内容为空")
+
+    # ── 复用既有摄取管道 ──
+    return create_document(
+        name=sanitized,
+        doc_type=doc_type,
+        content=content,
+        metadata={
+            "source_id": f"upload:{sanitized}",
+            "source_uri": f"upload:{sanitized}",
+            "authority_level": "operational",
+        },
+    )
 
 
 def _index_single_document(doc: RagDocument) -> None:

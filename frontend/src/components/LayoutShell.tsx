@@ -3,6 +3,7 @@
  */
 import { ReactNode, useState } from 'react';
 import Sidebar from './Sidebar';
+import { visualTokens } from '../styles/visualTokens';
 
 interface RecentItem { id: string; title: string; mode: string; updatedAt: number }
 
@@ -20,9 +21,10 @@ interface Props {
 
 export default function LayoutShell({ children, activeView, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeConvId, recentList }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const sidebarWidth = collapsed ? 72 : 248;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#F7F8FA' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: visualTokens.color.appBg, color: visualTokens.color.text }}>
       <Sidebar
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}
@@ -36,9 +38,9 @@ export default function LayoutShell({ children, activeView, onNavigate, onRecent
         recentList={recentList}
       />
       <div style={{
-        flex: 1, marginLeft: collapsed ? 72 : 240,
+        flex: 1, marginLeft: sidebarWidth,
         transition: 'margin-left 0.2s ease',
-        display: 'flex', flexDirection: 'column', minHeight: '100vh',
+        display: 'flex', flexDirection: 'column', minHeight: '100vh', minWidth: 0,
       }}>
         {children}
       </div>

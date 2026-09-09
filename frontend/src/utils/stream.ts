@@ -1,9 +1,4 @@
-/** 前端伪流式工具 */
-
-export function thinkingSteps(): string {
-  const steps = ['🔍 正在分析问题...', '📚 检索知识库中...', '🤔 综合评估...', '✍ 生成回答...'];
-  return steps[Math.floor(Math.random() * steps.length)];
-}
+/** 前端伪流式工具 — Phase20 R2：已删除 thinkingSteps（伪造思考步骤），只保留文本逐句输出 */
 
 /**
  * 流式逐句输出文本。

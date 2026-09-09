@@ -1,6 +1,6 @@
 /** Workflow V1 + Workflow Center V2 API 客户端 */
 
-import type { RunListResponse } from '../types/workflow';
+import type { RunListResponse, DecisionProvenanceEntry } from '../types/workflow';
 
 const API = '/api';
 
@@ -17,6 +17,7 @@ export interface WorkflowRunDetail {
   events: Array<Record<string, unknown>>;
   actionRecords: Array<Record<string, unknown>>;
   nodeCount: number; eventCount: number;
+  decisionProvenance?: DecisionProvenanceEntry[];
 }
 
 export interface WorkflowTrace {
@@ -160,12 +161,14 @@ export async function getRunStream(
 /** 列出 Run 历史（Workflow Center V2） */
 export async function listRuns(params?: {
   status?: string; definition_id?: string; session_id?: string;
+  event_id?: string;
   limit?: number; offset?: number;
 }): Promise<RunListResponse> {
   const qs = new URLSearchParams();
   if (params?.status) qs.set('status', params.status);
   if (params?.definition_id) qs.set('definition_id', params.definition_id);
   if (params?.session_id) qs.set('session_id', params.session_id);
+  if (params?.event_id) qs.set('event_id', params.event_id);
   if (params?.limit !== undefined) qs.set('limit', String(params.limit));
   if (params?.offset !== undefined) qs.set('offset', String(params.offset));
   const query = qs.toString();

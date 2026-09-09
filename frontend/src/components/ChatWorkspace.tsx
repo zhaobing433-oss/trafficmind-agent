@@ -4,7 +4,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { flushSync } from 'react-dom';
-import { thinkingSteps, streamText } from '../utils/stream';
+import { streamText } from '../utils/stream';
 import { createConversation, loadConversation, type Conversation, type Message } from '../utils/conversation';
 import { chatApi, type ChatMessage as BackendMsg } from '../api/chatApi';
 import { streamChat } from '../api/streamApi';
@@ -12,6 +12,7 @@ import { Spin, Tag, Collapse } from 'antd';
 import { RobotOutlined, UserOutlined, WarningOutlined, SendOutlined, PlusOutlined } from '@ant-design/icons';
 import ThinkingAvatar from './ThinkingAvatar';
 import RagTracePanel from './rag/RagTracePanel';
+import { RelatedWorkflowRuns } from './workflow/RelatedWorkflowRuns';
 import type { RagEvidenceItem } from '../types/ragV2';
 
 type R = Record<string, unknown>;
@@ -27,13 +28,14 @@ interface Props {
   onSessionCreated?: (sessionId: string) => void;  // CRITICAL: tells App the new session ID
   onConversationUpdate?: () => void;
   onNewConversation?: () => void;
+  onOpenWorkflowRun?: (runId: string) => void;
   view?: string;
 }
 
 export default function ChatWorkspace({
   sessionId, pendingCreate, draftInput, draftMode, onDraftConsumed,
   defaultMode = 'react', showFullModes = true, onSessionCreated,
-  onConversationUpdate, onNewConversation, view = 'home',
+  onConversationUpdate, onNewConversation, onOpenWorkflowRun, view = 'home',
 }: Props) {
   const [conv, setConv] = useState<Conversation>(() =>
     loadConversation(sessionId || '') || createConversation('新对话', defaultMode));
@@ -167,7 +169,8 @@ export default function ChatWorkspace({
           setConv(prev => ({ ...prev, id: s.sessionId }));
         }
         if (!sid) throw new Error('无法获取会话ID');
-        updateStreaming(skelId, thinkingSteps());
+        // Phase20 R2：REST 降级路径只允许中性状态，不伪造「正在检索/Agent 正在分析」等步骤
+        updateStreaming(skelId, '正在处理请求…');
         const resp = await chatApi.sendMessage(sid, text.trim(), submitMode);
         const answer = (resp.assistantMessage.content as string) || '';
         const note = resp.abstained ? '\n\n⚠ 证据不足' : '';
@@ -278,6 +281,11 @@ export default function ChatWorkspace({
         {loading && !streamingMsgId && <div style={{ textAlign: 'center', padding: 8 }}><Spin size="small" /> 分析中...</div>}
         <div ref={msgEnd} />
       </div>
+
+      {/* Phase20 R2：相关 Workflow Runs（session-level 真实关系，0..N 全部展示） */}
+      {sessionId && onOpenWorkflowRun && (
+        <RelatedWorkflowRuns sessionId={sessionId} onOpenRun={onOpenWorkflowRun} />
+      )}
 
       {/* Input */}
       <div style={{ background: '#FFF', borderRadius: 20, border: '1px solid #E5E7EB', padding: '8px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginTop: 8 }}>

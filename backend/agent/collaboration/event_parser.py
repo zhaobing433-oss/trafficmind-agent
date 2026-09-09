@@ -187,7 +187,7 @@ def build_current_event(
 
     # ===== STABLE FIELDS: can be inherited in continue_event =====
     stable_fields = [
-        "roadName", "direction", "isMainRoad", "nearbySchool", "nearbyHospital",
+        "eventId", "roadName", "direction", "isMainRoad", "nearbySchool", "nearbyHospital",
         "eventTypeCn", "eventType", "weather", "timePeriod",
         "pedestrianRisk", "signalOptimizationRequested", "conflictIntent",
     ]
@@ -203,6 +203,9 @@ def build_current_event(
             # Parser returned a default value; explicit takes precedence in continue_event
             nl_parsed[field] = explicit[field]
             field_sources[field] = "explicit_previous_reference"
+        elif field == "eventId" and explicit.get(field) is not None:
+            nl_parsed[field] = explicit[field]
+            field_sources[field] = "explicit_event_identity"
         elif parsed_val is not None:
             # bool False or parser default from NL — still "current_message" (fresh event)
             field_sources[field] = "current_message"

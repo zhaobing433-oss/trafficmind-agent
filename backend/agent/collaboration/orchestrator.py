@@ -432,15 +432,16 @@ def _agent_result_sse(agent_name: str, result) -> str:
         "status": result.status,
         "attempt": getattr(result, "attempt", 1) or 1,
         "executionMode": execution_mode,
-        "result": {
-            "urgency": result.urgency,
-            "findings": result.findings,
-            "recommendation": result.suggestion,
-            "confidence": result.confidence,
-            "evidenceRefs": result.evidence_refs,
-            "limitations": result.assumptions or [],
+            "result": {
+                "urgency": result.urgency,
+                "findings": result.findings,
+                "recommendation": result.suggestion,
+                "confidence": result.confidence,
+                "evidenceRefs": result.evidence_refs,
+                "proposedActions": result.proposed_actions,
+                "limitations": result.assumptions or [],
+            }
         }
-    }
     return sse_event("agent_result", payload)
 
 

@@ -81,7 +81,10 @@ class ActionCandidateResolver:
                 f"风险等级为「{ctx.risk_level}」，需要通知", candidates, issues,
             )
 
-        # Rule 2: simulation（仅仿真上下文 / 仿真评估目标）
+        # Rule 2: persisted Agent recommendations（adapter validated; resolver re-checks）
+        self._add_agent_recommendations(ctx, candidates, issues)
+
+        # Rule 3: simulation（仅仿真上下文 / 仿真评估目标）
         if ctx.has_simulation_context() or ctx.goal_type_is(GoalType.SIMULATION_EVALUATION):
             sim_type = self._simulation_action_for(ctx)
             self._add_candidate(
@@ -89,7 +92,7 @@ class ActionCandidateResolver:
                 "存在仿真上下文，需要仿真动作", candidates, issues,
             )
 
-        # Rule 3: save_result（闭环持久化，固定最后）
+        # Rule 4: save_result（闭环持久化，固定最后）
         self._add_candidate(
             ctx, "save_result", "rule_persist_result",
             "闭环计划持久化分析结果", candidates, issues,
@@ -129,6 +132,33 @@ class ActionCandidateResolver:
             reason=reason,
             paramsTemplate={},
         ))
+
+    def _add_agent_recommendations(
+        self,
+        ctx: PlanningContext,
+        candidates: List[ActionCandidate],
+        issues: List[ValidationIssue],
+    ) -> None:
+        audit = (ctx.constraints or {}).get("agentRecommendationAudit") or {}
+        accepted = audit.get("accepted") if isinstance(audit, dict) else []
+        if not isinstance(accepted, list):
+            return
+        existing = {c.actionType for c in candidates}
+        for item in accepted:
+            if not isinstance(item, dict):
+                continue
+            action_type = str(item.get("actionType") or "").strip()
+            if not action_type or action_type in existing:
+                continue
+            before = len(candidates)
+            self._add_candidate(
+                ctx, action_type,
+                f"agent_recommendation:{item.get('agentName', '')}",
+                "Agent 结构化推荐动作", candidates, issues,
+            )
+            if len(candidates) > before:
+                candidates[-1].paramsTemplate = dict(item.get("paramsTemplate") or {})
+                existing.add(action_type)
 
     def _simulation_action_for(self, ctx: PlanningContext) -> str:
         """确定性选择仿真动作类型（Round1 占位：按 goalType 映射）。"""
