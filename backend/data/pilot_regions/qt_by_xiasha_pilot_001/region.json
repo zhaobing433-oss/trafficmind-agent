@@ -1,0 +1,49 @@
+{
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "name": "钱塘区白杨-金沙湖-下沙高教园试点区",
+  "city": "杭州市",
+  "district": "钱塘区",
+  "timezone": "Asia/Shanghai",
+  "status": "active",
+  "description": "Phase21 G1 bounded pilot region for Baiyang-Jinsha Lake-Xiasha Higher Education area. This is an internal TrafficMind pilot identity, not an official administrative unit.",
+  "metadata": {
+    "displayName": "钱塘区白杨-金沙湖-下沙高教园试点区",
+    "coverageType": "bounded_pilot",
+    "coverageDescription": "白杨-金沙湖-下沙高教园试点片区",
+    "notOfficialAdministrativeUnit": true,
+    "officialAdministrativeRegion": {
+      "city": "杭州市",
+      "district": "钱塘区"
+    },
+    "approximateStudyArea": {
+      "longitudeRange": [120.320, 120.390],
+      "latitudeRange": [30.300, 30.330],
+      "verificationStatus": "DERIVED_APPROXIMATE",
+      "note": "G0 study-area approximation only; not an official boundary and not used as official GIS truth."
+    },
+    "boundaryMembershipContract": {
+      "type": "explicit_inventory_with_open_geo_coordinate_check",
+      "rule": "A formal entity belongs to this bounded pilot only if it is explicitly listed in this pack, has source-backed membership in the Baiyang-Xiasha higher-education/Jinsha study area, and all stored intersection coordinates fall inside the approximateStudyArea.",
+      "roadMembershipBasis": "Included roads are explicitly listed pilot inventory: either first-party-address verified roads in the pilot area plus OSM samples, open-geo roads that connect listed pilot intersections, or open-geo auxiliary road samples inside the approximateStudyArea for first-pass regional coverage.",
+      "intersectionMembershipBasis": "Included intersections are verified by OSM shared road nodes for two listed canonical roads and their stored WGS84 coordinates are inside the approximateStudyArea.",
+      "poiMembershipBasis": "Included POIs use first-party address pages and are bound only to a listed road supported by the address."
+    },
+    "dataReality": {
+      "region": "real_verified",
+      "roads": "real_verified_or_open_geo_verified",
+      "intersections": "real_open_geo_verified",
+      "relations": "derived_from_real_geography",
+      "pois": "real_verified",
+      "historicalEvents": "not_included",
+      "caseMemory": "not_included",
+      "realtimeTraffic": false,
+      "officialGIS": false
+    },
+    "g1VerificationStatus": "VERIFIED_OFFICIAL",
+    "sourceIds": ["SRC_QT_ADMIN_2021", "SRC_QT_PLAN_QT03_2024"]
+  },
+  "sourceType": "official_public",
+  "sourceReference": "SRC_QT_ADMIN_2021,SRC_QT_PLAN_QT03_2024",
+  "verifiedAt": "2026-09-01T00:00:00Z",
+  "verificationStatus": "verified"
+}

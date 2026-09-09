@@ -85,7 +85,7 @@ class AgentResult(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0, description="置信度 0-1")
     suggestion: str = ""
     urgency: str = "low"
-    evidence_refs: List[str] = Field(default_factory=list)
+    evidence_refs: List[Any] = Field(default_factory=list)
     proposed_actions: List[Dict[str, Any]] = Field(default_factory=list)
     assumptions: List[str] = Field(default_factory=list)
     duration_ms: int = 0

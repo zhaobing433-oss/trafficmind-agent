@@ -7,6 +7,8 @@ export type TaskStatus = 'pending' | 'ready' | 'running' | 'succeeded' | 'retryi
   | 'failed' | 'timed_out' | 'blocked' | 'skipped';
 
 export interface CollaborationRun {
+  normalizedEvent?: Record<string, unknown>;
+  grounding?: import('./judgment').GroundingPresentation;
   runId: string; traceId: string;
   sessionId: string;  // chat_session.id — used to filter runs per session
   status: RunStatus; executionEngine: 'orchestrator' | 'legacy';

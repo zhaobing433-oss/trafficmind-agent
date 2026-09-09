@@ -1,13 +1,14 @@
 /**
  * LayoutShell — 左侧 Sidebar + 右侧内容区
  */
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
 import { visualTokens } from '../styles/visualTokens';
+import type { RecentJudgmentProps } from './collaboration/RecentJudgments';
 
 interface RecentItem { id: string; title: string; mode: string; updatedAt: number }
 
-interface Props {
+interface Props extends RecentJudgmentProps {
   children: ReactNode;
   activeView: string;
   onNavigate: (view: string) => void;
@@ -19,13 +20,20 @@ interface Props {
   recentList: RecentItem[];
 }
 
-export default function LayoutShell({ children, activeView, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeConvId, recentList }: Props) {
-  const [collapsed, setCollapsed] = useState(false);
+export default function LayoutShell({ children, activeView, onNavigate, onRecentClick, onNewConversation, onRenameSession, onDeleteSession, activeConvId, recentList, ...judgments }: Props) {
+  const [collapsed, setCollapsed] = useState(() => window.matchMedia('(max-width: 760px)').matches);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 760px)');
+    const collapseOnNarrow = () => { if (query.matches) setCollapsed(true); };
+    query.addEventListener('change', collapseOnNarrow);
+    return () => query.removeEventListener('change', collapseOnNarrow);
+  }, []);
   const sidebarWidth = collapsed ? 72 : 248;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: visualTokens.color.appBg, color: visualTokens.color.text }}>
       <Sidebar
+        {...judgments}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}
         onNavigate={onNavigate}

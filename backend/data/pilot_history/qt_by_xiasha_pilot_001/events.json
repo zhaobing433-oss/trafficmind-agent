@@ -1,0 +1,5054 @@
+{
+  "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+  "datasetVersion": "1.0.0",
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "datasetReality": "synthetic_validation_history",
+  "realGeography": true,
+  "realTrafficEventLogs": false,
+  "holdoutIncluded": false,
+  "caseSeedIncluded": false,
+  "historyRangeStart": "2024-08-05T18:30:00Z",
+  "historyRangeEnd": "2026-07-21T12:30:00Z",
+  "events": [
+    {
+      "eventId": "SYN_QT_HIST_0001",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "西向东",
+      "avgSpeed": 16,
+      "queueLength": 145,
+      "duration": 960,
+      "vehicleCount": 19,
+      "confidence": 0.73,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 24,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2024-08-05T18:30:00Z",
+      "updatedAt": "2024-08-05T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0002",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "北向南",
+      "avgSpeed": 7,
+      "queueLength": 305,
+      "duration": 900,
+      "vehicleCount": 26,
+      "confidence": 0.75,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 53,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2024-08-10T00:30:00Z",
+      "updatedAt": "2024-08-10T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0003",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "西向东",
+      "avgSpeed": 20,
+      "queueLength": 155,
+      "duration": 1500,
+      "vehicleCount": 11,
+      "confidence": 0.77,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 76,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2024-08-15T06:30:00Z",
+      "updatedAt": "2024-08-15T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0004",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文泽路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 15,
+      "queueLength": 85,
+      "duration": 2400,
+      "vehicleCount": 10,
+      "confidence": 0.79,
+      "weather": "fog",
+      "timePeriod": "evening_peak",
+      "riskScore": 95,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2024-08-20T12:30:00Z",
+      "updatedAt": "2024-08-20T13:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0005",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "高沙路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 12,
+      "queueLength": 225,
+      "duration": 1320,
+      "vehicleCount": 25,
+      "confidence": 0.81,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 28,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2024-08-25T18:30:00Z",
+      "updatedAt": "2024-08-25T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0006",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文泽路 × 学源街",
+      "direction": "北向南",
+      "avgSpeed": 13,
+      "queueLength": 215,
+      "duration": 900,
+      "vehicleCount": 16,
+      "confidence": 0.83,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 52,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2024-08-30T00:30:00Z",
+      "updatedAt": "2024-08-30T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0007",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文海南路 × 学源街",
+      "direction": "西向东",
+      "avgSpeed": 14,
+      "queueLength": 145,
+      "duration": 1500,
+      "vehicleCount": 18,
+      "confidence": 0.85,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 75,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2024-09-04T06:30:00Z",
+      "updatedAt": "2024-09-04T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0008",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文海南路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 5,
+      "queueLength": 305,
+      "duration": 2400,
+      "vehicleCount": 25,
+      "confidence": 0.87,
+      "weather": "fog",
+      "timePeriod": "evening_peak",
+      "riskScore": 94,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2024-09-09T12:30:00Z",
+      "updatedAt": "2024-09-09T13:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0009",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "学正街 × 23号大街",
+      "direction": "西向东",
+      "avgSpeed": 22,
+      "queueLength": 155,
+      "duration": 1680,
+      "vehicleCount": 10,
+      "confidence": 0.89,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 27,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2024-09-14T18:30:00Z",
+      "updatedAt": "2024-09-14T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0010",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "2号大街",
+      "direction": "北向南",
+      "avgSpeed": 17,
+      "queueLength": 85,
+      "duration": 900,
+      "vehicleCount": 9,
+      "confidence": 0.91,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 56,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2024-09-19T00:30:00Z",
+      "updatedAt": "2024-09-19T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_NO2",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0011",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文泽路",
+      "direction": "西向东",
+      "avgSpeed": 10,
+      "queueLength": 225,
+      "duration": 1500,
+      "vehicleCount": 24,
+      "confidence": 0.73,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 74,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2024-09-24T06:30:00Z",
+      "updatedAt": "2024-09-24T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENZE",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0012",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "金沙大道",
+      "direction": "北向南",
+      "avgSpeed": 11,
+      "queueLength": 215,
+      "duration": 2400,
+      "vehicleCount": 15,
+      "confidence": 0.75,
+      "weather": "fog",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2024-09-29T12:30:00Z",
+      "updatedAt": "2024-09-29T13:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_JINSHA",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0013",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "学林街",
+      "direction": "西向东",
+      "avgSpeed": 16,
+      "queueLength": 145,
+      "duration": 2040,
+      "vehicleCount": 24,
+      "confidence": 0.77,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2024-10-04T18:30:00Z",
+      "updatedAt": "2024-10-04T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUELIN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0014",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "学源街",
+      "direction": "北向南",
+      "avgSpeed": 7,
+      "queueLength": 305,
+      "duration": 900,
+      "vehicleCount": 24,
+      "confidence": 0.79,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2024-10-09T00:30:00Z",
+      "updatedAt": "2024-10-09T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUEYUAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0015",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文海南路",
+      "direction": "西向东",
+      "avgSpeed": 20,
+      "queueLength": 155,
+      "duration": 1500,
+      "vehicleCount": 9,
+      "confidence": 0.81,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2024-10-14T06:30:00Z",
+      "updatedAt": "2024-10-14T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENHAINAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0016",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "东向西",
+      "avgSpeed": 7,
+      "queueLength": 320,
+      "duration": 480,
+      "vehicleCount": 27,
+      "confidence": 0.88,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2024-10-19T12:30:00Z",
+      "updatedAt": "2024-10-19T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0017",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "南向北",
+      "avgSpeed": 20,
+      "queueLength": 80,
+      "duration": 600,
+      "vehicleCount": 12,
+      "confidence": 0.9,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2024-10-24T18:30:00Z",
+      "updatedAt": "2024-10-24T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0018",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "东向西",
+      "avgSpeed": 15,
+      "queueLength": 100,
+      "duration": 1500,
+      "vehicleCount": 11,
+      "confidence": 0.72,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2024-10-29T00:30:00Z",
+      "updatedAt": "2024-10-29T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0019",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文泽路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 12,
+      "queueLength": 240,
+      "duration": 2400,
+      "vehicleCount": 26,
+      "confidence": 0.74,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2024-11-03T06:30:00Z",
+      "updatedAt": "2024-11-03T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0020",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "高沙路 × 学林街",
+      "direction": "东向西",
+      "avgSpeed": 13,
+      "queueLength": 140,
+      "duration": 480,
+      "vehicleCount": 10,
+      "confidence": 0.76,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2024-11-08T12:30:00Z",
+      "updatedAt": "2024-11-08T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0021",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文泽路 × 学源街",
+      "direction": "南向北",
+      "avgSpeed": 14,
+      "queueLength": 160,
+      "duration": 960,
+      "vehicleCount": 19,
+      "confidence": 0.78,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2024-11-13T18:30:00Z",
+      "updatedAt": "2024-11-13T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0022",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文海南路 × 学源街",
+      "direction": "东向西",
+      "avgSpeed": 5,
+      "queueLength": 320,
+      "duration": 1500,
+      "vehicleCount": 26,
+      "confidence": 0.8,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 54,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2024-11-18T00:30:00Z",
+      "updatedAt": "2024-11-18T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0023",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文海南路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 22,
+      "queueLength": 80,
+      "duration": 2400,
+      "vehicleCount": 11,
+      "confidence": 0.82,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 77,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2024-11-23T06:30:00Z",
+      "updatedAt": "2024-11-23T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0024",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "学正街 × 23号大街",
+      "direction": "东向西",
+      "avgSpeed": 17,
+      "queueLength": 100,
+      "duration": 480,
+      "vehicleCount": 10,
+      "confidence": 0.84,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 96,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2024-11-28T12:30:00Z",
+      "updatedAt": "2024-11-28T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0025",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "二号大街",
+      "direction": "南向北",
+      "avgSpeed": 10,
+      "queueLength": 240,
+      "duration": 1320,
+      "vehicleCount": 25,
+      "confidence": 0.86,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 24,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2024-12-03T18:30:00Z",
+      "updatedAt": "2024-12-03T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_NO2",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0026",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文泽路",
+      "direction": "东向西",
+      "avgSpeed": 11,
+      "queueLength": 140,
+      "duration": 1500,
+      "vehicleCount": 16,
+      "confidence": 0.88,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 53,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2024-12-08T00:30:00Z",
+      "updatedAt": "2024-12-08T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENZE",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0027",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "金沙大道",
+      "direction": "南向北",
+      "avgSpeed": 16,
+      "queueLength": 160,
+      "duration": 2400,
+      "vehicleCount": 18,
+      "confidence": 0.9,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 76,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2024-12-13T06:30:00Z",
+      "updatedAt": "2024-12-13T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_JINSHA",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0028",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "钱塘区学林街",
+      "direction": "东向西",
+      "avgSpeed": 7,
+      "queueLength": 320,
+      "duration": 480,
+      "vehicleCount": 25,
+      "confidence": 0.72,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 95,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2024-12-18T12:30:00Z",
+      "updatedAt": "2024-12-18T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUELIN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0029",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "下沙高教园区学源街",
+      "direction": "南向北",
+      "avgSpeed": 20,
+      "queueLength": 80,
+      "duration": 1680,
+      "vehicleCount": 10,
+      "confidence": 0.74,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 28,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2024-12-23T18:30:00Z",
+      "updatedAt": "2024-12-23T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUEYUAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0030",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "Wenhai South Road",
+      "direction": "东向西",
+      "avgSpeed": 15,
+      "queueLength": 100,
+      "duration": 1500,
+      "vehicleCount": 9,
+      "confidence": 0.76,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 52,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2024-12-28T00:30:00Z",
+      "updatedAt": "2024-12-28T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENHAINAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0031",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "北向南",
+      "avgSpeed": 20,
+      "queueLength": 95,
+      "duration": 480,
+      "vehicleCount": 13,
+      "confidence": 0.83,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 76,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2025-01-02T06:30:00Z",
+      "updatedAt": "2025-01-02T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0032",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "西向东",
+      "avgSpeed": 15,
+      "queueLength": 115,
+      "duration": 900,
+      "vehicleCount": 12,
+      "confidence": 0.85,
+      "weather": "rain",
+      "timePeriod": "evening_peak",
+      "riskScore": 95,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2025-01-07T12:30:00Z",
+      "updatedAt": "2025-01-07T13:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0033",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "北向南",
+      "avgSpeed": 12,
+      "queueLength": 255,
+      "duration": 2040,
+      "vehicleCount": 20,
+      "confidence": 0.87,
+      "weather": "fog",
+      "timePeriod": "night",
+      "riskScore": 28,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2025-01-12T18:30:00Z",
+      "updatedAt": "2025-01-12T19:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0034",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文泽路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 13,
+      "queueLength": 155,
+      "duration": 2400,
+      "vehicleCount": 11,
+      "confidence": 0.89,
+      "weather": "rain",
+      "timePeriod": "morning_peak",
+      "riskScore": 52,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2025-01-17T00:30:00Z",
+      "updatedAt": "2025-01-17T01:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0035",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "高沙路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 14,
+      "queueLength": 175,
+      "duration": 480,
+      "vehicleCount": 20,
+      "confidence": 0.91,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 75,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2025-01-22T06:30:00Z",
+      "updatedAt": "2025-01-22T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0036",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文泽路 × 学源街",
+      "direction": "西向东",
+      "avgSpeed": 5,
+      "queueLength": 335,
+      "duration": 900,
+      "vehicleCount": 27,
+      "confidence": 0.73,
+      "weather": "rain",
+      "timePeriod": "evening_peak",
+      "riskScore": 94,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2025-01-27T12:30:00Z",
+      "updatedAt": "2025-01-27T13:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0037",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文海南路 × 学源街",
+      "direction": "北向南",
+      "avgSpeed": 22,
+      "queueLength": 95,
+      "duration": 600,
+      "vehicleCount": 12,
+      "confidence": 0.75,
+      "weather": "fog",
+      "timePeriod": "night",
+      "riskScore": 27,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2025-02-01T18:30:00Z",
+      "updatedAt": "2025-02-01T19:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0038",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文海南路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 17,
+      "queueLength": 115,
+      "duration": 2400,
+      "vehicleCount": 11,
+      "confidence": 0.77,
+      "weather": "rain",
+      "timePeriod": "morning_peak",
+      "riskScore": 56,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2025-02-06T00:30:00Z",
+      "updatedAt": "2025-02-06T01:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0039",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "学正街 × 23号大街",
+      "direction": "北向南",
+      "avgSpeed": 10,
+      "queueLength": 255,
+      "duration": 480,
+      "vehicleCount": 26,
+      "confidence": 0.79,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 74,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2025-02-11T06:30:00Z",
+      "updatedAt": "2025-02-11T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0040",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "下沙高教园区2号大街",
+      "direction": "西向东",
+      "avgSpeed": 11,
+      "queueLength": 155,
+      "duration": 900,
+      "vehicleCount": 10,
+      "confidence": 0.81,
+      "weather": "rain",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2025-02-16T12:30:00Z",
+      "updatedAt": "2025-02-16T13:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_NO2",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0041",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文泽路",
+      "direction": "北向南",
+      "avgSpeed": 16,
+      "queueLength": 175,
+      "duration": 960,
+      "vehicleCount": 19,
+      "confidence": 0.83,
+      "weather": "fog",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2025-02-21T18:30:00Z",
+      "updatedAt": "2025-02-21T19:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENZE",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0042",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "金沙大道",
+      "direction": "西向东",
+      "avgSpeed": 7,
+      "queueLength": 335,
+      "duration": 2400,
+      "vehicleCount": 26,
+      "confidence": 0.85,
+      "weather": "rain",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2025-02-26T00:30:00Z",
+      "updatedAt": "2025-02-26T01:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_JINSHA",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0043",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "学林街",
+      "direction": "北向南",
+      "avgSpeed": 20,
+      "queueLength": 95,
+      "duration": 480,
+      "vehicleCount": 11,
+      "confidence": 0.87,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2025-03-03T06:30:00Z",
+      "updatedAt": "2025-03-03T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUELIN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0044",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "学源街",
+      "direction": "西向东",
+      "avgSpeed": 15,
+      "queueLength": 115,
+      "duration": 900,
+      "vehicleCount": 10,
+      "confidence": 0.89,
+      "weather": "rain",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2025-03-08T12:30:00Z",
+      "updatedAt": "2025-03-08T13:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUEYUAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0045",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文海南路",
+      "direction": "北向南",
+      "avgSpeed": 12,
+      "queueLength": 255,
+      "duration": 1320,
+      "vehicleCount": 25,
+      "confidence": 0.91,
+      "weather": "fog",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2025-03-13T18:30:00Z",
+      "updatedAt": "2025-03-13T19:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENHAINAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0046",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "南向北",
+      "avgSpeed": 15,
+      "queueLength": 130,
+      "duration": 480,
+      "vehicleCount": 6,
+      "confidence": 0.78,
+      "weather": "cloudy",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2025-03-18T00:30:00Z",
+      "updatedAt": "2025-03-18T01:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0047",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "东向西",
+      "avgSpeed": 12,
+      "queueLength": 180,
+      "duration": 900,
+      "vehicleCount": 21,
+      "confidence": 0.8,
+      "weather": "clear",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2025-03-23T06:30:00Z",
+      "updatedAt": "2025-03-23T06:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0048",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "南向北",
+      "avgSpeed": 13,
+      "queueLength": 170,
+      "duration": 1500,
+      "vehicleCount": 12,
+      "confidence": 0.82,
+      "weather": "cloudy",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2025-03-28T12:30:00Z",
+      "updatedAt": "2025-03-28T13:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0049",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文泽路 × 学林街",
+      "direction": "东向西",
+      "avgSpeed": 14,
+      "queueLength": 190,
+      "duration": 1680,
+      "vehicleCount": 21,
+      "confidence": 0.84,
+      "weather": "clear",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2025-04-02T18:30:00Z",
+      "updatedAt": "2025-04-02T18:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0050",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "高沙路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 5,
+      "queueLength": 260,
+      "duration": 480,
+      "vehicleCount": 28,
+      "confidence": 0.86,
+      "weather": "cloudy",
+      "timePeriod": "morning_peak",
+      "riskScore": 54,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2025-04-07T00:30:00Z",
+      "updatedAt": "2025-04-07T01:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0051",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文泽路 × 学源街",
+      "direction": "东向西",
+      "avgSpeed": 22,
+      "queueLength": 110,
+      "duration": 900,
+      "vehicleCount": 13,
+      "confidence": 0.88,
+      "weather": "clear",
+      "timePeriod": "afternoon",
+      "riskScore": 77,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2025-04-12T06:30:00Z",
+      "updatedAt": "2025-04-12T06:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0052",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文海南路 × 学源街",
+      "direction": "南向北",
+      "avgSpeed": 17,
+      "queueLength": 130,
+      "duration": 1500,
+      "vehicleCount": 12,
+      "confidence": 0.9,
+      "weather": "cloudy",
+      "timePeriod": "evening_peak",
+      "riskScore": 96,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2025-04-17T12:30:00Z",
+      "updatedAt": "2025-04-17T13:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0053",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文海南路 × 学林街",
+      "direction": "东向西",
+      "avgSpeed": 10,
+      "queueLength": 180,
+      "duration": 2040,
+      "vehicleCount": 20,
+      "confidence": 0.72,
+      "weather": "clear",
+      "timePeriod": "night",
+      "riskScore": 24,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2025-04-22T18:30:00Z",
+      "updatedAt": "2025-04-22T18:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0054",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "学正街 × 23号大街",
+      "direction": "南向北",
+      "avgSpeed": 11,
+      "queueLength": 170,
+      "duration": 480,
+      "vehicleCount": 11,
+      "confidence": 0.74,
+      "weather": "cloudy",
+      "timePeriod": "morning_peak",
+      "riskScore": 53,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2025-04-27T00:30:00Z",
+      "updatedAt": "2025-04-27T01:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0055",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "2号大街",
+      "direction": "东向西",
+      "avgSpeed": 16,
+      "queueLength": 190,
+      "duration": 900,
+      "vehicleCount": 20,
+      "confidence": 0.76,
+      "weather": "clear",
+      "timePeriod": "afternoon",
+      "riskScore": 76,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2025-05-02T06:30:00Z",
+      "updatedAt": "2025-05-02T06:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_NO2",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0056",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文泽路",
+      "direction": "南向北",
+      "avgSpeed": 7,
+      "queueLength": 260,
+      "duration": 1500,
+      "vehicleCount": 27,
+      "confidence": 0.78,
+      "weather": "cloudy",
+      "timePeriod": "evening_peak",
+      "riskScore": 95,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2025-05-07T12:30:00Z",
+      "updatedAt": "2025-05-07T13:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENZE",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0057",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "金沙大道",
+      "direction": "东向西",
+      "avgSpeed": 20,
+      "queueLength": 110,
+      "duration": 600,
+      "vehicleCount": 12,
+      "confidence": 0.8,
+      "weather": "clear",
+      "timePeriod": "night",
+      "riskScore": 28,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2025-05-12T18:30:00Z",
+      "updatedAt": "2025-05-12T18:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_JINSHA",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0058",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "钱塘区学林街",
+      "direction": "南向北",
+      "avgSpeed": 15,
+      "queueLength": 130,
+      "duration": 480,
+      "vehicleCount": 11,
+      "confidence": 0.82,
+      "weather": "cloudy",
+      "timePeriod": "morning_peak",
+      "riskScore": 52,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2025-05-17T00:30:00Z",
+      "updatedAt": "2025-05-17T01:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUELIN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0059",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "下沙高教园区学源街",
+      "direction": "东向西",
+      "avgSpeed": 12,
+      "queueLength": 180,
+      "duration": 900,
+      "vehicleCount": 26,
+      "confidence": 0.84,
+      "weather": "clear",
+      "timePeriod": "afternoon",
+      "riskScore": 75,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2025-05-22T06:30:00Z",
+      "updatedAt": "2025-05-22T06:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUEYUAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0060",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "Wenhai South Road",
+      "direction": "南向北",
+      "avgSpeed": 13,
+      "queueLength": 170,
+      "duration": 1500,
+      "vehicleCount": 10,
+      "confidence": 0.86,
+      "weather": "cloudy",
+      "timePeriod": "evening_peak",
+      "riskScore": 94,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2025-05-27T12:30:00Z",
+      "updatedAt": "2025-05-27T13:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENHAINAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0061",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "西向东",
+      "avgSpeed": 12,
+      "queueLength": 195,
+      "duration": 960,
+      "vehicleCount": 22,
+      "confidence": 0.73,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 28,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2025-06-01T18:30:00Z",
+      "updatedAt": "2025-06-01T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0062",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "北向南",
+      "avgSpeed": 13,
+      "queueLength": 185,
+      "duration": 900,
+      "vehicleCount": 13,
+      "confidence": 0.75,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 52,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2025-06-06T00:30:00Z",
+      "updatedAt": "2025-06-06T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0063",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "西向东",
+      "avgSpeed": 14,
+      "queueLength": 205,
+      "duration": 1500,
+      "vehicleCount": 22,
+      "confidence": 0.77,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 75,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2025-06-11T06:30:00Z",
+      "updatedAt": "2025-06-11T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0064",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文泽路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 5,
+      "queueLength": 275,
+      "duration": 2400,
+      "vehicleCount": 29,
+      "confidence": 0.79,
+      "weather": "fog",
+      "timePeriod": "evening_peak",
+      "riskScore": 94,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2025-06-16T12:30:00Z",
+      "updatedAt": "2025-06-16T13:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0065",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "高沙路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 22,
+      "queueLength": 125,
+      "duration": 1320,
+      "vehicleCount": 14,
+      "confidence": 0.81,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 27,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2025-06-21T18:30:00Z",
+      "updatedAt": "2025-06-21T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0066",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文泽路 × 学源街",
+      "direction": "北向南",
+      "avgSpeed": 17,
+      "queueLength": 145,
+      "duration": 900,
+      "vehicleCount": 6,
+      "confidence": 0.83,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 56,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2025-06-26T00:30:00Z",
+      "updatedAt": "2025-06-26T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0067",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文海南路 × 学源街",
+      "direction": "西向东",
+      "avgSpeed": 10,
+      "queueLength": 195,
+      "duration": 1500,
+      "vehicleCount": 21,
+      "confidence": 0.85,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 74,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2025-07-01T06:30:00Z",
+      "updatedAt": "2025-07-01T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0068",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文海南路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 11,
+      "queueLength": 185,
+      "duration": 2400,
+      "vehicleCount": 12,
+      "confidence": 0.87,
+      "weather": "fog",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2025-07-06T12:30:00Z",
+      "updatedAt": "2025-07-06T13:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0069",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "学正街 × 23号大街",
+      "direction": "西向东",
+      "avgSpeed": 16,
+      "queueLength": 205,
+      "duration": 1680,
+      "vehicleCount": 21,
+      "confidence": 0.89,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2025-07-11T18:30:00Z",
+      "updatedAt": "2025-07-11T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0070",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "二号大街",
+      "direction": "北向南",
+      "avgSpeed": 7,
+      "queueLength": 275,
+      "duration": 900,
+      "vehicleCount": 28,
+      "confidence": 0.91,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2025-07-16T00:30:00Z",
+      "updatedAt": "2025-07-16T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_NO2",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0071",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文泽路",
+      "direction": "西向东",
+      "avgSpeed": 20,
+      "queueLength": 125,
+      "duration": 1500,
+      "vehicleCount": 13,
+      "confidence": 0.73,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2025-07-21T06:30:00Z",
+      "updatedAt": "2025-07-21T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENZE",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0072",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "金沙大道",
+      "direction": "北向南",
+      "avgSpeed": 15,
+      "queueLength": 145,
+      "duration": 2400,
+      "vehicleCount": 12,
+      "confidence": 0.75,
+      "weather": "fog",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2025-07-26T12:30:00Z",
+      "updatedAt": "2025-07-26T13:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_JINSHA",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0073",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "学林街",
+      "direction": "西向东",
+      "avgSpeed": 12,
+      "queueLength": 195,
+      "duration": 2040,
+      "vehicleCount": 20,
+      "confidence": 0.77,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2025-07-31T18:30:00Z",
+      "updatedAt": "2025-07-31T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUELIN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0074",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "学源街",
+      "direction": "北向南",
+      "avgSpeed": 13,
+      "queueLength": 185,
+      "duration": 900,
+      "vehicleCount": 11,
+      "confidence": 0.79,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 54,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2025-08-05T00:30:00Z",
+      "updatedAt": "2025-08-05T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUEYUAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0075",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文海南路",
+      "direction": "西向东",
+      "avgSpeed": 14,
+      "queueLength": 205,
+      "duration": 1500,
+      "vehicleCount": 20,
+      "confidence": 0.81,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 77,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2025-08-10T06:30:00Z",
+      "updatedAt": "2025-08-10T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENHAINAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0076",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "东向西",
+      "avgSpeed": 13,
+      "queueLength": 200,
+      "duration": 480,
+      "vehicleCount": 14,
+      "confidence": 0.88,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2025-08-15T12:30:00Z",
+      "updatedAt": "2025-08-15T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0077",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "南向北",
+      "avgSpeed": 14,
+      "queueLength": 130,
+      "duration": 600,
+      "vehicleCount": 23,
+      "confidence": 0.9,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2025-08-20T18:30:00Z",
+      "updatedAt": "2025-08-20T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0078",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "东向西",
+      "avgSpeed": 5,
+      "queueLength": 290,
+      "duration": 1500,
+      "vehicleCount": 30,
+      "confidence": 0.72,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 54,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2025-08-25T00:30:00Z",
+      "updatedAt": "2025-08-25T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0079",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文泽路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 22,
+      "queueLength": 140,
+      "duration": 2400,
+      "vehicleCount": 8,
+      "confidence": 0.74,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 77,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2025-08-30T06:30:00Z",
+      "updatedAt": "2025-08-30T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0080",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "高沙路 × 学林街",
+      "direction": "东向西",
+      "avgSpeed": 17,
+      "queueLength": 70,
+      "duration": 480,
+      "vehicleCount": 7,
+      "confidence": 0.76,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 96,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2025-09-04T12:30:00Z",
+      "updatedAt": "2025-09-04T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0081",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文泽路 × 学源街",
+      "direction": "南向北",
+      "avgSpeed": 10,
+      "queueLength": 210,
+      "duration": 960,
+      "vehicleCount": 22,
+      "confidence": 0.78,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 24,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2025-09-09T18:30:00Z",
+      "updatedAt": "2025-09-09T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0082",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文海南路 × 学源街",
+      "direction": "东向西",
+      "avgSpeed": 11,
+      "queueLength": 200,
+      "duration": 1500,
+      "vehicleCount": 13,
+      "confidence": 0.8,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 53,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2025-09-14T00:30:00Z",
+      "updatedAt": "2025-09-14T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0083",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文海南路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 16,
+      "queueLength": 130,
+      "duration": 2400,
+      "vehicleCount": 22,
+      "confidence": 0.82,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 76,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2025-09-19T06:30:00Z",
+      "updatedAt": "2025-09-19T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0084",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "学正街 × 23号大街",
+      "direction": "东向西",
+      "avgSpeed": 7,
+      "queueLength": 290,
+      "duration": 480,
+      "vehicleCount": 29,
+      "confidence": 0.84,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 95,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2025-09-24T12:30:00Z",
+      "updatedAt": "2025-09-24T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0085",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "下沙高教园区2号大街",
+      "direction": "南向北",
+      "avgSpeed": 20,
+      "queueLength": 140,
+      "duration": 1320,
+      "vehicleCount": 14,
+      "confidence": 0.86,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 28,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2025-09-29T18:30:00Z",
+      "updatedAt": "2025-09-29T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_NO2",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0086",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文泽路",
+      "direction": "东向西",
+      "avgSpeed": 15,
+      "queueLength": 70,
+      "duration": 1500,
+      "vehicleCount": 6,
+      "confidence": 0.88,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 52,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2025-10-04T00:30:00Z",
+      "updatedAt": "2025-10-04T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENZE",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0087",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "金沙大道",
+      "direction": "南向北",
+      "avgSpeed": 12,
+      "queueLength": 210,
+      "duration": 2400,
+      "vehicleCount": 21,
+      "confidence": 0.9,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 75,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2025-10-09T06:30:00Z",
+      "updatedAt": "2025-10-09T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_JINSHA",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0088",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "钱塘区学林街",
+      "direction": "东向西",
+      "avgSpeed": 13,
+      "queueLength": 200,
+      "duration": 480,
+      "vehicleCount": 12,
+      "confidence": 0.72,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 94,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2025-10-14T12:30:00Z",
+      "updatedAt": "2025-10-14T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUELIN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0089",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "下沙高教园区学源街",
+      "direction": "南向北",
+      "avgSpeed": 14,
+      "queueLength": 130,
+      "duration": 1680,
+      "vehicleCount": 21,
+      "confidence": 0.74,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 27,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2025-10-19T18:30:00Z",
+      "updatedAt": "2025-10-19T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_XUEYUAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0090",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "Wenhai South Road",
+      "direction": "东向西",
+      "avgSpeed": 5,
+      "queueLength": 290,
+      "duration": 1500,
+      "vehicleCount": 28,
+      "confidence": 0.76,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 56,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2025-10-24T00:30:00Z",
+      "updatedAt": "2025-10-24T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "road",
+        "locationTextSource": "g1_road_name_or_sourced_alias",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": "QT_BY_RD_WENHAINAN",
+          "intersectionId": null
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0091",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "北向南",
+      "avgSpeed": 14,
+      "queueLength": 145,
+      "duration": 480,
+      "vehicleCount": 24,
+      "confidence": 0.83,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 75,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2025-10-29T06:30:00Z",
+      "updatedAt": "2025-10-29T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0092",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "西向东",
+      "avgSpeed": 5,
+      "queueLength": 305,
+      "duration": 900,
+      "vehicleCount": 24,
+      "confidence": 0.85,
+      "weather": "rain",
+      "timePeriod": "evening_peak",
+      "riskScore": 94,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2025-11-03T12:30:00Z",
+      "updatedAt": "2025-11-03T13:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0093",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "北向南",
+      "avgSpeed": 22,
+      "queueLength": 155,
+      "duration": 2040,
+      "vehicleCount": 9,
+      "confidence": 0.87,
+      "weather": "fog",
+      "timePeriod": "night",
+      "riskScore": 27,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2025-11-08T18:30:00Z",
+      "updatedAt": "2025-11-08T19:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0094",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文泽路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 17,
+      "queueLength": 85,
+      "duration": 2400,
+      "vehicleCount": 8,
+      "confidence": 0.89,
+      "weather": "rain",
+      "timePeriod": "morning_peak",
+      "riskScore": 56,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2025-11-13T00:30:00Z",
+      "updatedAt": "2025-11-13T01:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0095",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "高沙路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 10,
+      "queueLength": 225,
+      "duration": 480,
+      "vehicleCount": 23,
+      "confidence": 0.91,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 74,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2025-11-18T06:30:00Z",
+      "updatedAt": "2025-11-18T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0096",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文泽路 × 学源街",
+      "direction": "西向东",
+      "avgSpeed": 11,
+      "queueLength": 215,
+      "duration": 900,
+      "vehicleCount": 14,
+      "confidence": 0.73,
+      "weather": "rain",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2025-11-23T12:30:00Z",
+      "updatedAt": "2025-11-23T13:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0097",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文海南路 × 学源街",
+      "direction": "北向南",
+      "avgSpeed": 16,
+      "queueLength": 145,
+      "duration": 600,
+      "vehicleCount": 23,
+      "confidence": 0.75,
+      "weather": "fog",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2025-11-28T18:30:00Z",
+      "updatedAt": "2025-11-28T19:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0098",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文海南路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 7,
+      "queueLength": 305,
+      "duration": 2400,
+      "vehicleCount": 30,
+      "confidence": 0.77,
+      "weather": "rain",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2025-12-03T00:30:00Z",
+      "updatedAt": "2025-12-03T01:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0099",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "学正街 × 23号大街",
+      "direction": "北向南",
+      "avgSpeed": 20,
+      "queueLength": 155,
+      "duration": 480,
+      "vehicleCount": 8,
+      "confidence": 0.79,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2025-12-08T06:30:00Z",
+      "updatedAt": "2025-12-08T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0100",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "东向西",
+      "avgSpeed": 5,
+      "queueLength": 320,
+      "duration": 900,
+      "vehicleCount": 26,
+      "confidence": 0.72,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 94,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2025-12-13T12:30:00Z",
+      "updatedAt": "2025-12-13T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0101",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "南向北",
+      "avgSpeed": 22,
+      "queueLength": 80,
+      "duration": 960,
+      "vehicleCount": 11,
+      "confidence": 0.74,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 27,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2025-12-18T18:30:00Z",
+      "updatedAt": "2025-12-18T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0102",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "东向西",
+      "avgSpeed": 17,
+      "queueLength": 100,
+      "duration": 2400,
+      "vehicleCount": 10,
+      "confidence": 0.76,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 56,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2025-12-23T00:30:00Z",
+      "updatedAt": "2025-12-23T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0103",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文泽路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 10,
+      "queueLength": 240,
+      "duration": 480,
+      "vehicleCount": 25,
+      "confidence": 0.78,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 74,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2025-12-28T06:30:00Z",
+      "updatedAt": "2025-12-28T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0104",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "高沙路 × 学林街",
+      "direction": "东向西",
+      "avgSpeed": 11,
+      "queueLength": 140,
+      "duration": 900,
+      "vehicleCount": 16,
+      "confidence": 0.8,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2026-01-02T12:30:00Z",
+      "updatedAt": "2026-01-02T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0105",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文泽路 × 学源街",
+      "direction": "南向北",
+      "avgSpeed": 16,
+      "queueLength": 160,
+      "duration": 1320,
+      "vehicleCount": 18,
+      "confidence": 0.82,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2026-01-07T18:30:00Z",
+      "updatedAt": "2026-01-07T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0106",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文海南路 × 学源街",
+      "direction": "东向西",
+      "avgSpeed": 7,
+      "queueLength": 320,
+      "duration": 2400,
+      "vehicleCount": 25,
+      "confidence": 0.84,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2026-01-12T00:30:00Z",
+      "updatedAt": "2026-01-12T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0107",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文海南路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 20,
+      "queueLength": 80,
+      "duration": 480,
+      "vehicleCount": 10,
+      "confidence": 0.86,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2026-01-17T06:30:00Z",
+      "updatedAt": "2026-01-17T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0108",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "学正街 × 23号大街",
+      "direction": "东向西",
+      "avgSpeed": 15,
+      "queueLength": 100,
+      "duration": 900,
+      "vehicleCount": 9,
+      "confidence": 0.88,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2026-01-22T12:30:00Z",
+      "updatedAt": "2026-01-22T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0109",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "西向东",
+      "avgSpeed": 22,
+      "queueLength": 95,
+      "duration": 1680,
+      "vehicleCount": 13,
+      "confidence": 0.81,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 27,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2026-01-27T18:30:00Z",
+      "updatedAt": "2026-01-27T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0110",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "北向南",
+      "avgSpeed": 17,
+      "queueLength": 115,
+      "duration": 2400,
+      "vehicleCount": 12,
+      "confidence": 0.83,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 56,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2026-02-01T00:30:00Z",
+      "updatedAt": "2026-02-01T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0111",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "西向东",
+      "avgSpeed": 10,
+      "queueLength": 255,
+      "duration": 480,
+      "vehicleCount": 20,
+      "confidence": 0.85,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 74,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2026-02-06T06:30:00Z",
+      "updatedAt": "2026-02-06T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0112",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文泽路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 11,
+      "queueLength": 155,
+      "duration": 900,
+      "vehicleCount": 11,
+      "confidence": 0.87,
+      "weather": "fog",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2026-02-11T12:30:00Z",
+      "updatedAt": "2026-02-11T13:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0113",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "高沙路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 16,
+      "queueLength": 175,
+      "duration": 2040,
+      "vehicleCount": 20,
+      "confidence": 0.89,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2026-02-16T18:30:00Z",
+      "updatedAt": "2026-02-16T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0114",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文泽路 × 学源街",
+      "direction": "北向南",
+      "avgSpeed": 7,
+      "queueLength": 335,
+      "duration": 2400,
+      "vehicleCount": 27,
+      "confidence": 0.91,
+      "weather": "fog",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2026-02-21T00:30:00Z",
+      "updatedAt": "2026-02-21T01:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0115",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文海南路 × 学源街",
+      "direction": "西向东",
+      "avgSpeed": 20,
+      "queueLength": 95,
+      "duration": 480,
+      "vehicleCount": 12,
+      "confidence": 0.73,
+      "weather": "rain",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2026-02-26T06:30:00Z",
+      "updatedAt": "2026-02-26T07:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0116",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文海南路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 15,
+      "queueLength": 115,
+      "duration": 900,
+      "vehicleCount": 11,
+      "confidence": 0.75,
+      "weather": "fog",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2026-03-03T12:30:00Z",
+      "updatedAt": "2026-03-03T13:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0117",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "学正街 × 23号大街",
+      "direction": "西向东",
+      "avgSpeed": 12,
+      "queueLength": 255,
+      "duration": 600,
+      "vehicleCount": 26,
+      "confidence": 0.77,
+      "weather": "rain",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2026-03-08T18:30:00Z",
+      "updatedAt": "2026-03-08T19:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0118",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "南向北",
+      "avgSpeed": 17,
+      "queueLength": 130,
+      "duration": 2400,
+      "vehicleCount": 7,
+      "confidence": 0.9,
+      "weather": "cloudy",
+      "timePeriod": "morning_peak",
+      "riskScore": 56,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2026-03-13T00:30:00Z",
+      "updatedAt": "2026-03-13T01:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0119",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "东向西",
+      "avgSpeed": 10,
+      "queueLength": 180,
+      "duration": 480,
+      "vehicleCount": 22,
+      "confidence": 0.72,
+      "weather": "clear",
+      "timePeriod": "afternoon",
+      "riskScore": 74,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2026-03-18T06:30:00Z",
+      "updatedAt": "2026-03-18T06:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0120",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "南向北",
+      "avgSpeed": 11,
+      "queueLength": 170,
+      "duration": 900,
+      "vehicleCount": 13,
+      "confidence": 0.74,
+      "weather": "cloudy",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2026-03-23T12:30:00Z",
+      "updatedAt": "2026-03-23T13:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0121",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文泽路 × 学林街",
+      "direction": "东向西",
+      "avgSpeed": 16,
+      "queueLength": 190,
+      "duration": 960,
+      "vehicleCount": 22,
+      "confidence": 0.76,
+      "weather": "clear",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2026-03-28T18:30:00Z",
+      "updatedAt": "2026-03-28T18:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0122",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "高沙路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 7,
+      "queueLength": 260,
+      "duration": 2400,
+      "vehicleCount": 29,
+      "confidence": 0.78,
+      "weather": "cloudy",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2026-04-02T00:30:00Z",
+      "updatedAt": "2026-04-02T01:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0123",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文泽路 × 学源街",
+      "direction": "东向西",
+      "avgSpeed": 20,
+      "queueLength": 110,
+      "duration": 480,
+      "vehicleCount": 14,
+      "confidence": 0.8,
+      "weather": "clear",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2026-04-07T06:30:00Z",
+      "updatedAt": "2026-04-07T06:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0124",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文海南路 × 学源街",
+      "direction": "南向北",
+      "avgSpeed": 15,
+      "queueLength": 130,
+      "duration": 900,
+      "vehicleCount": 6,
+      "confidence": 0.82,
+      "weather": "cloudy",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2026-04-12T12:30:00Z",
+      "updatedAt": "2026-04-12T13:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0125",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文海南路 × 学林街",
+      "direction": "东向西",
+      "avgSpeed": 12,
+      "queueLength": 180,
+      "duration": 1320,
+      "vehicleCount": 21,
+      "confidence": 0.84,
+      "weather": "clear",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2026-04-17T18:30:00Z",
+      "updatedAt": "2026-04-17T18:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0126",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "学正街 × 23号大街",
+      "direction": "南向北",
+      "avgSpeed": 13,
+      "queueLength": 170,
+      "duration": 2400,
+      "vehicleCount": 12,
+      "confidence": 0.86,
+      "weather": "cloudy",
+      "timePeriod": "morning_peak",
+      "riskScore": 54,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2026-04-22T00:30:00Z",
+      "updatedAt": "2026-04-22T01:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0127",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "北向南",
+      "avgSpeed": 10,
+      "queueLength": 195,
+      "duration": 480,
+      "vehicleCount": 24,
+      "confidence": 0.79,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 74,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2026-04-27T06:30:00Z",
+      "updatedAt": "2026-04-27T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0128",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "西向东",
+      "avgSpeed": 11,
+      "queueLength": 185,
+      "duration": 900,
+      "vehicleCount": 15,
+      "confidence": 0.81,
+      "weather": "rain",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2026-05-02T12:30:00Z",
+      "updatedAt": "2026-05-02T13:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0129",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "北向南",
+      "avgSpeed": 16,
+      "queueLength": 205,
+      "duration": 1680,
+      "vehicleCount": 24,
+      "confidence": 0.83,
+      "weather": "fog",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2026-05-07T18:30:00Z",
+      "updatedAt": "2026-05-07T19:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0130",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "文泽路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 7,
+      "queueLength": 275,
+      "duration": 2400,
+      "vehicleCount": 24,
+      "confidence": 0.85,
+      "weather": "rain",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2026-05-12T00:30:00Z",
+      "updatedAt": "2026-05-12T01:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0131",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "高沙路 × 学林街",
+      "direction": "北向南",
+      "avgSpeed": 20,
+      "queueLength": 125,
+      "duration": 480,
+      "vehicleCount": 9,
+      "confidence": 0.87,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2026-05-17T06:30:00Z",
+      "updatedAt": "2026-05-17T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0132",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "文泽路 × 学源街",
+      "direction": "西向东",
+      "avgSpeed": 15,
+      "queueLength": 145,
+      "duration": 900,
+      "vehicleCount": 8,
+      "confidence": 0.89,
+      "weather": "rain",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2026-05-22T12:30:00Z",
+      "updatedAt": "2026-05-22T13:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0133",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文海南路 × 学源街",
+      "direction": "北向南",
+      "avgSpeed": 12,
+      "queueLength": 195,
+      "duration": 2040,
+      "vehicleCount": 23,
+      "confidence": 0.91,
+      "weather": "fog",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "待研判",
+      "createdAt": "2026-05-27T18:30:00Z",
+      "updatedAt": "2026-05-27T19:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0134",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文海南路 × 学林街",
+      "direction": "西向东",
+      "avgSpeed": 13,
+      "queueLength": 185,
+      "duration": 2400,
+      "vehicleCount": 14,
+      "confidence": 0.73,
+      "weather": "rain",
+      "timePeriod": "morning_peak",
+      "riskScore": 54,
+      "riskLevel": "中风险",
+      "status": "待派单",
+      "createdAt": "2026-06-01T00:30:00Z",
+      "updatedAt": "2026-06-01T01:00:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0135",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "学正街 × 23号大街",
+      "direction": "北向南",
+      "avgSpeed": 14,
+      "queueLength": 205,
+      "duration": 480,
+      "vehicleCount": 23,
+      "confidence": 0.75,
+      "weather": "fog",
+      "timePeriod": "afternoon",
+      "riskScore": 77,
+      "riskLevel": "高风险",
+      "status": "处置中",
+      "createdAt": "2026-06-06T06:30:00Z",
+      "updatedAt": "2026-06-06T07:30:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0136",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文泽路 × 2号大街",
+      "direction": "东向西",
+      "avgSpeed": 11,
+      "queueLength": 200,
+      "duration": 900,
+      "vehicleCount": 10,
+      "confidence": 0.88,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 93,
+      "riskLevel": "重大风险",
+      "status": "已处置",
+      "createdAt": "2026-06-11T12:30:00Z",
+      "updatedAt": "2026-06-11T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0137",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文海南路 × 2号大街",
+      "direction": "南向北",
+      "avgSpeed": 16,
+      "queueLength": 130,
+      "duration": 600,
+      "vehicleCount": 19,
+      "confidence": 0.9,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 26,
+      "riskLevel": "低风险",
+      "status": "待复盘",
+      "createdAt": "2026-06-16T18:30:00Z",
+      "updatedAt": "2026-06-16T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_NO2"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0138",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "高沙路 × 金沙大道",
+      "direction": "东向西",
+      "avgSpeed": 7,
+      "queueLength": 290,
+      "duration": 2400,
+      "vehicleCount": 26,
+      "confidence": 0.72,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 55,
+      "riskLevel": "中风险",
+      "status": "已归档",
+      "createdAt": "2026-06-21T00:30:00Z",
+      "updatedAt": "2026-06-21T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_JINSHA"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0139",
+      "eventType": "illegal_parking",
+      "eventTypeCn": "违停",
+      "roadName": "文泽路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 20,
+      "queueLength": 140,
+      "duration": 480,
+      "vehicleCount": 11,
+      "confidence": 0.74,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 78,
+      "riskLevel": "高风险",
+      "status": "待研判",
+      "createdAt": "2026-06-26T06:30:00Z",
+      "updatedAt": "2026-06-26T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0140",
+      "eventType": "pedestrian_intrusion",
+      "eventTypeCn": "行人闯入",
+      "roadName": "高沙路 × 学林街",
+      "direction": "东向西",
+      "avgSpeed": 15,
+      "queueLength": 70,
+      "duration": 900,
+      "vehicleCount": 10,
+      "confidence": 0.76,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 92,
+      "riskLevel": "重大风险",
+      "status": "待派单",
+      "createdAt": "2026-07-01T12:30:00Z",
+      "updatedAt": "2026-07-01T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_GAOSHA_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0141",
+      "eventType": "signal_fault",
+      "eventTypeCn": "信号灯异常",
+      "roadName": "文泽路 × 学源街",
+      "direction": "南向北",
+      "avgSpeed": 12,
+      "queueLength": 210,
+      "duration": 960,
+      "vehicleCount": 25,
+      "confidence": 0.78,
+      "weather": "cloudy",
+      "timePeriod": "night",
+      "riskScore": 25,
+      "riskLevel": "低风险",
+      "status": "处置中",
+      "createdAt": "2026-07-06T18:30:00Z",
+      "updatedAt": "2026-07-06T19:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENZE_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0142",
+      "eventType": "vehicle_stopped",
+      "eventTypeCn": "车辆滞留",
+      "roadName": "文海南路 × 学源街",
+      "direction": "东向西",
+      "avgSpeed": 13,
+      "queueLength": 200,
+      "duration": 2400,
+      "vehicleCount": 16,
+      "confidence": 0.8,
+      "weather": "clear",
+      "timePeriod": "morning_peak",
+      "riskScore": 54,
+      "riskLevel": "中风险",
+      "status": "已处置",
+      "createdAt": "2026-07-11T00:30:00Z",
+      "updatedAt": "2026-07-11T00:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUEYUAN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0143",
+      "eventType": "accident",
+      "eventTypeCn": "事故",
+      "roadName": "文海南路 × 学林街",
+      "direction": "南向北",
+      "avgSpeed": 14,
+      "queueLength": 130,
+      "duration": 480,
+      "vehicleCount": 18,
+      "confidence": 0.82,
+      "weather": "cloudy",
+      "timePeriod": "afternoon",
+      "riskScore": 77,
+      "riskLevel": "高风险",
+      "status": "待复盘",
+      "createdAt": "2026-07-16T06:30:00Z",
+      "updatedAt": "2026-07-16T07:15:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_WENHAINAN_XUELIN"
+        }
+      }
+    },
+    {
+      "eventId": "SYN_QT_HIST_0144",
+      "eventType": "congestion",
+      "eventTypeCn": "拥堵",
+      "roadName": "学正街 × 23号大街",
+      "direction": "东向西",
+      "avgSpeed": 5,
+      "queueLength": 290,
+      "duration": 900,
+      "vehicleCount": 25,
+      "confidence": 0.84,
+      "weather": "clear",
+      "timePeriod": "evening_peak",
+      "riskScore": 96,
+      "riskLevel": "重大风险",
+      "status": "已归档",
+      "createdAt": "2026-07-21T12:30:00Z",
+      "updatedAt": "2026-07-21T12:45:00Z",
+      "rawEvent": {
+        "provenance": {
+          "sourceType": "synthetic_validation",
+          "datasetId": "QT_BY_XIASHA_SYNTH_HISTORY_001",
+          "datasetVersion": "1.0.0"
+        }
+      },
+      "validation": {
+        "locationGranularity": "intersection",
+        "locationTextSource": "g1_intersection_name",
+        "expectedCanonicalLocation": {
+          "regionId": "QT_BY_XIASHA_PILOT_001",
+          "roadId": null,
+          "intersectionId": "QT_BY_INT_XUEZHENG_NO23"
+        }
+      }
+    }
+  ]
+}

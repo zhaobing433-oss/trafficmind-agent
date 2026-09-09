@@ -56,8 +56,12 @@ RAG_V2_COLLECTION_NAME = os.getenv("RAG_V2_COLLECTION_NAME", "trafficmind_knowle
 RAG_V2_V1_COLLECTION_NAME = "trafficmind_knowledge"  # Legacy V1 collection, never deleted
 
 # --- SQLite paths ---
-RAG_V2_DB_PATH = str(_RAG_DATA_DIR / "rag_v2.db")
-RAG_V2_FTS_PATH = str(_RAG_DATA_DIR / "rag_v2_fts.db")
+RAG_V2_DB_PATH = os.getenv("RAG_V2_DB_PATH", str(_RAG_DATA_DIR / "rag_v2.db"))
+RAG_V2_FTS_PATH = os.getenv("RAG_V2_FTS_PATH", str(_RAG_DATA_DIR / "rag_v2_fts.db"))
+RAG_V2_VECTOR_DB_PATH = os.getenv(
+    "RAG_V2_VECTOR_DB_PATH",
+    str(_BACKEND_DIR / "data" / "vector_db"),
+)
 
 # --- Agent ---
 RAG_AGENT_MAX_EVIDENCE = int(os.getenv("RAG_AGENT_MAX_EVIDENCE", "4"))

@@ -1,0 +1,45 @@
+{
+  "executionSpecId": "QT_BY_XIASHA_CASE_SEED_G3B_EXEC_001",
+  "agentProviderMode": "deterministic_validation",
+  "liveModelCaseClaimed": false,
+  "singleProductionAgentPipeline": true,
+  "llmEnabled": false,
+  "approvalPolicy": {
+    "description": "Synthetic human-decision orchestration for closure validation only.",
+    "visibleToAgent": false,
+    "orderRule": "odd_approve_even_reject",
+    "decisions": [
+      {"order": 1, "eventId": "SYN_QT_HIST_0001", "decision": "approve"},
+      {"order": 2, "eventId": "SYN_QT_HIST_0002", "decision": "reject"},
+      {"order": 3, "eventId": "SYN_QT_HIST_0003", "decision": "approve"},
+      {"order": 4, "eventId": "SYN_QT_HIST_0019", "decision": "reject"},
+      {"order": 5, "eventId": "SYN_QT_HIST_0027", "decision": "approve"},
+      {"order": 6, "eventId": "SYN_QT_HIST_0032", "decision": "reject"},
+      {"order": 7, "eventId": "SYN_QT_HIST_0044", "decision": "approve"},
+      {"order": 8, "eventId": "SYN_QT_HIST_0068", "decision": "reject"}
+    ]
+  },
+  "isolation": {
+    "eventDb": "pytest tmp_path",
+    "ragDb": "pytest tmp_path",
+    "ftsDb": "pytest tmp_path",
+    "chromaPath": "pytest tmp_path",
+    "productionDb": "read-only safety hash check",
+    "productionKnowledgeIndex": "not touched"
+  },
+  "pipeline": [
+    "event_records",
+    "EventLocationBindingService",
+    "GroundedEventContextAssembler",
+    "routed Agent collaboration stream",
+    "AgentPlanningAdapter /planning/plans/from-agent",
+    "WorkflowExecutor",
+    "WorkflowExecutor approval API",
+    "TrafficCaseMemoryService.build_from_workflow_run"
+  ],
+  "caseReality": "synthetic_event_system_closure",
+  "historyReality": "synthetic_validation",
+  "sourceEventReality": "synthetic_validation",
+  "regionalGeographyReality": "real_public_verified",
+  "knowledgeReality": "real_public_source_grounded"
+}

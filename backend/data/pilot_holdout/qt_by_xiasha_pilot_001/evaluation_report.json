@@ -1,0 +1,1677 @@
+{
+  "ablationGroupCount": 4,
+  "actualAgentEvalRuns": 32,
+  "agentProviderReality": "deterministic_validation",
+  "aggregate": {
+    "A_CURRENT": {
+      "eligibleContextItemCount": 8,
+      "evidenceRefCount": 0,
+      "groundedRecommendationCoverage": 0,
+      "groundingBlockCoverage": 8,
+      "leakageCount": 0,
+      "planGroundingTraceability": 8,
+      "runCount": 8,
+      "sourceDiversity": 1.0,
+      "traceableRefCount": 0
+    },
+    "B_REGIONAL": {
+      "eligibleContextItemCount": 29,
+      "evidenceRefCount": 8,
+      "groundedRecommendationCoverage": 20,
+      "groundingBlockCoverage": 16,
+      "leakageCount": 0,
+      "planGroundingTraceability": 8,
+      "runCount": 8,
+      "sourceDiversity": 2.0,
+      "traceableRefCount": 8
+    },
+    "C_REGION_HISTORY_KNOWLEDGE": {
+      "eligibleContextItemCount": 79,
+      "evidenceRefCount": 32,
+      "groundedRecommendationCoverage": 20,
+      "groundingBlockCoverage": 32,
+      "leakageCount": 0,
+      "planGroundingTraceability": 8,
+      "runCount": 8,
+      "sourceDiversity": 4.0,
+      "traceableRefCount": 32
+    },
+    "D_FULL": {
+      "eligibleContextItemCount": 90,
+      "evidenceRefCount": 43,
+      "groundedRecommendationCoverage": 20,
+      "groundingBlockCoverage": 40,
+      "leakageCount": 0,
+      "planGroundingTraceability": 8,
+      "runCount": 8,
+      "sourceDiversity": 5.0,
+      "traceableRefCount": 43
+    }
+  },
+  "caseMemoryAddsTraceableContext": true,
+  "caseReality": "synthetic_event_system_closure",
+  "deterministicReplayDriftCount": 0,
+  "expectedAgentEvalRuns": 32,
+  "frozenT0": "2026-09-04T13:10:55Z",
+  "historyReality": "synthetic_validation",
+  "holdoutCaseMemoryCreated": 0,
+  "holdoutEventCount": 8,
+  "holdoutReality": "synthetic_validation",
+  "knowledgeReality": "real_public_source_grounded",
+  "limitations": [
+    "No real traffic outcome labels are present.",
+    "LLM_ENABLED=false; this is not a live model quality benchmark.",
+    "Synthetic history is not official Hangzhou traffic history.",
+    "The report measures grounding, traceability, and leakage guards, not production accuracy."
+  ],
+  "liveModelEvaluationClaimed": false,
+  "metrics": [
+    "grounding_block_coverage",
+    "evidence_ref_count",
+    "traceable_ref_count",
+    "eligible_context_item_count",
+    "leakage_count",
+    "grounded_recommendation_coverage",
+    "plan_grounding_traceability",
+    "source_diversity"
+  ],
+  "packId": "QT_BY_XIASHA_HOLDOUT_G3C",
+  "productionTrafficEvaluation": false,
+  "realTrafficEffectivenessClaimed": false,
+  "regionId": "QT_BY_XIASHA_PILOT_001",
+  "regionalGeographyReality": "real_public_verified",
+  "results": [
+    {
+      "agentOutputHash": "7c349385fcced3d1",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-04T14:00:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0001",
+      "eventType": "accident",
+      "fusionHash": "13df058e398dea66",
+      "groundedRecommendationCoverage": 0,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 1,
+        "evidenceRefCount": 0,
+        "groundingBlockCoverage": 1,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "MASKED",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent"
+        ]
+      },
+      "group": "CURRENT_EVENT_ONLY",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路 × 2号大街",
+      "planFingerprint": "fp_8b492bcf5811b801",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "AccidentAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "ee5e5ed58d7cf6ea",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-04T14:00:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0001",
+      "eventType": "accident",
+      "fusionHash": "bccee133415a66a0",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 2,
+        "caseStatus": "READY",
+        "caseTotal": 2,
+        "completedCaseRefs": 2,
+        "contextItemCount": 14,
+        "evidenceRefCount": 6,
+        "groundingBlockCoverage": 5,
+        "historyCount": 6,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge",
+          "caseMemory"
+        ]
+      },
+      "group": "FULL_GROUNDING",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路 × 2号大街",
+      "planFingerprint": "fp_8b492bcf5811b801",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "AccidentAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "037ba5ef6d242202",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-04T14:00:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0001",
+      "eventType": "accident",
+      "fusionHash": "4c16fd8f92791da5",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 4,
+        "evidenceRefCount": 1,
+        "groundingBlockCoverage": 2,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional"
+        ]
+      },
+      "group": "REGIONAL",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路 × 2号大街",
+      "planFingerprint": "fp_8b492bcf5811b801",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "AccidentAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "816c1e5fd9ecee3f",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-04T14:00:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0001",
+      "eventType": "accident",
+      "fusionHash": "06b811d2474d9957",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 12,
+        "evidenceRefCount": 4,
+        "groundingBlockCoverage": 4,
+        "historyCount": 6,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge"
+        ]
+      },
+      "group": "REGIONAL_HISTORY_KNOWLEDGE",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路 × 2号大街",
+      "planFingerprint": "fp_8b492bcf5811b801",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "AccidentAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "ee507ebe89fcf69e",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0002",
+      "eventType": "congestion",
+      "fusionHash": "451f6629f427cfa1",
+      "groundedRecommendationCoverage": 0,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 1,
+        "evidenceRefCount": 0,
+        "groundingBlockCoverage": 1,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "MASKED",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent"
+        ]
+      },
+      "group": "CURRENT_EVENT_ONLY",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文海南路 × 2号大街",
+      "planFingerprint": "fp_dfaa0fe7c5c884b6",
+      "planTraceable": true,
+      "riskLevel": "重大风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "52b1ee5591174fd8",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0002",
+      "eventType": "congestion",
+      "fusionHash": "80014366f845e644",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 1,
+        "caseStatus": "READY",
+        "caseTotal": 1,
+        "completedCaseRefs": 0,
+        "contextItemCount": 13,
+        "evidenceRefCount": 5,
+        "groundingBlockCoverage": 5,
+        "historyCount": 6,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 1,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge",
+          "caseMemory"
+        ]
+      },
+      "group": "FULL_GROUNDING",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文海南路 × 2号大街",
+      "planFingerprint": "fp_dfaa0fe7c5c884b6",
+      "planTraceable": true,
+      "riskLevel": "重大风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "9b994559558c6dea",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0002",
+      "eventType": "congestion",
+      "fusionHash": "393727a8252f86f0",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 4,
+        "evidenceRefCount": 1,
+        "groundingBlockCoverage": 2,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional"
+        ]
+      },
+      "group": "REGIONAL",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文海南路 × 2号大街",
+      "planFingerprint": "fp_dfaa0fe7c5c884b6",
+      "planTraceable": true,
+      "riskLevel": "重大风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "2e5fa7dc0993318a",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0002",
+      "eventType": "congestion",
+      "fusionHash": "92845fe23b819587",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 12,
+        "evidenceRefCount": 4,
+        "groundingBlockCoverage": 4,
+        "historyCount": 6,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge"
+        ]
+      },
+      "group": "REGIONAL_HISTORY_KNOWLEDGE",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文海南路 × 2号大街",
+      "planFingerprint": "fp_dfaa0fe7c5c884b6",
+      "planTraceable": true,
+      "riskLevel": "重大风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "86f0c1726174a845",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T06:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0003",
+      "eventType": "illegal_parking",
+      "fusionHash": "451f6629f427cfa1",
+      "groundedRecommendationCoverage": 0,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 1,
+        "evidenceRefCount": 0,
+        "groundingBlockCoverage": 1,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "MASKED",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent"
+        ]
+      },
+      "group": "CURRENT_EVENT_ONLY",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "高沙路 × 金沙大道",
+      "planFingerprint": "fp_73e8a9450733eeda",
+      "planTraceable": true,
+      "riskLevel": "中风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "8f3c283c946f1cca",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T06:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0003",
+      "eventType": "illegal_parking",
+      "fusionHash": "5bdb67747bdd9f55",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 1,
+        "caseStatus": "READY",
+        "caseTotal": 1,
+        "completedCaseRefs": 1,
+        "contextItemCount": 13,
+        "evidenceRefCount": 5,
+        "groundingBlockCoverage": 5,
+        "historyCount": 6,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge",
+          "caseMemory"
+        ]
+      },
+      "group": "FULL_GROUNDING",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "高沙路 × 金沙大道",
+      "planFingerprint": "fp_73e8a9450733eeda",
+      "planTraceable": true,
+      "riskLevel": "中风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "1838d126d433fa1e",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T06:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0003",
+      "eventType": "illegal_parking",
+      "fusionHash": "18f45c984067683b",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 4,
+        "evidenceRefCount": 1,
+        "groundingBlockCoverage": 2,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional"
+        ]
+      },
+      "group": "REGIONAL",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "高沙路 × 金沙大道",
+      "planFingerprint": "fp_73e8a9450733eeda",
+      "planTraceable": true,
+      "riskLevel": "中风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "efd80247bc895d43",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T06:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0003",
+      "eventType": "illegal_parking",
+      "fusionHash": "70adeeae552aebab",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 12,
+        "evidenceRefCount": 4,
+        "groundingBlockCoverage": 4,
+        "historyCount": 6,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge"
+        ]
+      },
+      "group": "REGIONAL_HISTORY_KNOWLEDGE",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "高沙路 × 金沙大道",
+      "planFingerprint": "fp_73e8a9450733eeda",
+      "planTraceable": true,
+      "riskLevel": "中风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "35cf7058f0079239",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0004",
+      "eventType": "signal_fault",
+      "fusionHash": "30b19fbe0b971e0c",
+      "groundedRecommendationCoverage": 0,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 1,
+        "evidenceRefCount": 0,
+        "groundingBlockCoverage": 1,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "MASKED",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent"
+        ]
+      },
+      "group": "CURRENT_EVENT_ONLY",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路 × 学林街",
+      "planFingerprint": "fp_27095c4005aa59de",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "SignalAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "0b393e07d3a7b75e",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0004",
+      "eventType": "signal_fault",
+      "fusionHash": "7a3537549cbbe274",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 1,
+        "caseStatus": "READY",
+        "caseTotal": 1,
+        "completedCaseRefs": 0,
+        "contextItemCount": 13,
+        "evidenceRefCount": 5,
+        "groundingBlockCoverage": 5,
+        "historyCount": 6,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 1,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge",
+          "caseMemory"
+        ]
+      },
+      "group": "FULL_GROUNDING",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路 × 学林街",
+      "planFingerprint": "fp_27095c4005aa59de",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "SignalAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "db71acb46afd367d",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0004",
+      "eventType": "signal_fault",
+      "fusionHash": "5360a448ca8d6e29",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 4,
+        "evidenceRefCount": 1,
+        "groundingBlockCoverage": 2,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional"
+        ]
+      },
+      "group": "REGIONAL",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路 × 学林街",
+      "planFingerprint": "fp_27095c4005aa59de",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "SignalAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "db672eb999d94b0e",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-05T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0004",
+      "eventType": "signal_fault",
+      "fusionHash": "e0722b97fe6952c9",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 12,
+        "evidenceRefCount": 4,
+        "groundingBlockCoverage": 4,
+        "historyCount": 6,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge"
+        ]
+      },
+      "group": "REGIONAL_HISTORY_KNOWLEDGE",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路 × 学林街",
+      "planFingerprint": "fp_27095c4005aa59de",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "SignalAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "df98c0eb3c6ccb74",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-06T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0005",
+      "eventType": "pedestrian_intrusion",
+      "fusionHash": "90c3595fa2c88c14",
+      "groundedRecommendationCoverage": 0,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 1,
+        "evidenceRefCount": 0,
+        "groundingBlockCoverage": 1,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "MASKED",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent"
+        ]
+      },
+      "group": "CURRENT_EVENT_ONLY",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "学源街",
+      "planFingerprint": "fp_004a66c4bb6b8e44",
+      "planTraceable": true,
+      "riskLevel": "重大风险",
+      "selectedAgents": [
+        "PublicSafetyAgent",
+        "DispatchAgent",
+        "CongestionAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "19bdb765f0a2435a",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-06T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0005",
+      "eventType": "pedestrian_intrusion",
+      "fusionHash": "5d0236585100480e",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 2,
+        "caseStatus": "READY",
+        "caseTotal": 2,
+        "completedCaseRefs": 1,
+        "contextItemCount": 10,
+        "evidenceRefCount": 6,
+        "groundingBlockCoverage": 5,
+        "historyCount": 1,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 1,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge",
+          "caseMemory"
+        ]
+      },
+      "group": "FULL_GROUNDING",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "学源街",
+      "planFingerprint": "fp_004a66c4bb6b8e44",
+      "planTraceable": true,
+      "riskLevel": "重大风险",
+      "selectedAgents": [
+        "PublicSafetyAgent",
+        "DispatchAgent",
+        "CongestionAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "46c02caae940c3ef",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-06T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0005",
+      "eventType": "pedestrian_intrusion",
+      "fusionHash": "101c9424710ac21d",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 5,
+        "evidenceRefCount": 1,
+        "groundingBlockCoverage": 2,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional"
+        ]
+      },
+      "group": "REGIONAL",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "学源街",
+      "planFingerprint": "fp_004a66c4bb6b8e44",
+      "planTraceable": true,
+      "riskLevel": "重大风险",
+      "selectedAgents": [
+        "PublicSafetyAgent",
+        "DispatchAgent",
+        "CongestionAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "6451c9badf045024",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-06T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0005",
+      "eventType": "pedestrian_intrusion",
+      "fusionHash": "b2b46eb26f609c80",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 8,
+        "evidenceRefCount": 4,
+        "groundingBlockCoverage": 4,
+        "historyCount": 1,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge"
+        ]
+      },
+      "group": "REGIONAL_HISTORY_KNOWLEDGE",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "学源街",
+      "planFingerprint": "fp_004a66c4bb6b8e44",
+      "planTraceable": true,
+      "riskLevel": "重大风险",
+      "selectedAgents": [
+        "PublicSafetyAgent",
+        "DispatchAgent",
+        "CongestionAgent",
+        "ReportAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "29c33e9bd2d6ea86",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-06T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0006",
+      "eventType": "vehicle_stopped",
+      "fusionHash": "7216307739e3f385",
+      "groundedRecommendationCoverage": 0,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 1,
+        "evidenceRefCount": 0,
+        "groundingBlockCoverage": 1,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "MASKED",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent"
+        ]
+      },
+      "group": "CURRENT_EVENT_ONLY",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文海南路 × 学林街",
+      "planFingerprint": "fp_dfaa0fe7c5c884b6",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "bdbe59b8b495a507",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-06T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0006",
+      "eventType": "vehicle_stopped",
+      "fusionHash": "5cb68f3fa20dc063",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 1,
+        "caseStatus": "READY",
+        "caseTotal": 1,
+        "completedCaseRefs": 0,
+        "contextItemCount": 14,
+        "evidenceRefCount": 5,
+        "groundingBlockCoverage": 5,
+        "historyCount": 7,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 1,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge",
+          "caseMemory"
+        ]
+      },
+      "group": "FULL_GROUNDING",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文海南路 × 学林街",
+      "planFingerprint": "fp_dfaa0fe7c5c884b6",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "3ad8ce958611b2ea",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-06T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0006",
+      "eventType": "vehicle_stopped",
+      "fusionHash": "683f525a67935aa3",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 4,
+        "evidenceRefCount": 1,
+        "groundingBlockCoverage": 2,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional"
+        ]
+      },
+      "group": "REGIONAL",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文海南路 × 学林街",
+      "planFingerprint": "fp_dfaa0fe7c5c884b6",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "302a50c802604ee9",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-06T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0006",
+      "eventType": "vehicle_stopped",
+      "fusionHash": "1a4f8bb323b3a7bd",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 13,
+        "evidenceRefCount": 4,
+        "groundingBlockCoverage": 4,
+        "historyCount": 7,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge"
+        ]
+      },
+      "group": "REGIONAL_HISTORY_KNOWLEDGE",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文海南路 × 学林街",
+      "planFingerprint": "fp_dfaa0fe7c5c884b6",
+      "planTraceable": true,
+      "riskLevel": "高风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "ReportAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "d520aafe6509a71a",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-07T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0007",
+      "eventType": "congestion",
+      "fusionHash": "f54c047c1781b56a",
+      "groundedRecommendationCoverage": 0,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 1,
+        "evidenceRefCount": 0,
+        "groundingBlockCoverage": 1,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "MASKED",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent"
+        ]
+      },
+      "group": "CURRENT_EVENT_ONLY",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路",
+      "planFingerprint": "fp_b166f1bf836e9d5a",
+      "planTraceable": true,
+      "riskLevel": "中风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "9bff2648a986b840",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-07T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0007",
+      "eventType": "congestion",
+      "fusionHash": "c6e06fe2bafc14c0",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 1,
+        "caseStatus": "READY",
+        "caseTotal": 1,
+        "completedCaseRefs": 0,
+        "contextItemCount": 6,
+        "evidenceRefCount": 5,
+        "groundingBlockCoverage": 5,
+        "historyCount": 1,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 1,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge",
+          "caseMemory"
+        ]
+      },
+      "group": "FULL_GROUNDING",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路",
+      "planFingerprint": "fp_b166f1bf836e9d5a",
+      "planTraceable": true,
+      "riskLevel": "中风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "01acd718cb609d49",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-07T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0007",
+      "eventType": "congestion",
+      "fusionHash": "882e80b3823a1ed2",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 2,
+        "evidenceRefCount": 1,
+        "groundingBlockCoverage": 2,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional"
+        ]
+      },
+      "group": "REGIONAL",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路",
+      "planFingerprint": "fp_b166f1bf836e9d5a",
+      "planTraceable": true,
+      "riskLevel": "中风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "2015154f06a3b027",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-07T00:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0007",
+      "eventType": "congestion",
+      "fusionHash": "acf758153f54af70",
+      "groundedRecommendationCoverage": 2,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 5,
+        "evidenceRefCount": 4,
+        "groundingBlockCoverage": 4,
+        "historyCount": 1,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge"
+        ]
+      },
+      "group": "REGIONAL_HISTORY_KNOWLEDGE",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "文泽路",
+      "planFingerprint": "fp_b166f1bf836e9d5a",
+      "planTraceable": true,
+      "riskLevel": "中风险",
+      "selectedAgents": [
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "2f7a68e01ff72d20",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-07T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0008",
+      "eventType": "accident",
+      "fusionHash": "27b0b838fa7de261",
+      "groundedRecommendationCoverage": 0,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 1,
+        "evidenceRefCount": 0,
+        "groundingBlockCoverage": 1,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "MASKED",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent"
+        ]
+      },
+      "group": "CURRENT_EVENT_ONLY",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "金沙大道",
+      "planFingerprint": "fp_0e79a77026da2bd0",
+      "planTraceable": true,
+      "riskLevel": "低风险",
+      "selectedAgents": [
+        "AccidentAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "af22376e19468edb",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-07T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0008",
+      "eventType": "accident",
+      "fusionHash": "68ae2fc08f486de5",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 2,
+        "caseStatus": "READY",
+        "caseTotal": 2,
+        "completedCaseRefs": 2,
+        "contextItemCount": 7,
+        "evidenceRefCount": 6,
+        "groundingBlockCoverage": 5,
+        "historyCount": 1,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge",
+          "caseMemory"
+        ]
+      },
+      "group": "FULL_GROUNDING",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "金沙大道",
+      "planFingerprint": "fp_0e79a77026da2bd0",
+      "planTraceable": true,
+      "riskLevel": "低风险",
+      "selectedAgents": [
+        "AccidentAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "1b1d0a0cef4e98e9",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-07T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0008",
+      "eventType": "accident",
+      "fusionHash": "10036343c7d67d35",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 2,
+        "evidenceRefCount": 1,
+        "groundingBlockCoverage": 2,
+        "historyCount": 0,
+        "historyStatus": "MASKED",
+        "knowledgeCount": 0,
+        "knowledgeStatus": "MASKED",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional"
+        ]
+      },
+      "group": "REGIONAL",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "金沙大道",
+      "planFingerprint": "fp_0e79a77026da2bd0",
+      "planTraceable": true,
+      "riskLevel": "低风险",
+      "selectedAgents": [
+        "AccidentAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    },
+    {
+      "agentOutputHash": "30d0fed7f5da1e16",
+      "agentRunStatus": "completed",
+      "brokenEvidenceRefCount": 0,
+      "createdAt": "2026-09-07T12:30:00Z",
+      "eventId": "SYN_QT_HOLDOUT_0008",
+      "eventType": "accident",
+      "fusionHash": "a60f44f3f8cc5afd",
+      "groundedRecommendationCoverage": 3,
+      "grounding": {
+        "caseCount": 0,
+        "caseStatus": "MASKED",
+        "caseTotal": 0,
+        "completedCaseRefs": 0,
+        "contextItemCount": 5,
+        "evidenceRefCount": 4,
+        "groundingBlockCoverage": 4,
+        "historyCount": 1,
+        "historyStatus": "READY",
+        "knowledgeCount": 2,
+        "knowledgeStatus": "READY",
+        "regionalStatus": "READY",
+        "rejectedCaseRefs": 0,
+        "sourceDiversity": [
+          "currentEvent",
+          "regional",
+          "history",
+          "knowledge"
+        ]
+      },
+      "group": "REGIONAL_HISTORY_KNOWLEDGE",
+      "leakage": {
+        "caseFuture": 0,
+        "caseWrongRegion": 0,
+        "historyCurrentEventSelf": 0,
+        "historyFuture": 0,
+        "historyWrongRegion": 0,
+        "knowledgeIneligible": 0,
+        "regionalNonCanonical": 0
+      },
+      "location": "金沙大道",
+      "planFingerprint": "fp_0e79a77026da2bd0",
+      "planTraceable": true,
+      "riskLevel": "低风险",
+      "selectedAgents": [
+        "AccidentAgent",
+        "CongestionAgent",
+        "DispatchAgent",
+        "FusionAgent"
+      ]
+    }
+  ]
+}

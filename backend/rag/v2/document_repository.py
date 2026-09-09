@@ -50,6 +50,10 @@ def init_db() -> None:
             road_name TEXT,
             risk_level TEXT,
             jurisdiction TEXT,
+            region_id TEXT,
+            road_id TEXT,
+            intersection_id TEXT,
+            grounding_scope TEXT NOT NULL DEFAULT 'LEGACY_UNSCOPED',
             source_uri TEXT,
             checksum TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
@@ -76,6 +80,10 @@ def init_db() -> None:
             version INTEGER NOT NULL DEFAULT 1,
             effective_from TEXT,
             effective_to TEXT,
+            region_id TEXT,
+            road_id TEXT,
+            intersection_id TEXT,
+            grounding_scope TEXT NOT NULL DEFAULT 'LEGACY_UNSCOPED',
             checksum TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
@@ -149,6 +157,19 @@ def init_db() -> None:
             conn.execute(f"ALTER TABLE rag_index_versions ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
             pass  # column already exists
+    for table in ("rag_documents", "rag_chunks"):
+        for col_name, col_type in [
+            ("region_id", "TEXT"),
+            ("road_id", "TEXT"),
+            ("intersection_id", "TEXT"),
+            ("grounding_scope", "TEXT NOT NULL DEFAULT 'LEGACY_UNSCOPED'"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rag_docs_region ON rag_documents(region_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rag_chunks_region ON rag_chunks(region_id)")
     conn.commit()
     conn.close()
 
@@ -163,15 +184,29 @@ def upsert_document(doc: RagDocument) -> str:
         conn.execute("""
             INSERT INTO rag_documents (document_id, source_id, doc_type, title, content,
                 authority_level, version, effective_from, effective_to, status,
-                event_type, road_name, risk_level, jurisdiction, source_uri,
+                event_type, road_name, risk_level, jurisdiction,
+                region_id, road_id, intersection_id, grounding_scope, source_uri,
                 checksum, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(document_id) DO UPDATE SET
+                source_id=excluded.source_id,
+                doc_type=excluded.doc_type,
+                title=excluded.title,
                 content=excluded.content,
+                authority_level=excluded.authority_level,
                 version=excluded.version,
                 effective_from=excluded.effective_from,
                 effective_to=excluded.effective_to,
                 status=excluded.status,
+                event_type=excluded.event_type,
+                road_name=excluded.road_name,
+                risk_level=excluded.risk_level,
+                jurisdiction=excluded.jurisdiction,
+                region_id=excluded.region_id,
+                road_id=excluded.road_id,
+                intersection_id=excluded.intersection_id,
+                grounding_scope=excluded.grounding_scope,
+                source_uri=excluded.source_uri,
                 checksum=excluded.checksum,
                 updated_at=excluded.updated_at
         """, (
@@ -180,7 +215,8 @@ def upsert_document(doc: RagDocument) -> str:
             doc.effective_from.isoformat() if doc.effective_from else None,
             doc.effective_to.isoformat() if doc.effective_to else None,
             doc.status, doc.event_type, doc.road_name, doc.risk_level,
-            doc.jurisdiction, doc.source_uri, doc.checksum,
+            doc.jurisdiction, doc.region_id, doc.road_id, doc.intersection_id,
+            doc.grounding_scope, doc.source_uri, doc.checksum,
             doc.created_at.isoformat(), now,
         ))
         conn.commit()
@@ -274,6 +310,10 @@ def _row_to_document(row: dict) -> RagDocument:
         road_name=row.get("road_name"),
         risk_level=row.get("risk_level"),
         jurisdiction=row.get("jurisdiction"),
+        region_id=row.get("region_id"),
+        road_id=row.get("road_id"),
+        intersection_id=row.get("intersection_id"),
+        grounding_scope=row.get("grounding_scope") or "LEGACY_UNSCOPED",
         source_uri=row.get("source_uri"),
         checksum=row["checksum"],
         created_at=_parse_dt(row["created_at"]) or utcnow(),
@@ -295,8 +335,10 @@ def upsert_chunks(chunks: List[RagChunk]) -> None:
             INSERT INTO rag_chunks (chunk_id, document_id, parent_chunk_id, section_path,
                 raw_content, contextual_content, token_count, chunk_index,
                 doc_type, event_type, road_name, risk_level, authority_level,
-                version, effective_from, effective_to, checksum, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                version, effective_from, effective_to,
+                region_id, road_id, intersection_id, grounding_scope,
+                checksum, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             c.chunk_id, c.document_id, c.parent_chunk_id, c.section_path,
             c.raw_content, c.contextual_content, c.token_count, c.chunk_index,
@@ -304,6 +346,7 @@ def upsert_chunks(chunks: List[RagChunk]) -> None:
             c.authority_level, c.version,
             c.effective_from.isoformat() if c.effective_from else None,
             c.effective_to.isoformat() if c.effective_to else None,
+            c.region_id, c.road_id, c.intersection_id, c.grounding_scope,
             c.checksum, c.created_at.isoformat(), now,
         ))
     conn.commit()
@@ -378,6 +421,10 @@ def _row_to_chunk(row: dict) -> RagChunk:
         version=row["version"],
         effective_from=_parse_dt(row.get("effective_from")),
         effective_to=_parse_dt(row.get("effective_to")),
+        region_id=row.get("region_id"),
+        road_id=row.get("road_id"),
+        intersection_id=row.get("intersection_id"),
+        grounding_scope=row.get("grounding_scope") or "LEGACY_UNSCOPED",
         checksum=row["checksum"],
         created_at=_parse_dt(row["created_at"]) or utcnow(),
         updated_at=_parse_dt(row["updated_at"]) or utcnow(),

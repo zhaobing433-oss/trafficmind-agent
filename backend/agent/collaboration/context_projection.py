@@ -3,8 +3,10 @@
 每个 Agent 只接收其角色允许的字段子集，不接收完整状态。
 """
 
+import copy
 from typing import Any, Dict, List
 from backend.agent.collaboration.roles import get_agent_capability
+from backend.grounding.rendering import render_grounded_context_for_agent
 
 
 def project_context_for_agent(state: Dict[str, Any], agent_name: str) -> Dict[str, Any]:
@@ -26,6 +28,13 @@ def project_context_for_agent(state: Dict[str, Any], agent_name: str) -> Dict[st
             projected[field] = event[field]
         elif field in state:
             projected[field] = state[field]
+
+    grounding_context = state.get("grounding_context")
+    if "groundedContext" in allowed and isinstance(grounding_context, dict) and grounding_context:
+        rendered = render_grounded_context_for_agent(grounding_context)
+        projected["groundedContext"] = copy.deepcopy(grounding_context)
+        projected["groundingFacts"] = list(rendered.get("facts", []))
+        projected["groundingEvidenceRefs"] = copy.deepcopy(rendered.get("evidenceRefs", []))
 
     # DispatchAgent special: needs domain agent results
     if agent_name == "DispatchAgent":

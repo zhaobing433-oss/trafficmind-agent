@@ -86,6 +86,10 @@ class RagDocument(BaseModel):
     road_name: Optional[str] = None
     risk_level: Optional[str] = None         # 低/中/高/重大
     jurisdiction: Optional[str] = None       # 管辖区域
+    region_id: Optional[str] = None          # Phase21 canonical regional scope
+    road_id: Optional[str] = None
+    intersection_id: Optional[str] = None
+    grounding_scope: str = "LEGACY_UNSCOPED"
     source_uri: Optional[str] = None
     checksum: str = ""
     created_at: datetime = Field(default_factory=utcnow)
@@ -112,6 +116,10 @@ class RagChunk(BaseModel):
     version: int = 1
     effective_from: Optional[datetime] = None
     effective_to: Optional[datetime] = None
+    region_id: Optional[str] = None
+    road_id: Optional[str] = None
+    intersection_id: Optional[str] = None
+    grounding_scope: str = "LEGACY_UNSCOPED"
     checksum: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -160,6 +168,12 @@ class RetrievalCandidate(BaseModel):
     effective_from: Optional[datetime] = None
     effective_to: Optional[datetime] = None
     source_uri: Optional[str] = None
+    event_type: Optional[str] = None
+    road_name: Optional[str] = None
+    region_id: Optional[str] = None
+    road_id: Optional[str] = None
+    intersection_id: Optional[str] = None
+    grounding_scope: str = "LEGACY_UNSCOPED"
     dense_rank: Optional[int] = None
     sparse_rank: Optional[int] = None
     structured_rank: Optional[int] = None
@@ -193,6 +207,12 @@ class EvidenceItem(BaseModel):
     rerank_score: Optional[float] = None
     dense_score: Optional[float] = None      # 真实 dense cosine similarity [0,1]
     source_uri: Optional[str] = None
+    event_type: Optional[str] = None
+    road_name: Optional[str] = None
+    region_id: Optional[str] = None
+    road_id: Optional[str] = None
+    intersection_id: Optional[str] = None
+    grounding_scope: str = "LEGACY_UNSCOPED"
 
 
 # ─── Answer model ────────────────────────────────────────────────────────────

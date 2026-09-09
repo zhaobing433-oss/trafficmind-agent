@@ -1,0 +1,211 @@
+[
+  {
+    "roadId": "QT_BY_RD_WENZE",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "文泽路",
+    "aliases": ["Wenze Road"],
+    "roadType": "primary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "OPEN_GEO_VERIFIED",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "osmSampleWayIds": ["186452801", "186452810", "512993539", "570593984"],
+      "sourceBoundary": "Open geospatial road name and sampled geometry; not official road inventory."
+    },
+    "sourceType": "open_geo",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_NO2",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "2号大街",
+    "aliases": ["No.2 Street", "下沙高教园区2号大街", "钱塘区白杨街道2号大街", "二号大街"],
+    "roadType": "primary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_MULTI_SOURCE",
+      "sourceIds": [
+        "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+        "SRC_ZSTU_CONTACT",
+        "SRC_HDU_EMPLOYMENT_HOME",
+        "SRC_ZUWE_HOME",
+        "SRC_ZJJY_HOME"
+      ],
+      "osmSampleWayIds": ["389154049", "570593988", "570605638", "570605640"],
+      "sourceBoundary": "Road name is cross-checked by institution addresses and OSM samples."
+    },
+    "sourceType": "multi_source",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS,SRC_ZSTU_CONTACT,SRC_HDU_EMPLOYMENT_HOME,SRC_ZUWE_HOME,SRC_ZJJY_HOME",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_JINSHA",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "金沙大道",
+    "aliases": ["Jinsha Avenue"],
+    "roadType": "secondary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "OPEN_GEO_VERIFIED",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "osmSampleWayIds": ["24626272", "534185245", "534185247", "534185248"],
+      "sourceBoundary": "Open geospatial road name and sampled geometry; not official road inventory."
+    },
+    "sourceType": "open_geo",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_GAOSHA",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "高沙路",
+    "aliases": ["Gaosha Road"],
+    "roadType": "tertiary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "OPEN_GEO_VERIFIED",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "osmSampleWayIds": ["318327534", "570593987", "571348825", "1363790544"],
+      "sourceBoundary": "Open geospatial road name and sampled geometry; not official road inventory."
+    },
+    "sourceType": "open_geo",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_XUELIN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "学林街",
+    "aliases": ["Xuelin Street", "钱塘区学林街"],
+    "roadType": "secondary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_MULTI_SOURCE",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS", "SRC_ZJIET_CONTACT"],
+      "osmSampleWayIds": ["186452807", "515737240", "561921052", "570593986"],
+      "sourceBoundary": "Road name is cross-checked by institution address and OSM samples."
+    },
+    "sourceType": "multi_source",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS,SRC_ZJIET_CONTACT",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_XUEYUAN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "学源街",
+    "aliases": ["Xueyuan Street", "下沙高教园区学源街", "钱塘区白杨街道学源街"],
+    "roadType": "secondary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_MULTI_SOURCE",
+      "sourceIds": [
+        "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+        "SRC_ZUFE_PROFILE",
+        "SRC_ZFC_INFO",
+        "SRC_CUZ_PROFILE"
+      ],
+      "osmSampleWayIds": ["186448723", "570593983", "570593985", "570605680"],
+      "sourceBoundary": "Road name is cross-checked by institution addresses and OSM samples."
+    },
+    "sourceType": "multi_source",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS,SRC_ZUFE_PROFILE,SRC_ZFC_INFO,SRC_CUZ_PROFILE",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_WENHAINAN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "文海南路",
+    "aliases": ["Wenhai South Road", "South Wenhai Road"],
+    "roadType": "primary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "OPEN_GEO_VERIFIED",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "osmSampleWayIds": ["186448724", "389154051", "437980647", "570850840"],
+      "sourceBoundary": "Open geospatial road name and sampled geometry; not official road inventory."
+    },
+    "sourceType": "open_geo",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_XUEZHENG",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "学正街",
+    "aliases": ["Xuezheng Street", "钱塘区白杨街道学正街"],
+    "roadType": "tertiary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "VERIFIED_MULTI_SOURCE",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS", "SRC_ZJTIE_HOME"],
+      "osmSampleWayIds": ["154701028", "570605648", "570605657", "570688318"],
+      "sourceBoundary": "Road name is cross-checked by institution address and OSM samples."
+    },
+    "sourceType": "multi_source",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS,SRC_ZJTIE_HOME",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_NO23",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "23号大街",
+    "aliases": ["No.23 Street"],
+    "roadType": "primary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "OPEN_GEO_VERIFIED",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "osmSampleWayIds": ["186448725", "570605645", "570605650", "570605654"],
+      "sourceBoundary": "Open geospatial road name and sampled geometry; not official road inventory."
+    },
+    "sourceType": "open_geo",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_NO4",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "4号大街",
+    "aliases": ["No.4 Street"],
+    "roadType": "tertiary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "OPEN_GEO_VERIFIED",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "osmSampleWayIds": ["186459502", "570593990", "570688296", "570881950"],
+      "sourceBoundary": "Open geospatial road name and sampled geometry; not official road inventory."
+    },
+    "sourceType": "open_geo",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "roadId": "QT_BY_RD_HAIDA_NAN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "name": "海达南路",
+    "aliases": ["Haida South Road", "Haida Road (S)"],
+    "roadType": "primary",
+    "status": "active",
+    "metadata": {
+      "g1VerificationStatus": "OPEN_GEO_VERIFIED",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "osmSampleWayIds": ["186460816", "381426510", "502259182", "570850850"],
+      "sourceBoundary": "Open geospatial road name and sampled geometry; not official road inventory."
+    },
+    "sourceType": "open_geo",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  }
+]

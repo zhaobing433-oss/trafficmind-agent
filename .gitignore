@@ -48,6 +48,7 @@ frontend/dist/
 
 # RAG V2 运行数据
 backend/data/rag_v2/
+backend/data/pilot_demo/*/runtime*/
 
 # 评估生成产物
 backend/tests/output/

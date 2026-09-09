@@ -91,6 +91,12 @@ async def lifespan(app: FastAPI):
     # Phase 13: Simulation tables (idempotent)
     from backend.simulation.repository import init_simulation_tables
     init_simulation_tables()
+    # Phase 21: Regional Core tables (idempotent)
+    from backend.regional.repository import init_regional_tables
+    init_regional_tables()
+    # Phase 21: Traffic Case Memory tables (idempotent)
+    from backend.case_memory.repository import init_case_memory_tables
+    init_case_memory_tables()
     # Phase 13 Round 2: Seed simulation_bridge template
     seed_workflow_templates()
     # Phase 12: Wait Scheduler
@@ -1253,6 +1259,24 @@ async def _orchestrated_analyze_stream(
 
         run_id = f"run_{int(datetime.now().timestamp() * 1000)}"
         trace_id = f"trace_{run_id}"
+        grounding_context = {}
+        if authoritative_event:
+            try:
+                from backend.grounding.assembler import (
+                    GroundedEventContextAssembler,
+                    minimal_grounded_context_from_event,
+                )
+
+                grounding_context = GroundedEventContextAssembler().assemble(
+                    extract_event_id(authoritative_event),
+                    query=content_text or "",
+                    authoritative_event=authoritative_event,
+                ).to_dict()
+            except Exception:
+                grounding_context = minimal_grounded_context_from_event(
+                    authoritative_event,
+                    reason="GROUNDING_ASSEMBLY_ERROR",
+                ).to_dict()
 
         # Generate title from user query content — not from default roadName
         query_text = content_text or ""
@@ -1368,6 +1392,7 @@ async def _orchestrated_analyze_stream(
                 routing.get("skippedAgents", []),
                 routing.get("routingReasons", []), budget,
                 previous_run_context=previous_run_context,
+                grounding_context=grounding_context,
             ):
                 # Capture fusionSummary from fusion_done event
                 if 'event: fusion_done' in event_str:
@@ -1613,7 +1638,7 @@ async def get_collaboration_run(run_id: str):
 def _safe_parse_json_fields(d: dict) -> dict:
     """将 SQLite 中的 JSON 字符串字段解析为对象。"""
     json_fields = ["selected_agents", "skipped_agents", "failed_agents", "normalized_event",
-                   "budget_usage", "final_decision", "depends_on", "input_snapshot",
+                   "budget_usage", "final_decision", "grounding_context", "depends_on", "input_snapshot",
                    "output_snapshot", "payload", "proposals"]
     for key in json_fields:
         if key in d and isinstance(d[key], str):
@@ -1803,6 +1828,14 @@ app.include_router(observability_router)
 # Phase 14 Round 3: Evaluation Dashboard
 from backend.evaluation.eval_api import router as eval_router
 app.include_router(eval_router)
+
+# Phase 21: Pilot Region Grounding Layer
+from backend.regional.api import router as regional_router
+app.include_router(regional_router)
+
+# Phase 21: Traffic Case Memory
+from backend.case_memory.api import router as case_memory_router
+app.include_router(case_memory_router)
 
 
 def _safe_json(s: str):

@@ -43,12 +43,13 @@ interface Props {
   onRunIdChange: (runId: string | null) => void;
   onOpenRun?: (runId: string) => void;
   onOpenPlan?: (planId: string) => void;
+  onOpenJudgment?: (sid: string, rid: string, eid?: string) => void;
 }
 
 type PageState = 'center' | 'running';
 type WorkflowTab = 'history' | 'templates';
 
-export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, onRunIdChange, onOpenRun, onOpenPlan }) => {
+export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, onRunIdChange, onOpenRun, onOpenPlan, onOpenJudgment }) => {
   // ── Read workflowTab from URL ──
   const [workflowTab, setWorkflowTabState] = useState<WorkflowTab>(() => {
     const p = new URLSearchParams(window.location.search);
@@ -81,6 +82,9 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
   const [error, setError] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<string>('pending');
   const [traceRefreshKey, setTraceRefreshKey] = useState(0);
+  const selectionRef = useRef(workflowRunId);
+  selectionRef.current = workflowRunId;
+  const [statusRunId, setStatusRunId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -91,6 +95,7 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
     pollTimerRef.current = setInterval(async () => {
       try {
         const detail = await getRun(runId);
+        if (selectionRef.current !== runId) return;
         const serverStatus = (detail.run as Record<string, unknown>).status as string;
         setRunStatus(prev => {
           if (serverStatus !== prev) setTraceRefreshKey(k => k + 1);
@@ -141,11 +146,17 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
     const controller = new AbortController(); abortRef.current = controller;
     getRunStream(runId, {
       onEvent: (_eventType, data) => {
+        if (controller.signal.aborted || selectionRef.current !== runId) return;
         setTraceRefreshKey(k => k + 1);
+        setStatusRunId(runId);
         const status = data.status as string | undefined;
-        if (status) setRunStatus(status);
+        if (_eventType === 'run_status' && status) setRunStatus(status);
       },
-      onDone: (status) => { maybeStartPolling(runId, status); },
+      onDone: (status) => {
+        if (controller.signal.aborted || selectionRef.current !== runId) return;
+        if (status !== 'interrupted') { setRunStatus(status); setStatusRunId(runId); }
+        maybeStartPolling(runId, status);
+      },
     }, controller.signal).catch(() => {});
     return controller;
   }, [maybeStartPolling]);
@@ -156,11 +167,12 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
     const controller = new AbortController(); abortRef.current = controller;
     resumeRun(runId, {
       onEvent: (eventType, data) => {
+        if (controller.signal.aborted || selectionRef.current !== runId) return;
         const status = (data.status as string) || eventType.replace('workflow_', '');
         setRunStatus(status); setTraceRefreshKey(k => k + 1);
       },
-      onError: (msg) => { setError(msg); },
-      onDone: (status) => { setTraceRefreshKey(k => k + 1); maybeStartPolling(runId, status); },
+      onError: (msg) => { if (!controller.signal.aborted && selectionRef.current === runId) setError(msg); },
+      onDone: (status) => { if (!controller.signal.aborted && selectionRef.current === runId) { setTraceRefreshKey(k => k + 1); maybeStartPolling(runId, status); } },
     }, controller.signal).catch((err: unknown) => {
       if (err instanceof Error && err.name !== 'AbortError') setError(err.message);
     });
@@ -247,10 +259,12 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
     stopPolling();
     try {
       await cancelRun(workflowRunId);
+      if (selectionRef.current !== workflowRunId) return;
       setRunStatus('cancelled'); setTraceRefreshKey(k => k + 1);
     } catch (e: unknown) {
       try {
         const detail = await getRun(workflowRunId);
+        if (selectionRef.current !== workflowRunId) return;
         setRunStatus((detail.run as Record<string,unknown>).status as string);
         setTraceRefreshKey(k => k + 1);
       } catch { setError(e instanceof Error ? e.message : 'Cancel failed'); }
@@ -285,15 +299,15 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
   // ═══════════════════════════════════════════════════════════════════════════
   // Render: Workflow Center (Tabbed)
   // ═══════════════════════════════════════════════════════════════════════════
-  if (pageState === 'center') {
+  if (!workflowRunId) {
     return (
       <WorkflowErrorBoundary>
-        <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}>
+        <div style={{ padding: '16px 0', maxWidth: 900, margin: '0 auto' }}>
           {/* Header */}
           <div style={{ marginBottom: 20 }}>
-            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: 0 }}>工作流中心</h2>
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: 0 }}>处置执行中心</h2>
             <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>
-              查看运行记录、跟踪执行状态或从模板启动新的工作流
+              执行记录与待确认操作
             </p>
           </div>
 
@@ -301,7 +315,7 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
           <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #E5E7EB' }}>
             {([
               ['history', '运行记录'],
-              ['templates', '工作流模板'],
+              ['templates', '执行模板'],
             ] as [WorkflowTab, string][]).map(([key, label]) => (
               <button key={key} onClick={() => setWorkflowTab(key)}
                 style={{
@@ -425,14 +439,14 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
   // ═══════════════════════════════════════════════════════════════════════════
   return (
     <WorkflowErrorBoundary>
-      <div style={{ padding: '16px 24px', maxWidth: 1000, margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: '16px 0', maxWidth: 1000, margin: '0 auto', minWidth: 0 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
             <button onClick={handleBackToCenter}
               style={{ background: 'none', border: '1px solid #E5E7EB', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12, color: '#6B7280' }}>
-              ← 工作流中心
+              ← 处置执行中心
             </button>
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>工作流运行</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>处置执行</span>
             {workflowRunId && (
               <details style={{ fontSize: 11, color: '#9CA3AF' }}>
                 <summary style={{ cursor: 'pointer' }}>技术信息</summary>
@@ -444,7 +458,7 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {!isTerminal && (
+            {statusRunId === workflowRunId && !isTerminal && (
               <button onClick={handleCancel}
                 style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #FCA5A5', background: '#FFF', color: '#DC2626', cursor: 'pointer', fontSize: 12 }}>
                 取消
@@ -459,46 +473,25 @@ export const WorkflowWorkspace: React.FC<Props> = ({ workflowRunId, sessionId, o
           </div>
         )}
 
-        <div style={{ padding: '8px 14px', borderRadius: 8, marginBottom: 12, fontSize: 13,
-          background: runStatus === 'completed' ? '#F0FDF4' : runStatus === 'failed' ? '#FEF2F2' :
-            runStatus === 'rejected' ? '#FFF7ED' : runStatus === 'cancelled' ? '#F9FAFB' :
-            runStatus === 'awaiting_approval' ? '#F5F3FF' : runStatus === 'paused' ? '#FFFBEB' : '#EFF6FF',
-          border: `1px solid ${
-            runStatus === 'completed' ? '#BBF7D0' : runStatus === 'failed' ? '#FECACA' :
-            runStatus === 'rejected' ? '#FED7AA' : runStatus === 'cancelled' ? '#E5E7EB' :
-            runStatus === 'awaiting_approval' ? '#DDD6FE' : runStatus === 'paused' ? '#FDE68A' : '#BFDBFE'
-          }`,
-          color: runStatus === 'completed' ? '#166534' : runStatus === 'failed' ? '#991B1B' :
-            runStatus === 'rejected' ? '#9A3412' : runStatus === 'cancelled' ? '#6B7280' :
-            runStatus === 'awaiting_approval' ? '#5B21B6' : runStatus === 'paused' ? '#92400E' : '#1E40AF'
-        }}>
-          {runStatus === 'completed' && '✅ 流程已完成'}
-          {runStatus === 'failed' && '❌ 流程执行失败'}
-          {runStatus === 'rejected' && '🚫 人工审批已拒绝'}
-          {runStatus === 'cancelled' && '⏹ 流程已取消'}
-          {runStatus === 'awaiting_approval' && '⏳ 等待人工审批'}
-          {runStatus === 'running' && '▶ 流程运行中'}
-          {runStatus === 'paused' && '⏸ 流程已暂停（后台等待恢复）'}
-          {runStatus === 'pending' && '🕐 准备开始'}
-        </div>
-
         {workflowRunId && (
           <WorkflowTracePanel
             key={`${workflowRunId}-${traceRefreshKey}`}
             runId={workflowRunId}
             visible={true}
-            onRefresh={() => setTraceRefreshKey(k => k + 1)}
+            onOpenPlan={onOpenPlan}
+            onOpenJudgment={onOpenJudgment}
+            onRefresh={() => { if (workflowRunId) connectLiveStream(workflowRunId); }}
           />
         )}
 
         {/* Phase20 R2：决策链（只消费 decisionProvenance 安全投影）+ Run→Plan */}
         {workflowRunId && (
-          <DecisionChainPanel
+          <details><summary className="execution-muted">决策与调整记录</summary><DecisionChainPanel
             key={`decision-${workflowRunId}`}
             runId={workflowRunId}
             onOpenChildRun={onOpenRun}
             onOpenPlan={onOpenPlan}
-          />
+          /></details>
         )}
       </div>
     </WorkflowErrorBoundary>

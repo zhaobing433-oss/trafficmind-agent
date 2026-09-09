@@ -40,6 +40,9 @@ class CollaborationRunState:
         # Previous run context — 独立存储，不合并到 normalized_event
         self.previous_run_context: Optional[Dict[str, Any]] = None
 
+        # Analysis-time grounding snapshot — shared by all Agents in this run.
+        self.grounding_context: Dict[str, Any] = {}
+
         # Routing
         self.selected_agents: List[str] = []
         self.skipped_agents: List[str] = []
@@ -105,6 +108,7 @@ class CollaborationRunState:
             "status": self.status,
             "normalized_event": self.normalized_event,
             "previous_run_context": self.previous_run_context,
+            "grounding_context": self.grounding_context,
             "original_input": self.original_input,
             "selected_agents": self.selected_agents,
             "skipped_agents": self.skipped_agents,

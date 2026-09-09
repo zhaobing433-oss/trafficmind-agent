@@ -1,0 +1,43 @@
+{
+  "packId": "QT_BY_XIASHA_PUBLIC_HISTORY_001",
+  "retrievedAt": "2026-09-08",
+  "sources": [
+    {
+      "sourceId": "SRC_QT_COURT_2024_2595",
+      "sourceUri": "https://zh.wikisource.org/wiki/%E6%9D%AD%E5%B7%9E%E5%B8%82%E9%92%B1%E5%A1%98%E5%8C%BA%E4%BA%BA%E6%B0%91%E6%B3%95%E9%99%A2%EF%BC%882024%EF%BC%89%E6%B5%990114%E6%B0%91%E5%88%9D2595%E5%8F%B7%E6%B0%91%E4%BA%8B%E5%88%A4%E5%86%B3%E4%B9%A6",
+      "sourceTitle": "杭州市钱塘区人民法院（2024）浙0114民初2595号民事判决书",
+      "sourceAuthority": "杭州市钱塘区人民法院",
+      "sourceTier": "C",
+      "sourceType": "court_document_archive",
+      "sourcePublishedAt": "2024-06-26",
+      "archiveNote": "维基文库页面注明内容由中国裁判文书网存档数据导入。"
+    },
+    {
+      "sourceId": "SRC_QT_COURT_2016_00626",
+      "sourceUri": "https://cn.govopendata.com/caipanwenshu/2016/04/19/e1a06061-0879-45e6-baa5-e5d3311dc6df/",
+      "sourceTitle": "杭州经济技术开发区人民法院（2016）浙0191民初00626号民事判决书",
+      "sourceAuthority": "杭州经济技术开发区人民法院",
+      "sourceTier": "C",
+      "sourceType": "court_document_archive",
+      "sourcePublishedAt": "2016-05-05"
+    },
+    {
+      "sourceId": "SRC_QT_COURT_2013_496",
+      "sourceUri": "https://cn.govopendata.com/caipanwenshu/2015/06/09/032846d5-302e-4ec6-a9df-5dbd8120c1f9/",
+      "sourceTitle": "杭州经济技术开发区人民法院（2013）杭经开民初字第496号民事判决书",
+      "sourceAuthority": "杭州经济技术开发区人民法院",
+      "sourceTier": "C",
+      "sourceType": "court_document_archive",
+      "sourcePublishedAt": "2016-05-13"
+    },
+    {
+      "sourceId": "SRC_QT_COURT_2013_245",
+      "sourceUri": "https://cn.govopendata.com/caipanwenshu/2013/07/26/06c7f138-3648-4d1a-8d1a-2f5087d9a215/",
+      "sourceTitle": "杭州经济技术开发区人民法院（2013）杭经开民初字第245号民事判决书",
+      "sourceAuthority": "杭州经济技术开发区人民法院",
+      "sourceTier": "C",
+      "sourceType": "court_document_archive",
+      "sourcePublishedAt": "2014-03-04"
+    }
+  ]
+}

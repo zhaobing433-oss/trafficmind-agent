@@ -28,17 +28,21 @@ interface Props {
   focusRoadName: string | null;
   focusRisk: string | null;
   onClearFocus: () => void;
+  onSelectEvent: (eventId: string) => void;
+  onOpenRisk?: (risk: string) => void;
   onOpenRoad?: (roadName: string) => void;
   onOpenPlan?: (planId: string) => void;
-  onOpenCollaboration?: (sessionId: string) => void;
+  onOpenCollaboration?: (sessionId: string, runId?: string, eventId?: string) => void;
   onOpenKnowledge?: () => void;
 }
 
 type TrafficMode = 'realtime' | 'simulation';
+const runtimeEnv = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
+const isQiantangDemo = runtimeEnv.VITE_RUNTIME_PROFILE === 'qiantang-demo';
 
 export const TrafficMapWorkspace: React.FC<Props> = ({
   workflowRunId: appWfRunId, onWorkflowRunIdChange, onOpenWorkflowRun,
-  focusEventId, focusRoadName, focusRisk, onClearFocus, onOpenRoad, onOpenPlan, onOpenCollaboration, onOpenKnowledge,
+  focusEventId, focusRoadName, focusRisk, onClearFocus, onSelectEvent, onOpenRisk, onOpenRoad, onOpenPlan, onOpenCollaboration, onOpenKnowledge,
 }) => {
   const [scenarios, setScenarios] = useState<SimulationScenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState('scenario_c_accident');
@@ -53,10 +57,7 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
   const [wfRunId, setWfRunId] = useState<string | null>(appWfRunId);
   const [wfStatus, setWfStatus] = useState<string | null>(null);
   const [beforeSnapshot, setBeforeSnapshot] = useState<TrafficSnapshot | null>(null);
-  const [trafficMode, setTrafficMode] = useState<TrafficMode>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('simulationRunId') ? 'simulation' : 'realtime';
-  });
+  const [trafficMode, setTrafficMode] = useState<TrafficMode>('realtime');
   const runIdRef = useRef('');
 
   // Sync app workflowRunId
@@ -67,7 +68,6 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
     const params = new URLSearchParams(window.location.search);
     const urlRunId = params.get('simulationRunId');
     if (urlRunId && !runIdRef.current) {
-      setTrafficMode('simulation');
       listScenarios().then(res => { setScenarios(res.scenarios); if (res.scenarios.length > 0) setSelectedScenarioId(res.scenarios[0].scenarioId); }).catch(() => {});
       restoreSimulation(urlRunId);
     }
@@ -159,7 +159,19 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.25, color: color.text, fontWeight: 600 }}>交通态势</h1>
-            <div style={{ marginTop: 6, fontSize: 13, color: color.textMuted }}>真实事件态势 · Agent 研判 · 处置方案 · 工作流执行追踪</div>
+            <div style={{ marginTop: 6, fontSize: 13, color: color.textMuted }}>事件研判与执行追踪</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {isQiantangDemo && (
+              <div title="当前页面使用隔离的钱塘 Pilot 验证数据，不是生产实时交通" style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '5px 9px', border: `1px solid ${color.border}`, borderRadius: radius.sm, background: color.surfaceSubtle }}>
+                <strong style={{ color: color.primary, fontSize: 13, fontWeight: 600 }}>钱塘 Pilot</strong>
+                <span style={{ color: color.textMuted, fontSize: 11 }}>验证数据环境</span>
+              </div>
+            )}
+            <button className="event-text-button" onClick={() => {
+              setTrafficMode(mode => mode === 'realtime' ? 'simulation' : 'realtime');
+              if (!scenarios.length) listScenarios().then(value => setScenarios(value.scenarios)).catch(() => setError('演练场景暂不可用'));
+            }}>{trafficMode === 'realtime' ? '演练模式' : '返回事件工作台'}</button>
           </div>
         </div>
       </header>
@@ -245,10 +257,13 @@ export const TrafficMapWorkspace: React.FC<Props> = ({
       </section>
       ) : (
         <RealEventsPanel
+          topology={<TrafficMapView networkGeoJSON={networkGeoJSON} snapshot={snapshot} events={events} onRoadClick={handleRoadClick} onCameraClick={handleCameraClick} selectedRoadId={selectedRoad?.roadId ?? null} mapHeight={460} />}
           focusEventId={focusEventId}
           focusRoadName={focusRoadName}
           focusRisk={focusRisk}
           onClearFocus={onClearFocus}
+          onSelectEvent={onSelectEvent}
+          onOpenRisk={onOpenRisk}
           onOpenRun={onOpenWorkflowRun}
           onOpenRoad={onOpenRoad}
           onOpenPlan={onOpenPlan}

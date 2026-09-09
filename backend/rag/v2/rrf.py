@@ -63,14 +63,18 @@ def reciprocal_rank_fusion(
             for field in ("effective_from", "effective_to", "status", "version",
                           "authority_level", "doc_type", "title", "section_path",
                           "document_id", "parent_chunk_id", "event_type", "road_name",
-                          "risk_level", "source_uri"):
+                          "risk_level", "source_uri", "region_id", "road_id",
+                          "intersection_id", "grounding_scope"):
                 val = item.get(field)
                 if val is None and isinstance(item.get("metadata"), dict):
                     val = item.get("metadata", {}).get(field)
                 if val is not None and entry.get(field) is None:
                     entry[field] = val
             # Also merge metadata sub-dict fields
-            for field in ("effective_from", "effective_to", "status", "version", "authority_level"):
+            for field in (
+                "effective_from", "effective_to", "status", "version", "authority_level",
+                "region_id", "road_id", "intersection_id", "grounding_scope",
+            ):
                 item_meta = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
                 entry_meta = entry.get("metadata", {}) if isinstance(entry.get("metadata"), dict) else {}
                 if item_meta.get(field) is not None and entry_meta.get(field) is None:

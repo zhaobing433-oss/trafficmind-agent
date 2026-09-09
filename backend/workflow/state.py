@@ -161,6 +161,7 @@ class TrafficWorkflowState:
             WorkflowRunStatus.COMPLETED,
             WorkflowRunStatus.FAILED,
             WorkflowRunStatus.CANCELLED,
+            WorkflowRunStatus.REJECTED,
         }
 
     # ── 事件只读保护 ──────────────────────────────────────────────────

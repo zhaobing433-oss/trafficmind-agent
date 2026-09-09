@@ -43,6 +43,11 @@ from backend.rag.v2.models import (
 )
 from backend.rag.v2.providers import get_embedding_provider
 from backend.rag.v2.dense_index import get_collection, get_collection_count
+from backend.knowledge.regional_metadata import (
+    KnowledgeMetadataError,
+    normalize_knowledge_metadata,
+    regional_metadata_to_api,
+)
 
 logger = logging.getLogger("knowledge.service")
 
@@ -149,6 +154,10 @@ def create_document(
     流程: validate → checksum → register → chunk → embed → Chroma → status update
     """
     meta = metadata or {}
+    try:
+        canonical_meta = normalize_knowledge_metadata(meta)
+    except KnowledgeMetadataError as e:
+        raise KnowledgeError(str(e), 400)
 
     # ── Validate ──
     name = (name or "").strip()
@@ -172,7 +181,7 @@ def create_document(
 
     # ── Source ID + Document ID ──
     content_hash = _checksum(content)
-    source_id = meta.get("source_id") or f"user:{uuid.uuid4().hex[:12]}"
+    source_id = meta.get("source_id") or meta.get("sourceId") or f"user:{uuid.uuid4().hex[:12]}"
     doc_id = _make_document_id(source_id)
 
     # ── Duplicate check ──
@@ -184,19 +193,31 @@ def create_document(
 
     # ── Register document (status=processing until indexing completes) ──
     now = utcnow()
+    try:
+        authority_level = AuthorityLevel(canonical_meta.get("authority_level") or "operational")
+    except ValueError:
+        raise KnowledgeError(f"不支持的权威等级 '{canonical_meta.get('authority_level')}'", 400)
+
     doc = RagDocument(
         document_id=doc_id,
         source_id=source_id,
         doc_type=dt,
         title=name,
         content=content,
-        authority_level=AuthorityLevel(meta.get("authority_level", "operational")),
+        authority_level=authority_level,
         version=(existing.version + 1) if existing else 1,
         status=DocStatus.PROCESSING,
-        event_type=meta.get("event_type"),
-        road_name=meta.get("road_name"),
-        risk_level=meta.get("risk_level"),
-        source_uri=meta.get("source_uri"),
+        effective_from=canonical_meta.get("effective_from"),
+        effective_to=canonical_meta.get("effective_to"),
+        event_type=canonical_meta.get("event_type"),
+        road_name=canonical_meta.get("road_name"),
+        risk_level=canonical_meta.get("risk_level"),
+        jurisdiction=canonical_meta.get("jurisdiction"),
+        region_id=canonical_meta.get("region_id"),
+        road_id=canonical_meta.get("road_id"),
+        intersection_id=canonical_meta.get("intersection_id"),
+        grounding_scope=canonical_meta.get("grounding_scope"),
+        source_uri=canonical_meta.get("source_uri"),
         checksum=content_hash,
         created_at=existing.created_at if existing else now,
         updated_at=now,
@@ -561,6 +582,11 @@ def _doc_to_summary(doc: RagDocument) -> Dict[str, Any]:
         "sourceUri": doc.source_uri if (not doc.source_uri or not doc.source_uri.startswith("error:")) else None,
         "eventType": doc.event_type,
         "roadName": doc.road_name,
+        "regionId": doc.region_id,
+        "roadId": doc.road_id,
+        "intersectionId": doc.intersection_id,
+        "groundingScope": doc.grounding_scope,
+        "regionalMetadata": regional_metadata_to_api(doc),
         "errorMessage": error_message,
     }
 
@@ -588,5 +614,13 @@ def _chunk_to_dto(chunk: RagChunk) -> Dict[str, Any]:
         "contentHash": chunk.checksum,
         "docType": chunk.doc_type,
         "authorityLevel": chunk.authority_level,
+        "eventType": chunk.event_type,
+        "roadName": chunk.road_name,
+        "riskLevel": chunk.risk_level,
+        "regionId": chunk.region_id,
+        "roadId": chunk.road_id,
+        "intersectionId": chunk.intersection_id,
+        "groundingScope": chunk.grounding_scope,
+        "regionalMetadata": regional_metadata_to_api(chunk),
         "createdAt": chunk.created_at.isoformat() if chunk.created_at else None,
     }

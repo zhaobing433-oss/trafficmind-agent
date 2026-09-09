@@ -1,0 +1,29 @@
+.judgment-grounding { padding: 12px 0; border-block: 1px solid #e3e9e8; font-size: 13px; overflow-wrap: anywhere; }
+.judgment-grounding h3 { margin: 0 0 6px; font-size: 16px; color: #223c39; }
+.judgment-grounding p { margin: 6px 0; line-height: 1.7; }
+.judgment-muted { color: #6a7977; font-size: 12px; }
+.judgment-audit { display: flex; flex-wrap: wrap; gap: 6px 20px; color: #345d57; font-size: 12px; margin-top: 10px; }
+.judgment-block { padding: 12px 0 8px; border-top: 1px solid #e9eeed; margin-top: 10px; }
+.judgment-block-heading { display: flex; align-items: center; gap: 10px; }
+.judgment-block-heading h4 { margin: 0; font-size: 13px; }
+.judgment-source { font-size: 11px; color: #647975; background: #f1f5f4; border-radius: 4px; padding: 2px 5px; font-weight: 400; }
+.judgment-source.status-ERROR, .judgment-source.status-UNAVAILABLE, .judgment-outcome.is-rejected { color: #9a4938; background: #fcf0ec; }
+.judgment-evidence-row { padding: 8px 0; border-bottom: 1px solid #edf1f0; }
+.judgment-evidence-row summary { cursor: pointer; line-height: 1.9; }
+.judgment-evidence-row summary > span { margin-right: 8px; }
+.judgment-row-title { font-weight: 550; color: #263e3a; }
+.judgment-outcome { font-size: 12px; color: #41615b; }
+.judgment-evidence-row ul, .judgment-output-refs ul { padding-left: 20px; line-height: 1.8; }
+.judgment-link { background: transparent; border: 0; color: #0f766e; padding: 4px 0; cursor: pointer; font: inherit; }
+.judgment-output-refs { font-size: 12px; padding: 4px 0 8px; color: #58716c; }
+.judgment-output-refs summary { cursor: pointer; }
+.recent-judgment { width: 100%; display: block; text-align: left; padding: 9px 6px; background: transparent; border: 0; border-bottom: 1px solid #edf1f0; cursor: pointer; overflow-wrap: anywhere; }
+.recent-judgment:hover { background: #f1f7f5; }
+.recent-judgment strong { display: block; font-size: 12px; line-height: 1.6; color: #2e4944; }
+.recent-judgment small { display: block; font-size: 10px; line-height: 1.8; color: #758480; }
+.judgment-roles { border-block: 1px solid #e3e9e8; padding: 10px 0; }
+.judgment-roles > h3 { margin: 0 0 8px; font-size: 14px; }
+.judgment-role { padding: 8px 0; border-bottom: 1px solid #edf1f0; }
+.judgment-role summary { cursor: pointer; font-size: 12px; line-height: 1.7; }
+.judgment-role p { margin: 5px 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+@media (max-width: 680px) { .judgment-audit { flex-direction: column; gap: 4px; } }

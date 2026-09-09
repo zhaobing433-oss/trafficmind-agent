@@ -11,7 +11,7 @@ import os
 import re
 import sqlite3
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from backend.rag.v2.config import RAG_V2_FTS_PATH
 from backend.rag.v2.models import RagChunk, DocType
@@ -148,6 +148,7 @@ def search_sparse(
     top_k: int = 30,
     doc_type: Optional[str] = None,
     collection_name: str = None,  # ignored, kept for API compatibility
+    allowed_document_ids: Optional[Sequence[str]] = None,
 ) -> List[Dict]:
     """FTS5 全文检索 + BM25 评分。
 
@@ -160,17 +161,25 @@ def search_sparse(
         [{chunk_id, document_id, content, score, metadata, sparse_rank}, ...]
     """
     # Try FTS5 first
-    results = _search_fts5(query, top_k, doc_type)
+    allowed_ids = _normalize_allowed_document_ids(allowed_document_ids)
+    results = _search_fts5(query, top_k, doc_type, allowed_ids)
     if results:
         return results
 
     # Fallback to pure Python BM25
     logger.warning("FTS5 search returned no results, trying Python BM25 fallback")
-    return _search_bm25_python(query, top_k, doc_type)
+    return _search_bm25_python(query, top_k, doc_type, allowed_ids)
 
 
-def _search_fts5(query: str, top_k: int, doc_type: Optional[str]) -> List[Dict]:
+def _search_fts5(
+    query: str,
+    top_k: int,
+    doc_type: Optional[str],
+    allowed_document_ids: Optional[Set[str]] = None,
+) -> List[Dict]:
     """FTS5 BM25 检索。"""
+    if allowed_document_ids is not None and not allowed_document_ids:
+        return []
     conn = _get_conn()
     try:
         segmented = segment_chinese(query)
@@ -180,14 +189,21 @@ def _search_fts5(query: str, top_k: int, doc_type: Optional[str]) -> List[Dict]:
 
         # Use FTS5 BM25() ranking
         where_clause = ""
-        params: tuple = (segmented,)
+        params: List[str] = [segmented]
         if doc_type:
-            where_clause = " AND c.doc_type = ?"
-            params = (segmented, doc_type)
+            where_clause += " AND c.doc_type = ?"
+            params.append(doc_type)
+        if allowed_document_ids is not None:
+            placeholders = ",".join("?" for _ in allowed_document_ids)
+            where_clause += f" AND c.document_id IN ({placeholders})"
+            params.extend(sorted(allowed_document_ids))
 
         sql = f"""
             SELECT f.chunk_id, f.document_id, f.section_path, f.contextual_content,
                    f.event_type, f.road_name, f.keywords,
+                   c.effective_from, c.effective_to, c.version, c.authority_level,
+                   c.doc_type, c.risk_level, c.region_id, c.road_id, c.intersection_id,
+                   c.grounding_scope, d.title, d.source_uri,
                    bm25(rag_fts, 0.0, 1.0, 0.0, 0.0, 0.75) as bm25_score
             FROM rag_fts f
             JOIN rag_chunks c ON f.chunk_id = c.chunk_id
@@ -218,10 +234,26 @@ def _search_fts5(query: str, top_k: int, doc_type: Optional[str]) -> List[Dict]:
                 "status": "active",
                 "version": r.get("version", 0),
                 "authority_level": r.get("authority_level", "operational"),
+                "doc_type": r.get("doc_type", "other"),
+                "title": r.get("title", ""),
+                "source_uri": r.get("source_uri"),
+                "risk_level": r.get("risk_level"),
+                "region_id": r.get("region_id"),
+                "road_id": r.get("road_id"),
+                "intersection_id": r.get("intersection_id"),
+                "grounding_scope": r.get("grounding_scope") or "LEGACY_UNSCOPED",
                 "metadata": {
                     "section_path": r.get("section_path", ""),
                     "event_type": r.get("event_type", ""),
                     "road_name": r.get("road_name", ""),
+                    "risk_level": r.get("risk_level", ""),
+                    "doc_type": r.get("doc_type", "other"),
+                    "title": r.get("title", ""),
+                    "source_uri": r.get("source_uri"),
+                    "region_id": r.get("region_id"),
+                    "road_id": r.get("road_id"),
+                    "intersection_id": r.get("intersection_id"),
+                    "grounding_scope": r.get("grounding_scope") or "LEGACY_UNSCOPED",
                     "keywords": r.get("keywords", ""),
                     "effective_from": r.get("effective_from") or None,
                     "effective_to": r.get("effective_to") or None,
@@ -234,11 +266,20 @@ def _search_fts5(query: str, top_k: int, doc_type: Optional[str]) -> List[Dict]:
         return []
 
 
-def _search_bm25_python(query: str, top_k: int, doc_type: Optional[str]) -> List[Dict]:
+def _search_bm25_python(
+    query: str,
+    top_k: int,
+    doc_type: Optional[str],
+    allowed_document_ids: Optional[Set[str]] = None,
+) -> List[Dict]:
     """Pure Python BM25 fallback — works without FTS5."""
     from backend.rag.v2.document_repository import list_active_chunks
 
+    if allowed_document_ids is not None and not allowed_document_ids:
+        return []
     chunks = list_active_chunks(doc_type)
+    if allowed_document_ids is not None:
+        chunks = [c for c in chunks if c.document_id in allowed_document_ids]
     if not chunks:
         return []
 
@@ -296,15 +337,35 @@ def _search_bm25_python(query: str, top_k: int, doc_type: Optional[str]) -> List
             "status": "active",
             "version": c.version,
             "authority_level": c.authority_level,
+            "doc_type": c.doc_type,
+            "event_type": c.event_type,
+            "road_name": c.road_name,
+            "risk_level": c.risk_level,
+            "region_id": c.region_id,
+            "road_id": c.road_id,
+            "intersection_id": c.intersection_id,
+            "grounding_scope": c.grounding_scope,
             "metadata": {
                 "section_path": c.section_path,
                 "event_type": c.event_type or "",
                 "road_name": c.road_name or "",
+                "risk_level": c.risk_level or "",
+                "doc_type": c.doc_type,
+                "region_id": c.region_id,
+                "road_id": c.road_id,
+                "intersection_id": c.intersection_id,
+                "grounding_scope": c.grounding_scope,
                 "effective_from": c.effective_from.isoformat() if c.effective_from else None,
                 "effective_to": c.effective_to.isoformat() if c.effective_to else None,
             },
         })
     return results
+
+
+def _normalize_allowed_document_ids(value: Optional[Sequence[str]]) -> Optional[Set[str]]:
+    if value is None:
+        return None
+    return {str(item).strip() for item in value if str(item).strip()}
 
 
 def _tokenize(text: str) -> List[str]:

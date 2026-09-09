@@ -1,7 +1,7 @@
 """Agent 执行适配器 — Phase 9.2"""
 
-import asyncio, time
-from typing import Any, Dict, Optional
+import asyncio, copy, time
+from typing import Any, Dict, List, Optional
 
 from backend.agent.collaboration.state import CollaborationRunState
 from backend.agent.collaboration.context_projection import project_context_for_agent, validate_required_fields
@@ -49,6 +49,7 @@ async def execute_single_agent(
 
             # Project context
             ctx = project_context_for_agent(state.to_dict(), agent_name)
+            audit_ctx = copy.deepcopy(ctx)
 
             # Validate required fields
             missing = validate_required_fields(state.to_dict(), agent_name)
@@ -57,6 +58,7 @@ async def execute_single_agent(
 
             # Execute existing agent
             result_dict = await _call_agent_function(agent_name, ctx)
+            result_dict = _augment_agent_result_with_grounding(agent_name, audit_ctx, result_dict)
 
             # Wrap in protocol
             agent_result = AgentResult(
@@ -67,6 +69,7 @@ async def execute_single_agent(
                 urgency=result_dict.get("urgency", "low"),
                 evidence_refs=result_dict.get("evidence_refs", []),
                 proposed_actions=result_dict.get("proposed_actions", []),
+                assumptions=result_dict.get("assumptions", []),
                 duration_ms=int(result_dict.get("duration_ms", 0)),
             )
 
@@ -103,8 +106,12 @@ async def execute_single_agent(
 
 async def _call_agent_function(agent_name: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
     """调用现有 Agent 分析函数（同步包装）。"""
-    from backend.agent.multi_agent import CongestionAgent, SignalAgent
-    agent_map = {"CongestionAgent": CongestionAgent, "SignalAgent": SignalAgent}
+    from backend.agent.multi_agent import AccidentAgent, CongestionAgent, SignalAgent
+    agent_map = {
+        "AccidentAgent": AccidentAgent,
+        "CongestionAgent": CongestionAgent,
+        "SignalAgent": SignalAgent,
+    }
     cls = agent_map.get(agent_name)
     if cls is not None:
         instance = cls()
@@ -130,3 +137,48 @@ async def _call_agent_function(agent_name: str, ctx: Dict[str, Any]) -> Dict[str
                 "suggestion": "通知交警大队，实施分流管控", "urgency": "high" if is_main else "medium"}
 
     return {"findings": ["分析完成"], "confidence": 0.6, "suggestion": "按常规流程处置", "urgency": "low"}
+
+
+def _augment_agent_result_with_grounding(
+    agent_name: str,
+    ctx: Dict[str, Any],
+    result: Dict[str, Any],
+) -> Dict[str, Any]:
+    grounding = ctx.get("groundedContext")
+    if not isinstance(grounding, dict) or not grounding:
+        return result
+
+    from backend.grounding.rendering import render_grounded_context_for_agent
+
+    rendered = render_grounded_context_for_agent(grounding)
+    augmented = dict(result or {})
+    facts = list(rendered.get("facts") or [])
+    refs = [ref for ref in (rendered.get("evidenceRefs") or []) if isinstance(ref, dict)]
+    existing_refs = augmented.get("evidence_refs") or augmented.get("evidenceRefs") or []
+    augmented["evidence_refs"] = _dedupe_refs(list(existing_refs) + refs)
+    findings = list(augmented.get("findings") or [])
+    if facts:
+        findings.append(f"已提供GroundedEventContext输入: {'；'.join(facts[:4])}")
+    augmented["findings"] = findings
+    assumptions = list(augmented.get("assumptions") or [])
+    assumptions.append(
+        f"{agent_name} received shared grounding snapshot "
+        f"status={rendered.get('groundingStatus', 'MINIMAL')}; "
+        "grounding refs are available-input audit, not model-claimed usage"
+    )
+    augmented["assumptions"] = assumptions
+    return augmented
+
+
+def _dedupe_refs(refs: List[Any]) -> List[Any]:
+    import json
+
+    out: List[Any] = []
+    seen = set()
+    for ref in refs:
+        key = json.dumps(ref, sort_keys=True, ensure_ascii=False) if isinstance(ref, dict) else str(ref)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(ref)
+    return out

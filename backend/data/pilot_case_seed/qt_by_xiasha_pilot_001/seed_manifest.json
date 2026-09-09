@@ -1,0 +1,32 @@
+{
+  "seedSetId": "QT_BY_XIASHA_CASE_SEED_G3B_001",
+  "seedSelectionChanged": false,
+  "sourceHistoryDataset": "QT_BY_XIASHA_SYNTH_HISTORY_001@1.0.0",
+  "seedEventIds": [
+    "SYN_QT_HIST_0001",
+    "SYN_QT_HIST_0002",
+    "SYN_QT_HIST_0003",
+    "SYN_QT_HIST_0019",
+    "SYN_QT_HIST_0027",
+    "SYN_QT_HIST_0032",
+    "SYN_QT_HIST_0044",
+    "SYN_QT_HIST_0068"
+  ],
+  "coverageRequirements": {
+    "seedCount": 8,
+    "eventTypeCountAtLeast": 4,
+    "locationCountAtLeast": 5,
+    "riskLevelCountAtLeast": 3,
+    "intersectionSeedCountAtLeast": 2,
+    "roadSeedCountAtLeast": 2
+  },
+  "forbiddenContent": {
+    "expectedAgentAnswer": false,
+    "expectedPlan": false,
+    "expectedRecommendation": false,
+    "expectedActions": false,
+    "expectedCaseLesson": false,
+    "expectedOutcome": false,
+    "holdoutScenario": false
+  }
+}

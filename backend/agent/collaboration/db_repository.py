@@ -26,7 +26,9 @@ def init_collaboration_tables():
             normalized_event TEXT DEFAULT '{}',
             selected_agents TEXT DEFAULT '[]', skipped_agents TEXT DEFAULT '[]',
             failed_agents TEXT DEFAULT '[]', budget_usage TEXT DEFAULT '{}',
-            final_decision TEXT DEFAULT '', started_at TEXT, updated_at TEXT, completed_at TEXT
+            final_decision TEXT DEFAULT '', started_at TEXT, updated_at TEXT, completed_at TEXT,
+            previous_run_context TEXT DEFAULT '{}',
+            grounding_context TEXT DEFAULT '{}'
         );
         CREATE TABLE IF NOT EXISTS collaboration_tasks (
             task_id TEXT NOT NULL, run_id TEXT NOT NULL,
@@ -79,7 +81,18 @@ class SQLiteCollaborationRepository:
             conn.execute("ALTER TABLE collaboration_runs ADD COLUMN previous_run_context TEXT DEFAULT '{}'")
         except sqlite3.OperationalError:
             pass  # column already exists
-        conn.execute("""INSERT OR REPLACE INTO collaboration_runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        try:
+            conn.execute("ALTER TABLE collaboration_runs ADD COLUMN grounding_context TEXT DEFAULT '{}'")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        conn.execute("""
+            INSERT OR REPLACE INTO collaboration_runs (
+                run_id, session_id, trace_id, status, protocol_version,
+                normalized_event, selected_agents, skipped_agents, failed_agents,
+                budget_usage, final_decision, started_at, updated_at, completed_at,
+                previous_run_context, grounding_context
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
             (state["run_id"], state.get("session_id",""), state.get("trace_id",""),
              state["status"], state.get("protocol_version","1.0"),
              json.dumps(state.get("normalized_event",{}), ensure_ascii=False),
@@ -89,7 +102,8 @@ class SQLiteCollaborationRepository:
              json.dumps(state.get("budget_usage",{}), ensure_ascii=False),
              json.dumps(state.get("final_decision",""), ensure_ascii=False),
              state.get("started_at",""), now, state.get("completed_at",""),
-             json.dumps(state.get("previous_run_context", None), ensure_ascii=False)))
+             json.dumps(state.get("previous_run_context", None), ensure_ascii=False),
+             json.dumps(state.get("grounding_context", {}), ensure_ascii=False)))
         conn.commit(); conn.close()
 
     def get_run(self, run_id: str) -> Optional[Dict]:

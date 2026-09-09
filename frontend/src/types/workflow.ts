@@ -207,9 +207,9 @@ export const RUN_STATUS_COLORS: Record<WorkflowRunStatus, string> = {
 
 /** Run 状态中文标签 */
 export const RUN_STATUS_LABELS: Record<WorkflowRunStatus, string> = {
-  pending: '待启动', running: '运行中', paused: '已暂停',
-  awaiting_approval: '待审批', completed: '已完成',
-  failed: '失败', rejected: '已驳回', cancelled: '已取消',
+  pending: '待执行', running: '执行中', paused: '已暂停',
+  awaiting_approval: '等待人工审批', completed: '流程已完成',
+  failed: '执行失败', rejected: '已驳回', cancelled: '已取消',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

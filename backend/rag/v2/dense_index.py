@@ -10,7 +10,11 @@ import os
 import re
 from typing import Dict, List, Optional
 
-from backend.rag.v2.config import RAG_V2_COLLECTION_NAME, RAG_V2_V1_COLLECTION_NAME
+from backend.rag.v2.config import (
+    RAG_V2_COLLECTION_NAME,
+    RAG_V2_V1_COLLECTION_NAME,
+    RAG_V2_VECTOR_DB_PATH,
+)
 from backend.rag.v2.models import RagChunk
 
 logger = logging.getLogger("rag.v2.dense_index")
@@ -31,9 +35,7 @@ _VECTOR_DB_PATH: Optional[str] = None
 def _get_vector_db_path() -> str:
     global _VECTOR_DB_PATH
     if _VECTOR_DB_PATH is None:
-        from pathlib import Path
-        _backend = Path(__file__).resolve().parent.parent.parent
-        _VECTOR_DB_PATH = str(_backend / "data" / "vector_db")
+        _VECTOR_DB_PATH = RAG_V2_VECTOR_DB_PATH
     return _VECTOR_DB_PATH
 
 
@@ -237,6 +239,10 @@ def upsert_chunks(
             "chunk_index": c.chunk_index,
             "effective_from": c.effective_from.isoformat() if c.effective_from else "",
             "effective_to": c.effective_to.isoformat() if c.effective_to else "",
+            "region_id": c.region_id or "",
+            "road_id": c.road_id or "",
+            "intersection_id": c.intersection_id or "",
+            "grounding_scope": c.grounding_scope or "LEGACY_UNSCOPED",
         }
         for c in chunks
     ]

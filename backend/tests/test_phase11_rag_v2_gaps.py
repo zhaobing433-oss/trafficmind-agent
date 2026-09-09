@@ -1,9 +1,12 @@
 """Phase 11 RAG V2 — Gap Tests: Expired rule hard filter, SSE success chain, Memory Rewrite"""
 import json, os, sys, pytest, hashlib, time
+from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 os.environ["RAG_ALLOW_MODEL_DOWNLOAD"] = "false"
 os.environ["RAG_ALLOW_HASH_FALLBACK"] = "true"
 os.environ["RAG_DEVICE"] = "cpu"
+
+pytestmark = pytest.mark.usefixtures("isolated_phase11_rag_v2_env")
 
 # ------------------------------------------------------------
 # Deterministic Provider: guaranteed match for specific queries
@@ -53,6 +56,24 @@ class DeterministicRerankerProvider(FakeRerankerProvider):
         return scores
 
 
+class DeterministicOpenAI:
+    """Offline OpenAI-compatible client for the SSE success contract."""
+    def __init__(self, *args, **kwargs):
+        self.chat = SimpleNamespace(completions=self)
+
+    def create(self, *args, **kwargs):
+        answer = "一、结论：按联动处置规则执行。[E1]"
+        if kwargs.get("stream"):
+            return [
+                SimpleNamespace(
+                    choices=[SimpleNamespace(delta=SimpleNamespace(content=answer))],
+                ),
+            ]
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=answer))],
+        )
+
+
 from fastapi.testclient import TestClient
 import logging
 logging.getLogger("rag.v2").setLevel(logging.WARNING)
@@ -60,42 +81,17 @@ logging.getLogger("rag.v2").setLevel(logging.WARNING)
 DIM = 384
 
 @pytest.fixture(scope="module")
-def deterministic_providers():
+def deterministic_providers(isolated_phase11_rag_v2_env):
     """Set up deterministic providers for this module, clean up after."""
+    patcher = pytest.MonkeyPatch()
+    patcher.setattr("openai.OpenAI", DeterministicOpenAI)
     emb = DeterministicEmbeddingProvider(dimension=DIM)
     rr = DeterministicRerankerProvider()
     set_embedding_provider(emb)
     set_reranker_provider(rr)
     yield emb, rr
+    patcher.undo()
     reset_providers()
-
-@pytest.fixture(scope="module", autouse=True)
-def save_restore_active_collection():
-    """Save active index version before tests, restore after."""
-    from backend.rag.v2.document_repository import get_latest_index_version
-    from backend.rag.v2.document_repository import _get_conn as repo_conn
-    saved = get_latest_index_version()
-    saved_id = saved.version_id if saved else None
-    yield
-    # Restore previous active version
-    if saved_id:
-        conn = repo_conn()
-        try:
-            # Re-activate the saved version
-            conn.execute(
-                "UPDATE rag_index_versions SET status='active' WHERE version_id=?",
-                (saved_id,)
-            )
-            # Mark others as superseded
-            conn.execute(
-                "UPDATE rag_index_versions SET status='superseded' WHERE version_id!=? AND status='active'",
-                (saved_id,)
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-        finally:
-            conn.close()
 
 @pytest.fixture(scope="module")
 def client(deterministic_providers):
@@ -108,6 +104,19 @@ def client(deterministic_providers):
 # ------------------------------------------------------------
 KEY_EXP = "ZACCEPT_EXPIRED_HARD_FILTER"
 KEY_SSE = "ZACCEPT_SSE_SUCCESS_122_120"
+
+
+def test_storage_paths_are_isolated(isolated_phase11_rag_v2_env):
+    from pathlib import Path
+    from backend import config as backend_config
+    from backend.rag import vector_store as legacy_vector_store
+    from backend.rag.v2 import dense_index, document_repository, sparse_index
+
+    assert Path(backend_config.DB_PATH).resolve() == isolated_phase11_rag_v2_env["traffic_db"].resolve()
+    assert Path(document_repository.RAG_V2_DB_PATH).resolve() == isolated_phase11_rag_v2_env["rag_db"].resolve()
+    assert Path(sparse_index.RAG_V2_FTS_PATH).resolve() == isolated_phase11_rag_v2_env["fts_db"].resolve()
+    assert Path(dense_index._get_vector_db_path()).resolve() == isolated_phase11_rag_v2_env["vector_db"].resolve()
+    assert Path(legacy_vector_store.VECTOR_DB_PATH).resolve() == isolated_phase11_rag_v2_env["vector_db"].resolve()
 
 @pytest.fixture(scope="module")
 def indexed_fixtures(client, deterministic_providers):

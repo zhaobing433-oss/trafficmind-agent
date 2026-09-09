@@ -1,0 +1,326 @@
+[
+  {
+    "relationId": "QT_BY_REL_WENZE_INT_WENZE_NO2",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_WENZE",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENZE_NO2",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road node 1971533183."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_NO2_INT_WENZE_NO2",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_NO2",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENZE_NO2",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road node 1971533183."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_WENHAINAN_INT_WENHAINAN_NO2",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_WENHAINAN",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENHAINAN_NO2",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 661332723 and 3923155997."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_NO2_INT_WENHAINAN_NO2",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_NO2",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENHAINAN_NO2",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 661332723 and 3923155997."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_GAOSHA_INT_GAOSHA_JINSHA",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_GAOSHA",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_GAOSHA_JINSHA",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 5181146440 and 5181146441."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_JINSHA_INT_GAOSHA_JINSHA",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_JINSHA",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_GAOSHA_JINSHA",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 5181146440 and 5181146441."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_WENZE_INT_WENZE_XUELIN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_WENZE",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENZE_XUELIN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road node 1971533265."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_XUELIN_INT_WENZE_XUELIN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_XUELIN",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENZE_XUELIN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road node 1971533265."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_GAOSHA_INT_GAOSHA_XUELIN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_GAOSHA",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_GAOSHA_XUELIN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road node 1971533225."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_XUELIN_INT_GAOSHA_XUELIN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_XUELIN",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_GAOSHA_XUELIN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road node 1971533225."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_WENZE_INT_WENZE_XUEYUAN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_WENZE",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENZE_XUEYUAN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 1971533186 and 11097054943."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_XUEYUAN_INT_WENZE_XUEYUAN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_XUEYUAN",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENZE_XUEYUAN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 1971533186 and 11097054943."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_WENHAINAN_INT_WENHAINAN_XUEYUAN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_WENHAINAN",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENHAINAN_XUEYUAN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 661332728 and 3923156000."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_XUEYUAN_INT_WENHAINAN_XUEYUAN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_XUEYUAN",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENHAINAN_XUEYUAN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 661332728 and 3923156000."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_WENHAINAN_INT_WENHAINAN_XUELIN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_WENHAINAN",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENHAINAN_XUELIN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 1971533162 and 3923155999."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_XUELIN_INT_WENHAINAN_XUELIN",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_XUELIN",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_WENHAINAN_XUELIN",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 1971533162 and 3923155999."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_XUEZHENG_INT_XUEZHENG_NO23",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_XUEZHENG",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_XUEZHENG_NO23",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS", "SRC_ZJTIE_HOME"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 661332716 and 3923155982."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS,SRC_ZJTIE_HOME",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  },
+  {
+    "relationId": "QT_BY_REL_NO23_INT_XUEZHENG_NO23",
+    "regionId": "QT_BY_XIASHA_PILOT_001",
+    "fromEntityType": "road",
+    "fromEntityId": "QT_BY_RD_NO23",
+    "toEntityType": "intersection",
+    "toEntityId": "QT_BY_INT_XUEZHENG_NO23",
+    "relationType": "connects",
+    "metadata": {
+      "g1VerificationStatus": "DERIVED_FROM_REAL_GEOGRAPHY",
+      "sourceIds": ["SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS"],
+      "derivation": "Road-to-intersection connectivity derived from shared OSM road nodes 661332716 and 3923155982."
+    },
+    "sourceType": "derived_from_real_geography",
+    "sourceReference": "SRC_OSM_OVERPASS_QT_BY_ROADS_INTERSECTIONS",
+    "verifiedAt": "2026-09-01T00:00:00Z",
+    "verificationStatus": "verified"
+  }
+]
